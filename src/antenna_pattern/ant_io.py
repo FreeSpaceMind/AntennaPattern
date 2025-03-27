@@ -8,6 +8,9 @@ import json
 from pathlib import Path
 from typing import Dict, Optional, Union, Any, Tuple
 
+from .pattern import AntennaPattern
+from .polarization import polarization_rl2tp, polarization_xy2pt
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -78,7 +81,6 @@ def load_pattern_npz(file_path: Union[str, Path]) -> Tuple:
         FileNotFoundError: If file does not exist
         ValueError: If file format is invalid
     """
-    from .pattern import AntennaPattern
     
     file_path = Path(file_path)
     
@@ -127,8 +129,6 @@ def read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end:
     Returns:
         AntennaPattern: The imported antenna pattern
     """
-    from .pattern import AntennaPattern
-    from .polarization import polarization_rl2tp, polarization_xy2pt
     
     # Validate inputs
     file_path = Path(file_path)
@@ -342,7 +342,6 @@ def read_ffd(file_path: Union[str, Path]):
         FileNotFoundError: If the file does not exist
         ValueError: If the file is not a valid FFD file
     """
-    from .pattern import AntennaPattern
     
     # Validate input
     file_path = Path(file_path)

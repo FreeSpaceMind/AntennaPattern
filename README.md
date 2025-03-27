@@ -10,16 +10,51 @@ A comprehensive toolkit for antenna radiation pattern analysis including:
 
 ## Installation
 
+### Option 1: Install from PyPI (recommended)
+
 ```bash
 pip install antenna_pattern
 ```
 
-Or install from source:
+### Option 2: Install from source
 
+#### Basic installation
 ```bash
 git clone https://github.com/freespacemind/antenna_pattern.git
 cd antenna_pattern
 pip install -e .
+```
+
+#### Using the installation script
+```bash
+git clone https://github.com/freespacemind/antenna_pattern.git
+cd antenna_pattern
+python install.py
+```
+
+### Option 3: Direct installation from GitHub
+```bash
+pip install git+https://github.com/freespacemind/antenna_pattern.git
+```
+
+## Development Setup
+
+To set up a development environment:
+
+```bash
+# Clone repository
+git clone https://github.com/freespacemind/antenna_pattern.git
+cd antenna_pattern
+
+# Create and activate virtual environment (optional but recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install in development mode with test dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
 ```
 
 ## Usage Example

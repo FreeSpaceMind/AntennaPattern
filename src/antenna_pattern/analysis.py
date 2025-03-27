@@ -7,8 +7,9 @@ from scipy import optimize
 from typing import Dict, Tuple, Optional, List, Union
 import xarray as xr
 
-from .utilities import find_nearest, unwrap_phase, beamwidth_from_pattern
-from .polarization import phase_pattern_translate
+from .utilities import find_nearest, unwrap_phase, beamwidth_from_pattern, frequency_to_wavelength
+from .polarization import phase_pattern_translate, polarization_tp2rl
+from .utilities import lightspeed
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -179,7 +180,6 @@ def apply_mars(pattern, maximum_radial_extent: float):
     Returns:
         New AntennaPattern with MARS algorithm applied
     """
-    from .utilities import lightspeed
     
     if maximum_radial_extent <= 0:
         raise ValueError("Maximum radial extent must be positive")
@@ -332,7 +332,6 @@ def principal_plane_phase_center(frequency, theta1, theta2, theta3, phase1, phas
     Returns:
         Tuple[ndarray, ndarray]: Planar and z-axis displacement
     """
-    from .utilities import frequency_to_wavelength
     
     wavelength = frequency_to_wavelength(frequency)
     wavenumber = 2 * np.pi / wavelength
@@ -387,9 +386,7 @@ def get_axial_ratio(pattern):
     Returns:
         xr.DataArray: Axial ratio (linear scale)
     """
-    import xarray as xr
-    from .polarization import polarization_tp2rl
-    
+
     # Convert to circular polarization components if not already
     if pattern.polarization in ['rhcp', 'lhcp']:
         e_r = pattern.data.e_co if pattern.polarization == 'rhcp' else pattern.data.e_cx

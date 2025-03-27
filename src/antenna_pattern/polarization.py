@@ -7,6 +7,7 @@ polarization representations (spherical, Ludwig-3, circular).
 import numpy as np
 import logging
 from typing import Tuple, Union
+from .utilities import frequency_to_wavelength
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -153,7 +154,6 @@ def phase_pattern_translate(frequency, theta, phi, translation, phase_pattern):
     Returns:
         ndarray: Shifted phase pattern
     """
-    from .utilities import frequency_to_wavelength
     
     wavelength = frequency_to_wavelength(frequency)
     wavenumber = 2 * np.pi / wavelength

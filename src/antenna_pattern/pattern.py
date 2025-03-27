@@ -13,6 +13,7 @@ from .polarization import (
     polarization_tp2xy, polarization_xy2pt, polarization_tp2rl, 
     polarization_rl2xy, polarization_rl2tp
 )
+from .analysis import translate_phase_pattern, find_phase_center, apply_mars, get_axial_ratio, calculate_beamwidth
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -256,8 +257,6 @@ class AntennaPattern:
         Raises:
             ValueError: If translation has incorrect shape
         """
-        from .analysis import translate_phase_pattern
-        
         # Delegate to the analysis module
         return translate_phase_pattern(self, translation)
     
@@ -275,8 +274,6 @@ class AntennaPattern:
         Returns:
             np.ndarray: [x, y, z] coordinates of the optimum phase center
         """
-        # Import here to avoid circular import
-        from .analysis import find_phase_center
         return find_phase_center(self, theta_angle, frequency)
     
     def shift_to_phase_center(self, theta_angle: float, frequency: Optional[float] = None) -> Tuple['AntennaPattern', np.ndarray]:
@@ -307,8 +304,7 @@ class AntennaPattern:
         Returns:
             AntennaPattern: New pattern with MARS algorithm applied
         """
-        # Import here to avoid circular import
-        from .analysis import apply_mars
+
         return apply_mars(self, maximum_radial_extent)
     
     def swap_polarization_axes(self) -> 'AntennaPattern':
@@ -410,8 +406,7 @@ class AntennaPattern:
         Returns:
             xr.DataArray: Axial ratio (linear scale)
         """
-        # Import here to avoid circular import
-        from .analysis import get_axial_ratio
+
         return get_axial_ratio(self)
     
     def calculate_beamwidth(self, frequency: Optional[float] = None, level_db: float = -3.0) -> Dict[str, float]:
@@ -425,8 +420,7 @@ class AntennaPattern:
         Returns:
             Dict[str, float]: Beamwidths in degrees for E and H planes
         """
-        # Import here to avoid circular import
-        from .analysis import calculate_beamwidth
+
         return calculate_beamwidth(self, frequency, level_db)
     
     def write_cut(self, file_path: Union[str, Path], polarization_format: int = 1) -> None:
