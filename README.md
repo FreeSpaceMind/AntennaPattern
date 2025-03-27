@@ -95,6 +95,9 @@ Apply the Mathematical Absorber Reflection Suppression algorithm to mitigate cha
 clean_pattern = pattern.apply_mars(maximum_radial_extent=0.5)
 ```
 
+## Usage with AI
+The AntennaPattern_reference.md file is intended to be a minimal instruction set to provide to AI models so that they can sucessfully use the AntennaPattern package.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
