@@ -1,14 +1,14 @@
 # AntennaPattern Package Reference
 
 ## Overview
-AntennaPattern is a standalone package extracted from AntPy containing all antenna pattern analysis functionality. It handles reading/writing patterns, polarization conversions, phase manipulations, and various analysis methods.
+AntennaPattern provides a class method for storing far field antenna patterns and performing antenna pattern analysis. It handles reading/writing patterns, polarization conversions, phase center analysis and manipulations, reflection supressions (using MARS) and various analysis methods.
 
 ## Package Structure
 ```
 antenna_pattern/
 ├── __init__.py
 ├── pattern.py       # AntennaPattern class
-├── io.py            # File I/O functions
+├── ant_io.py        # File I/O functions
 ├── polarization.py  # Polarization conversions
 ├── analysis.py      # Analysis functions
 └── utilities.py     # Common utilities
@@ -49,7 +49,7 @@ pattern.shift_to_phase_center(theta_angle: float, frequency: Optional[float] = N
 
 # Analysis
 pattern.apply_mars(maximum_radial_extent: float) -> AntennaPattern
-pattern.beamwidth_from_pattern(gain_pattern: np.ndarray, angles: np.ndarray, level_db: float = -3.0) -> float:
+pattern.beamwidth_from_pattern(gain_pattern: np.ndarray, angles: np.ndarray, level_db: float = -3.0) -> float
 pattern.calculate_beamwidth(frequency: Optional[float] = None, level_db: float = -3.0) -> Dict[str, float]
 pattern.get_gain_db(component: str = 'e_co') -> xr.DataArray
 pattern.get_phase(component: str = 'e_co', unwrapped: bool = False) -> xr.DataArray
@@ -110,13 +110,16 @@ wavelength_to_frequency(wavelength: Union[float, np.ndarray], dielectric_constan
 db_to_linear(db_value: Union[float, np.ndarray]) -> np.ndarray
 linear_to_db(linear_value: Union[float, np.ndarray]) -> np.ndarray
 beamwidth_from_pattern(gain_pattern: np.ndarray, angles: np.ndarray, level_db: float = -3.0) -> float
+find_nearest(array: np.ndarray, value: float) -> Tuple[Union[float, np.ndarray], Union[int, np.ndarray]]
 unwrap_phase(phase: np.ndarray, discont: float = np.pi) -> np.ndarray
+interpolate_crossing(x: np.ndarray, y: np.ndarray, threshold: float) -> float
 ```
 
 ## Key Dependencies
 - numpy
 - scipy
 - xarray
+- matplotlib (for visualizations)
 
 ## Import Examples
 ```python
@@ -130,6 +133,8 @@ from antenna_pattern import *
 ```
 
 ## Basic Usage Examples
+
+### Loading and Creating Patterns
 ```python
 # Load a pattern from a file
 pattern = read_ffd("antenna.ffd")
@@ -143,26 +148,124 @@ pattern = AntennaPattern(
     e_phi=e_phi_data,
     polarization="theta"
 )
+```
 
+### Analysis
+```python
 # Get gain in dB for co-pol component
 gain_db = pattern.get_gain_db('e_co')
 
 # Calculate beamwidth
 beamwidth = pattern.calculate_beamwidth(frequency=10e9, level_db=-3.0)
 print(f"E-plane beamwidth: {beamwidth['E_plane']:.2f} degrees")
+print(f"H-plane beamwidth: {beamwidth['H_plane']:.2f} degrees")
+print(f"Average beamwidth: {beamwidth['Average']:.2f} degrees")
 
 # Find phase center
 phase_center = pattern.find_phase_center(theta_angle=30.0, frequency=10e9)
+print(f"Phase center coordinates [x, y, z]: {phase_center}")
+```
 
+### Polarization Conversion
+```python
 # Create a new pattern with a different polarization
 rhcp_pattern = pattern.change_polarization("rhcp")
 
-# Translate pattern to phase center
-shifted_pattern, translation = pattern.shift_to_phase_center(theta_angle=30.0)
-
-# Apply MARS algorithm with 0.5m maximum radial extent
-cleaned_pattern = pattern.apply_mars(maximum_radial_extent=0.5)
-
-# Save pattern to NPZ with metadata
-save_pattern_npz(pattern, "antenna.npz", metadata={"source": "measurement"})
+# Get axial ratio of circularly polarized pattern
+axial_ratio = rhcp_pattern.get_axial_ratio()
 ```
+
+### Using the at_frequency Context Manager
+```python
+# Work with a single frequency from a multi-frequency pattern
+with pattern.at_frequency(10e9) as single_freq_pattern:
+    # All operations here will use only the 10 GHz slice
+    beamwidth = single_freq_pattern.calculate_beamwidth(level_db=-3.0)
+    phase_center = single_freq_pattern.find_phase_center(theta_angle=30.0)
+    
+    # Data manipulations only affect this view, not the original pattern
+    shifted_pattern = single_freq_pattern.translate([0, 0, 0.1])
+```
+
+### Method Chaining
+```python
+# Methods can be chained for a more streamlined workflow
+result_pattern = (
+    pattern
+    .change_polarization("rhcp")
+    .translate([0, 0, 0.1])
+    .apply_mars(maximum_radial_extent=0.5)
+)
+```
+
+
+### Visualization Example
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Plot gain patterns in principal planes
+def plot_pattern_cuts(pattern, frequency=None, level_db=-3.0):
+    # If frequency provided, use at_frequency context manager
+    if frequency is not None:
+        with pattern.at_frequency(frequency) as single_freq_pattern:
+            return plot_pattern_cuts(single_freq_pattern)
+    
+    # Get co-polarized gain
+    gain_db = pattern.get_gain_db('e_co')
+    
+    # Get indices for principal planes
+    phi_0_idx = np.argmin(np.abs(pattern.phi_angles - 0))
+    phi_90_idx = np.argmin(np.abs(pattern.phi_angles - 90))
+    
+    # Extract the cuts (use first frequency)
+    freq_idx = 0
+    e_plane = gain_db[freq_idx, :, phi_0_idx].values
+    h_plane = gain_db[freq_idx, :, phi_90_idx].values
+    
+    # Make the plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(pattern.theta_angles, e_plane, 'b-', label='E-Plane (φ=0°)')
+    plt.plot(pattern.theta_angles, h_plane, 'r-', label='H-Plane (φ=90°)')
+    
+    # Calculate beamwidth
+    beamwidth = pattern.calculate_beamwidth(level_db=level_db)
+    
+    # Plot beamwidth level
+    max_gain = np.max([np.max(e_plane), np.max(h_plane)])
+    bw_level = max_gain + level_db
+    plt.axhline(y=bw_level, color='k', linestyle='--', 
+                label=f'{-level_db} dB Beamwidth Level')
+    
+    plt.xlabel('Theta (deg)')
+    plt.ylabel('Gain (dB)')
+    plt.title(f'Antenna Pattern at {pattern.frequencies[freq_idx]/1e9:.2f} GHz')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    
+    # Add beamwidth annotation
+    plt.annotate(f'E-Plane BW: {beamwidth["E_plane"]:.1f}°\n'
+                 f'H-Plane BW: {beamwidth["H_plane"]:.1f}°', 
+                 xy=(0.02, 0.02), xycoords='axes fraction',
+                 bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
+    
+    return plt.gcf()
+
+# Example call
+fig = plot_pattern_cuts(pattern, frequency=10e9)
+plt.show()
+```
+
+## Common Pitfalls and Tips
+
+1. **Units**: Always use consistent units:
+   - Frequencies in Hz (not MHz or GHz)
+   - Angles in degrees (theta range -180 to 180, phi range 0 to 360)
+   - Distances in meters
+
+2. **Coordinate Systems**: 
+   - The package uses a right-handed coordinate system
+   - Z-axis is along boresight
+   - Theta is the angle from the z-axis (0° at boresight)
+   - Phi is the antenna head roll angle (0° along x-axis)

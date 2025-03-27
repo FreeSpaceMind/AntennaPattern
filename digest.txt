@@ -1,0 +1,2646 @@
+Directory structure:
+└── antenna_pattern/
+    ├── README.md
+    ├── AntennaPattern_reference.md
+    ├── LICENSE
+    ├── conftest.py
+    ├── install.py
+    ├── manifest.in
+    ├── pyproject.toml
+    ├── pytest.ini
+    ├── setup.py
+    ├── src/
+    │   └── antenna_pattern/
+    │       ├── __init__.py
+    │       ├── analysis.py
+    │       ├── ant_io.py
+    │       ├── pattern.py
+    │       ├── polarization.py
+    │       ├── utilities.py
+    │       └── __pycache__/
+    └── tests/
+        ├── __init__.py
+        └── test_antenna_pattern.py
+
+================================================
+File: README.md
+================================================
+# Antenna Pattern Library
+
+A comprehensive toolkit for antenna radiation pattern analysis including:
+
+- Reading and writing antenna patterns from various file formats
+- Polarization conversions between spherical, Ludwig-3, and circular coordinates
+- Phase center calculations and phase shifting
+- Pattern analysis tools (beamwidths, axial ratio, etc.)
+- MARS (Mathematical Absorber Reflection Suppression) algorithm
+
+## Installation
+
+### Option 1: Install from PyPI (recommended)
+
+```bash
+pip install antenna_pattern
+```
+
+### Option 2: Install from source
+
+#### Basic installation
+```bash
+git clone https://github.com/freespacemind/antenna_pattern.git
+cd antenna_pattern
+pip install -e .
+```
+
+#### Using the installation script
+```bash
+git clone https://github.com/freespacemind/antenna_pattern.git
+cd antenna_pattern
+python install.py
+```
+
+### Option 3: Direct installation from GitHub
+```bash
+pip install git+https://github.com/freespacemind/antenna_pattern.git
+```
+
+## Development Setup
+
+To set up a development environment:
+
+```bash
+# Clone repository
+git clone https://github.com/freespacemind/antenna_pattern.git
+cd antenna_pattern
+
+# Create and activate virtual environment (optional but recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install in development mode with test dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+```
+
+## Usage Example
+
+```python
+import numpy as np
+from antenna_pattern import AntennaPattern, read_cut, read_ffd
+
+# Load a pattern from a file
+pattern = read_ffd("my_pattern.ffd")
+
+# Or create a pattern with synthetic data
+theta = np.linspace(-180, 180, 361)
+phi = np.array([0, 45, 90, 135])
+frequency = np.array([10e9])  # 10 GHz
+
+# Create sample field components
+e_theta = np.zeros((1, len(theta), len(phi)), dtype=complex)
+e_phi = np.zeros((1, len(theta), len(phi)), dtype=complex)
+
+# Fill with a simple analytical pattern
+for p_idx, p_val in enumerate(phi):
+    e_theta[0, :, p_idx] = np.cos(np.radians(theta/2)) ** 2
+    e_phi[0, :, p_idx] = np.sin(np.radians(theta/2)) * np.sin(np.radians(p_val))
+
+# Create antenna pattern
+pattern = AntennaPattern(
+    theta=theta,
+    phi=phi,
+    frequency=frequency,
+    e_theta=e_theta,
+    e_phi=e_phi,
+    polarization="theta"
+)
+
+# Calculate beamwidth at 3dB level
+beamwidth = pattern.calculate_beamwidth(frequency=10e9, level_db=-3.0)
+print(f"E-plane beamwidth: {beamwidth['E_plane']:.2f} degrees")
+print(f"H-plane beamwidth: {beamwidth['H_plane']:.2f} degrees")
+
+# Find phase center
+phase_center = pattern.find_phase_center(theta_angle=30.0, frequency=10e9)
+print(f"Phase center: {phase_center} meters")
+
+# Create a new pattern with shifts
+shifted_pattern = pattern.translate(phase_center)
+```
+
+## Features
+
+### Polarization Conversions
+
+The library supports conversions between:
+- Spherical (Î¸, Ï†)
+- Ludwig-3 (x, y)
+- Circular (RHCP, LHCP)
+
+### Phase Center Analysis
+
+Find optimal phase centers to minimize phase variations across the beam:
+
+```python
+phase_center = pattern.find_phase_center(theta_angle=30.0)
+shifted_pattern = pattern.translate(phase_center)
+```
+
+### MARS Algorithm
+
+Apply the Mathematical Absorber Reflection Suppression algorithm to mitigate chamber reflections:
+
+```python
+# Apply MARS with a maximum radial extent of 0.5 meters
+clean_pattern = pattern.apply_mars(maximum_radial_extent=0.5)
+```
+
+## Usage with AI
+The AntennaPattern_reference.md file is intended to be a minimal instruction set to provide to AI models so that they can sucessfully use the AntennaPattern package.
+
+digest.txt is a full set of the codebase generated with gitingest, and can be provided if the AI tool requires more information.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+
+================================================
+File: AntennaPattern_reference.md
+================================================
+# AntennaPattern Package Reference
+
+## Overview
+AntennaPattern provides a class method for storing far field antenna patterns and performing antenna pattern analysis. It handles reading/writing patterns, polarization conversions, phase center analysis and manipulations, reflection supressions (using MARS) and various analysis methods.
+
+## Package Structure
+```
+antenna_pattern/
+â”œâ”€â”€ __init__.py
+â”œâ”€â”€ pattern.py       # AntennaPattern class
+â”œâ”€â”€ ant_io.py        # File I/O functions
+â”œâ”€â”€ polarization.py  # Polarization conversions
+â”œâ”€â”€ analysis.py      # Analysis functions
+â””â”€â”€ utilities.py     # Common utilities
+```
+
+## AntennaPattern Class
+
+### Constructor
+```python
+AntennaPattern(
+    theta: np.ndarray,               # Array of theta angles in degrees
+    phi: np.ndarray,                 # Array of phi angles in degrees
+    frequency: np.ndarray,           # Array of frequencies in Hz
+    e_theta: np.ndarray,             # Complex array of e_theta values [freq, theta, phi]
+    e_phi: np.ndarray,               # Complex array of e_phi values [freq, theta, phi]
+    polarization: Optional[str] = None  # Optional polarization type
+)
+```
+
+### Properties
+- `frequencies` - Array of frequencies in Hz
+- `theta_angles` - Array of theta angles in degrees
+- `phi_angles` - Array of phi angles in degrees
+- `polarization` - Current polarization type
+- `data` - xarray.Dataset containing pattern data with coordinates and variables
+
+### Key Methods
+```python
+# Pattern manipulation
+pattern.assign_polarization(polarization: str) -> None
+pattern.change_polarization(new_polarization: str) -> AntennaPattern
+pattern.translate(translation: np.ndarray) -> AntennaPattern
+pattern.swap_polarization_axes() -> AntennaPattern
+
+# Phase center
+pattern.find_phase_center(theta_angle: float, frequency: Optional[float] = None) -> np.ndarray
+pattern.shift_to_phase_center(theta_angle: float, frequency: Optional[float] = None) -> Tuple[AntennaPattern, np.ndarray]
+
+# Analysis
+pattern.apply_mars(maximum_radial_extent: float) -> AntennaPattern
+pattern.beamwidth_from_pattern(gain_pattern: np.ndarray, angles: np.ndarray, level_db: float = -3.0) -> float
+pattern.calculate_beamwidth(frequency: Optional[float] = None, level_db: float = -3.0) -> Dict[str, float]
+pattern.get_gain_db(component: str = 'e_co') -> xr.DataArray
+pattern.get_phase(component: str = 'e_co', unwrapped: bool = False) -> xr.DataArray
+pattern.get_polarization_ratio() -> xr.DataArray
+pattern.get_axial_ratio() -> xr.DataArray
+
+# I/O
+pattern.write_cut(file_path: Union[str, Path], polarization_format: int = 1) -> None
+
+# Utility
+pattern.clear_cache() -> None
+pattern.at_frequency(frequency: float) -> ContextManager  # Context manager for single-frequency view
+```
+
+## Valid Polarization Values
+- 'rhcp', 'rh', 'r' - Right-hand circular
+- 'lhcp', 'lh', 'l' - Left-hand circular
+- 'x', 'l3x' - Linear X (Ludwig's 3rd)
+- 'y', 'l3y' - Linear Y (Ludwig's 3rd)
+- 'theta' - Spherical theta
+- 'phi' - Spherical phi
+
+## File I/O Functions
+```python
+# Reading patterns
+read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end: float) -> AntennaPattern
+read_ffd(file_path: Union[str, Path]) -> AntennaPattern
+
+# Saving/loading NPZ
+save_pattern_npz(pattern: AntennaPattern, file_path: Union[str, Path], metadata: Optional[Dict[str, Any]] = None) -> None
+load_pattern_npz(file_path: Union[str, Path]) -> Tuple[AntennaPattern, Dict[str, Any]]
+```
+
+## Polarization Conversion Functions
+```python
+polarization_tp2xy(phi: RealArray, e_theta: ComplexArray, e_phi: ComplexArray) -> Tuple[ComplexArray, ComplexArray]
+polarization_xy2pt(phi: RealArray, e_x: ComplexArray, e_y: ComplexArray) -> Tuple[ComplexArray, ComplexArray]
+polarization_tp2rl(phi: RealArray, e_theta: ComplexArray, e_phi: ComplexArray) -> Tuple[ComplexArray, ComplexArray]
+polarization_rl2xy(e_right: ComplexArray, e_left: ComplexArray) -> Tuple[ComplexArray, ComplexArray]
+polarization_rl2tp(phi: RealArray, e_right: ComplexArray, e_left: ComplexArray) -> Tuple[ComplexArray, ComplexArray]
+phase_pattern_translate(frequency, theta, phi, translation, phase_pattern) -> np.ndarray
+```
+
+## Analysis Functions
+```python
+find_phase_center(pattern, theta_angle: float, frequency: Optional[float] = None) -> np.ndarray
+calculate_beamwidth(pattern, frequency: Optional[float] = None, level_db: float = -3.0) -> Dict[str, float]
+apply_mars(pattern, maximum_radial_extent: float) -> AntennaPattern
+translate_phase_pattern(pattern, translation) -> AntennaPattern
+principal_plane_phase_center(frequency, theta1, theta2, theta3, phase1, phase2, phase3) -> Tuple[np.ndarray, np.ndarray]
+get_axial_ratio(pattern) -> xr.DataArray
+```
+
+## Utility Functions
+```python
+frequency_to_wavelength(frequency: Union[float, np.ndarray], dielectric_constant: float = 1.0) -> np.ndarray
+wavelength_to_frequency(wavelength: Union[float, np.ndarray], dielectric_constant: float = 1.0) -> np.ndarray
+db_to_linear(db_value: Union[float, np.ndarray]) -> np.ndarray
+linear_to_db(linear_value: Union[float, np.ndarray]) -> np.ndarray
+beamwidth_from_pattern(gain_pattern: np.ndarray, angles: np.ndarray, level_db: float = -3.0) -> float
+find_nearest(array: np.ndarray, value: float) -> Tuple[Union[float, np.ndarray], Union[int, np.ndarray]]
+unwrap_phase(phase: np.ndarray, discont: float = np.pi) -> np.ndarray
+interpolate_crossing(x: np.ndarray, y: np.ndarray, threshold: float) -> float
+```
+
+## Key Dependencies
+- numpy
+- scipy
+- xarray
+- matplotlib (for visualizations)
+
+## Import Examples
+```python
+# Import specific components
+from antenna_pattern import AntennaPattern, read_cut, read_ffd
+from antenna_pattern import find_phase_center, calculate_beamwidth, apply_mars
+from antenna_pattern import polarization_tp2xy, polarization_tp2rl
+
+# Or import everything
+from antenna_pattern import *
+```
+
+## Basic Usage Examples
+
+### Loading and Creating Patterns
+```python
+# Load a pattern from a file
+pattern = read_ffd("antenna.ffd")
+
+# Create a pattern from data
+pattern = AntennaPattern(
+    theta=np.linspace(-180, 180, 361),
+    phi=np.array([0, 45, 90, 135]),
+    frequency=np.array([10e9]),  # 10 GHz
+    e_theta=e_theta_data,
+    e_phi=e_phi_data,
+    polarization="theta"
+)
+```
+
+### Analysis
+```python
+# Get gain in dB for co-pol component
+gain_db = pattern.get_gain_db('e_co')
+
+# Calculate beamwidth
+beamwidth = pattern.calculate_beamwidth(frequency=10e9, level_db=-3.0)
+print(f"E-plane beamwidth: {beamwidth['E_plane']:.2f} degrees")
+print(f"H-plane beamwidth: {beamwidth['H_plane']:.2f} degrees")
+print(f"Average beamwidth: {beamwidth['Average']:.2f} degrees")
+
+# Find phase center
+phase_center = pattern.find_phase_center(theta_angle=30.0, frequency=10e9)
+print(f"Phase center coordinates [x, y, z]: {phase_center}")
+```
+
+### Polarization Conversion
+```python
+# Create a new pattern with a different polarization
+rhcp_pattern = pattern.change_polarization("rhcp")
+
+# Get axial ratio of circularly polarized pattern
+axial_ratio = rhcp_pattern.get_axial_ratio()
+```
+
+### Using the at_frequency Context Manager
+```python
+# Work with a single frequency from a multi-frequency pattern
+with pattern.at_frequency(10e9) as single_freq_pattern:
+    # All operations here will use only the 10 GHz slice
+    beamwidth = single_freq_pattern.calculate_beamwidth(level_db=-3.0)
+    phase_center = single_freq_pattern.find_phase_center(theta_angle=30.0)
+    
+    # Data manipulations only affect this view, not the original pattern
+    shifted_pattern = single_freq_pattern.translate([0, 0, 0.1])
+```
+
+### Method Chaining
+```python
+# Methods can be chained for a more streamlined workflow
+result_pattern = (
+    pattern
+    .change_polarization("rhcp")
+    .translate([0, 0, 0.1])
+    .apply_mars(maximum_radial_extent=0.5)
+)
+```
+
+
+### Visualization Example
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Plot gain patterns in principal planes
+def plot_pattern_cuts(pattern, frequency=None, level_db=-3.0):
+    # If frequency provided, use at_frequency context manager
+    if frequency is not None:
+        with pattern.at_frequency(frequency) as single_freq_pattern:
+            return plot_pattern_cuts(single_freq_pattern)
+    
+    # Get co-polarized gain
+    gain_db = pattern.get_gain_db('e_co')
+    
+    # Get indices for principal planes
+    phi_0_idx = np.argmin(np.abs(pattern.phi_angles - 0))
+    phi_90_idx = np.argmin(np.abs(pattern.phi_angles - 90))
+    
+    # Extract the cuts (use first frequency)
+    freq_idx = 0
+    e_plane = gain_db[freq_idx, :, phi_0_idx].values
+    h_plane = gain_db[freq_idx, :, phi_90_idx].values
+    
+    # Make the plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(pattern.theta_angles, e_plane, 'b-', label='E-Plane (Ï†=0Â°)')
+    plt.plot(pattern.theta_angles, h_plane, 'r-', label='H-Plane (Ï†=90Â°)')
+    
+    # Calculate beamwidth
+    beamwidth = pattern.calculate_beamwidth(level_db=level_db)
+    
+    # Plot beamwidth level
+    max_gain = np.max([np.max(e_plane), np.max(h_plane)])
+    bw_level = max_gain + level_db
+    plt.axhline(y=bw_level, color='k', linestyle='--', 
+                label=f'{-level_db} dB Beamwidth Level')
+    
+    plt.xlabel('Theta (deg)')
+    plt.ylabel('Gain (dB)')
+    plt.title(f'Antenna Pattern at {pattern.frequencies[freq_idx]/1e9:.2f} GHz')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    
+    # Add beamwidth annotation
+    plt.annotate(f'E-Plane BW: {beamwidth["E_plane"]:.1f}Â°\n'
+                 f'H-Plane BW: {beamwidth["H_plane"]:.1f}Â°', 
+                 xy=(0.02, 0.02), xycoords='axes fraction',
+                 bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8))
+    
+    return plt.gcf()
+
+# Example call
+fig = plot_pattern_cuts(pattern, frequency=10e9)
+plt.show()
+```
+
+## Common Pitfalls and Tips
+
+1. **Units**: Always use consistent units:
+   - Frequencies in Hz (not MHz or GHz)
+   - Angles in degrees (theta range -180 to 180, phi range 0 to 360)
+   - Distances in meters
+
+2. **Coordinate Systems**: 
+   - The package uses a right-handed coordinate system
+   - Z-axis is along boresight
+   - Theta is the angle from the z-axis (0Â° at boresight)
+   - Phi is the antenna head roll angle (0Â° along x-axis)
+
+
+================================================
+File: LICENSE
+================================================
+MIT License
+
+Copyright (c) 2025 Justin Long
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+================================================
+File: conftest.py
+================================================
+"""
+Test configuration file for pytest.
+This file helps pytest discover the src module.
+"""
+import os
+import sys
+
+# Add the src directory to the path for test discovery
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'src'))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
+
+================================================
+File: install.py
+================================================
+#!/usr/bin/env python
+"""
+Installation script for antenna_pattern package.
+This script installs the package in development mode and runs tests.
+"""
+
+import os
+import subprocess
+import sys
+
+def main():
+    """Main installation function."""
+    # Get the directory of this script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    print("===== Installing antenna_pattern package =====")
+    print(f"Installation directory: {script_dir}")
+    
+    # Check if src directory exists
+    src_dir = os.path.join(script_dir, "src")
+    if not os.path.isdir(src_dir):
+        print(f"âœ— Error: Could not find src directory at {src_dir}")
+        print("  Make sure you're running this script from the project root.")
+        return 1
+    
+    # Install in development mode
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", "."], cwd=script_dir)
+        print("âœ“ Installation successful")
+    except subprocess.CalledProcessError:
+        print("âœ— Installation failed")
+        return 1
+    
+    # Run tests
+    print("\n===== Running tests =====")
+    try:
+        # Add src directory to PYTHONPATH for tests
+        env = os.environ.copy()
+        python_path = env.get("PYTHONPATH", "")
+        if python_path:
+            env["PYTHONPATH"] = f"{src_dir}{os.pathsep}{python_path}"
+        else:
+            env["PYTHONPATH"] = src_dir
+            
+        subprocess.check_call([sys.executable, "-m", "pytest", "tests"], cwd=script_dir, env=env)
+        print("âœ“ Tests passed")
+    except subprocess.CalledProcessError:
+        print("âœ— Some tests failed")
+        return 1
+    
+    print("\n===== Installation complete =====")
+    print("antenna_pattern is now installed in development mode.")
+    print("You can import it in your Python code with: import antenna_pattern")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+================================================
+File: manifest.in
+================================================
+include LICENSE
+include README.md
+include pyproject.toml
+
+recursive-include src *
+recursive-include tests *
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+
+
+================================================
+File: pyproject.toml
+================================================
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 88
+target-version = ['py37', 'py38', 'py39', 'py310']
+include = '\.pyi?$'
+src_paths = ["src", "tests"]
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+src_paths = ["src", "tests"]
+
+[tool.pytest]
+testpaths = ["tests"]
+
+
+================================================
+File: pytest.ini
+================================================
+[pytest]
+testpaths = tests
+python_files = test_*.py
+python_functions = test_*
+
+
+================================================
+File: setup.py
+================================================
+#!/usr/bin/env python
+from setuptools import setup, find_packages
+
+with open('README.md', 'r', encoding='utf-8') as f:
+    long_description = f.read()
+
+setup(
+    name='antenna_pattern',
+    version='0.1.0',
+    description='Core functionality for antenna pattern analysis',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    author='Justin Long',
+    author_email='justinwlong1@gmail.com',
+    url='https://github.com/freespacemind/antenna_pattern',
+    package_dir={"": "src"},
+    packages=find_packages(where="src"),
+    install_requires=[
+        'numpy>=1.20.0',
+        'scipy>=1.7.0',
+        'xarray>=0.19.0',
+        'matplotlib>=3.4.0',  # For visualizations
+    ],
+    extras_require={
+        'dev': [
+            'pytest>=6.0.0',
+            'pytest-cov>=2.10.0',
+            'black>=20.8b1',
+            'flake8>=3.8.0',
+            'isort>=5.0.0',
+        ],
+    },
+    python_requires='>=3.7',
+    classifiers=[
+        'Development Status :: 4 - Beta',
+        'Intended Audience :: Science/Research',
+        'Topic :: Scientific/Engineering :: Physics',
+        'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+    ],
+    keywords='antenna, electromagnetics, pattern, radiation, analysis',
+)
+
+
+================================================
+File: src/antenna_pattern/__init__.py
+================================================
+"""
+AntennaPattern package - Core functionality for antenna pattern analysis.
+
+This package provides the AntennaPattern class and related functions for
+working with antenna radiation patterns, including reading/writing patterns,
+polarization conversions, and analysis tools.
+"""
+
+__version__ = '0.1.0'
+__author__ = 'Justin Long'
+__email__ = 'justinwlong1@gmail.com'
+
+# Import key classes and functions to make them available at the package level
+from .pattern import AntennaPattern
+from .ant_io import read_cut, read_ffd, load_pattern_npz, save_pattern_npz
+from .polarization import (
+    polarization_tp2xy,
+    polarization_xy2pt,
+    polarization_tp2rl,
+    polarization_rl2xy,
+    polarization_rl2tp
+)
+from .analysis import (
+    find_phase_center,
+    translate_phase_pattern,
+    beamwidth_from_pattern,
+    calculate_beamwidth,
+    apply_mars,
+    get_axial_ratio
+)
+from .utilities import (
+    find_nearest,
+    frequency_to_wavelength,
+    lightspeed,
+    freespace_permittivity,
+    db_to_linear,
+    linear_to_db
+)
+
+# Define what gets imported with "from antenna_pattern import *"
+__all__ = [
+    'AntennaPattern',
+    'read_cut',
+    'read_ffd',
+    'load_pattern_npz',
+    'save_pattern_npz',
+    'polarization_tp2xy',
+    'polarization_xy2pt',
+    'polarization_tp2rl',
+    'polarization_rl2xy',
+    'polarization_rl2tp',
+    'find_phase_center',
+    'translate_phase_pattern',
+    'beamwidth_from_pattern',
+    'calculate_beamwidth',
+    'apply_mars',
+    'get_axial_ratio',
+    'find_nearest',
+    'frequency_to_wavelength',
+    'lightspeed',
+    'freespace_permittivity',
+    'db_to_linear',
+    'linear_to_db'
+]
+
+
+================================================
+File: src/antenna_pattern/analysis.py
+================================================
+"""
+Analysis functions for antenna radiation patterns.
+"""
+import numpy as np
+import logging
+from scipy import optimize
+from typing import Dict, Tuple, Optional, List, Union
+import xarray as xr
+
+from .utilities import find_nearest, unwrap_phase, frequency_to_wavelength
+from .polarization import phase_pattern_translate, polarization_tp2rl
+from .utilities import lightspeed, interpolate_crossing
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+
+def find_phase_center(pattern, theta_angle: float, frequency: Optional[float] = None) -> np.ndarray:
+    """
+    Finds the optimum phase center given a theta angle and frequency.
+    
+    The optimum phase center is the point that, when used as the origin,
+    minimizes the phase variation across the beam from -theta_angle to +theta_angle.
+    
+    Args:
+        pattern: AntennaPattern object
+        theta_angle: Angle in degrees to optimize phase center for
+        frequency: Optional specific frequency to use, or None to use all frequencies
+    
+    Returns:
+        np.ndarray: [x, y, z] coordinates of the optimum phase center
+    """
+    # Validate theta_angle
+    if (theta_angle < 0 or theta_angle > np.max(pattern.theta_angles)):
+        logger.warning(f"Theta angle {theta_angle} is outside the available range [0, {np.max(pattern.theta_angles)}]")
+        theta_angle = min(max(0, theta_angle), np.max(pattern.theta_angles))
+        
+    # Get data arrays
+    freq_array = pattern.data.frequency.values
+    theta_array = pattern.data.theta.values
+    phi_array = pattern.data.phi.values
+    
+    # Handle frequency selection
+    if frequency is None:
+        freq_idx = 0
+        freq = freq_array[freq_idx]
+    else:
+        freq_val, freq_idx = find_nearest(freq_array, frequency)
+        if isinstance(freq_idx, np.ndarray):
+            freq_idx = freq_idx.item()
+        freq = freq_array[freq_idx]
+    
+    # Find the indices corresponding to +/- theta_angle
+    theta_n, idx_n = find_nearest(theta_array, -theta_angle)
+    theta_p, idx_p = find_nearest(theta_array, theta_angle)
+    
+    if isinstance(idx_n, np.ndarray):
+        idx_n = idx_n.item()
+    if isinstance(idx_p, np.ndarray):
+        idx_p = idx_p.item()
+    
+    # Get unwrapped phase data for co-polarization
+    co_pol_phase = np.angle(pattern.data.e_co.values[freq_idx])
+    co_pol_phase_unwrap = unwrap_phase(co_pol_phase, discont=np.pi)
+    
+    # Define a cost function for optimization
+    def phase_spread_cost(translation):
+        """Calculate phase spread after applying translation."""
+        # Convert theta and phi to radians for phase_pattern_translate
+        theta_rad = np.radians(theta_array)
+        phi_rad = np.radians(phi_array)
+        
+        # Apply the translation to the phase pattern
+        translated_phase = phase_pattern_translate(
+            freq, theta_rad, phi_rad, translation, co_pol_phase_unwrap)
+        
+        # Extract the region of interest (+/- theta_angle)
+        roi = translated_phase[idx_n:idx_p+1, :]
+        
+        # Unwrap the phase again AFTER translation
+        unwrapped_roi = np.zeros_like(roi)
+        for phi_idx in range(roi.shape[1]):
+            unwrapped_roi[:, phi_idx] = unwrap_phase(roi[:, phi_idx], discont=np.pi)
+        
+        # Calculate the total phase spread across all phi cuts
+        phase_min = np.min(unwrapped_roi)
+        phase_max = np.max(unwrapped_roi)
+        spread = phase_max - phase_min
+        
+        return spread
+    
+    # Use Nelder-Mead optimizer
+    initial_guess = np.zeros(3)
+    
+    result = optimize.minimize(
+        phase_spread_cost, 
+        initial_guess,
+        method='Nelder-Mead',
+        options={'maxiter': 100, 'xatol': 1e-4, 'fatol': 1e-4}
+    )
+    
+    if result.success:
+        translation = result.x
+    else:
+        logger.warning(f"Optimization did not converge: {result.message}")
+        translation = result.x  # Still use the best result found
+    
+    # Check for reasonable results
+    if np.any(np.isnan(translation)) or np.any(np.isinf(translation)):
+        logger.warning("Optimization returned invalid values, using zeros")
+        translation = np.zeros(3)
+        
+    # Limit to reasonable range
+    max_value = 2  # 2 meters
+    if np.any(np.abs(translation) > max_value):
+        logger.warning(f"Limiting excessive translation values: {translation}")
+        translation = np.clip(translation, -max_value, max_value)
+        
+    return translation
+
+def beamwidth_from_pattern(gain_pattern: np.ndarray, angles: np.ndarray, level_db: float = -3.0) -> float:
+    """
+    Calculate beamwidth at specified level from a gain pattern.
+    
+    Args:
+        gain_pattern: Gain pattern in dB
+        angles: Corresponding angle values in degrees
+        level_db: Level relative to maximum at which to measure beamwidth (default: -3 dB)
+    
+    Returns:
+        Beamwidth in degrees
+        
+    Raises:
+        ValueError: If pattern or angles array is empty
+        ValueError: If no points at or below the specified level are found
+    """
+    if len(gain_pattern) == 0 or len(angles) == 0:
+        raise ValueError("Input arrays cannot be empty")
+    
+    if len(gain_pattern) != len(angles):
+        raise ValueError(f"Length mismatch: gain_pattern ({len(gain_pattern)}) != angles ({len(angles)})")
+    
+    # Find the maximum gain value and its index
+    max_gain = np.max(gain_pattern)
+    threshold = max_gain + level_db
+    
+    # Find indices where the gain crosses the threshold
+    above_threshold = gain_pattern >= threshold
+    
+    # Find the transition points (where the boolean array changes from True to False or vice versa)
+    transitions = np.where(np.diff(above_threshold))[0]
+    
+    if len(transitions) < 2:
+        raise ValueError(f"Could not find two crossing points at {level_db} dB level")
+    
+    # For multiple crossings, use the widest crossing points around the maximum
+    max_idx = np.argmax(gain_pattern)
+    
+    # Find crossing points before and after the maximum
+    left_crossings = transitions[transitions < max_idx]
+    right_crossings = transitions[transitions > max_idx]
+    
+    if len(left_crossings) == 0 or len(right_crossings) == 0:
+        raise ValueError(f"Maximum is too close to the edge of the pattern - could not find crossings on both sides")
+    
+    left_idx = left_crossings[-1]
+    right_idx = right_crossings[0]
+    
+    # Interpolate to find the exact angles where the pattern crosses the threshold
+    left_angle = interpolate_crossing(angles[left_idx:left_idx+2], gain_pattern[left_idx:left_idx+2], threshold)
+    right_angle = interpolate_crossing(angles[right_idx:right_idx+2], gain_pattern[right_idx:right_idx+2], threshold)
+    
+    # Calculate beamwidth
+    beamwidth = abs(right_angle - left_angle)
+    
+    return beamwidth
+
+def calculate_beamwidth(pattern, frequency: Optional[float] = None, level_db: float = -3.0) -> Dict[str, float]:
+    """
+    Calculate the beamwidth at specified level for principal planes.
+    
+    Args:
+        pattern: AntennaPattern object
+        frequency: Optional frequency to calculate beamwidth for, or None for all
+        level_db: Level relative to maximum at which to measure beamwidth (default: -3 dB)
+        
+    Returns:
+        Dict[str, float]: Beamwidths in degrees for E and H planes
+    """
+    # Handle frequency selection
+    if frequency is not None:
+        with pattern.at_frequency(frequency) as single_freq_pattern:
+            return calculate_beamwidth(single_freq_pattern, level_db=level_db)
+    
+    # Get the gain in dB
+    gain_db = pattern.get_gain_db('e_co')
+    
+    # Find the maximum gain and its indices
+    max_gain = gain_db.max()
+    max_indices = np.unravel_index(np.argmax(gain_db.values), gain_db.shape)
+    max_freq_idx, max_theta_idx, max_phi_idx = max_indices
+    
+    # Get closest cardinal plane indices
+    phi_0_idx = find_nearest(pattern.phi_angles, 0)[1]
+    phi_90_idx = find_nearest(pattern.phi_angles, 90)[1]
+    
+    # E-plane cut (phi = 0Â° or closest)
+    e_plane_cut = gain_db[max_freq_idx, :, phi_0_idx].values
+    
+    # H-plane cut (phi = 90Â° or closest)
+    h_plane_cut = gain_db[max_freq_idx, :, phi_90_idx].values
+    
+    # Calculate beamwidths using utility function
+    e_plane_bw = beamwidth_from_pattern(e_plane_cut, pattern.theta_angles, level_db)
+    h_plane_bw = beamwidth_from_pattern(h_plane_cut, pattern.theta_angles, level_db)
+    
+    return {
+        'E_plane': e_plane_bw,
+        'H_plane': h_plane_bw,
+        'Average': (e_plane_bw + h_plane_bw) / 2
+    }
+
+def apply_mars(pattern, maximum_radial_extent: float):
+    """
+    Apply Mathematical Absorber Reflection Suppression technique.
+    
+    The MARS algorithm transforms antenna measurement data to mitigate reflections
+    from the measurement chamber. It is particularly effective for electrically
+    large antennas.
+    
+    Args:
+        pattern: AntennaPattern object
+        maximum_radial_extent: Maximum radial extent of the antenna in meters
+        
+    Returns:
+        New AntennaPattern with MARS algorithm applied
+    """
+    
+    if maximum_radial_extent <= 0:
+        raise ValueError("Maximum radial extent must be positive")
+    
+    frequency = pattern.data.frequency.values
+    theta = pattern.data.theta.values
+    phi = pattern.data.phi.values
+    e_theta = pattern.data.e_theta.values
+    e_phi = pattern.data.e_phi.values
+    
+    # Initialize outputs
+    e_theta_new = np.empty_like(e_theta)
+    e_phi_new = np.empty_like(e_phi)
+    
+    # Apply MARS algorithm
+    for f_idx, f in enumerate(frequency):
+        # Calculate wavenumber and coefficients range
+        wavenumber = 2 * np.pi * f / lightspeed
+        max_coefficients = int(np.floor(wavenumber * maximum_radial_extent))
+        coefficients = np.arange(-max_coefficients, max_coefficients + 1, 1)
+        
+        # Create arrays for theta in radians
+        theta_rad = np.radians(theta)
+        
+        # Initialize storage arrays for cylindrical coefficients
+        CMC_1_sum = np.zeros_like(e_theta[f_idx, :, :], dtype=complex)
+        CMC_2_sum = np.zeros_like(e_phi[f_idx, :, :], dtype=complex)
+        
+        # Precompute exponential terms for efficiency
+        exp_terms = np.zeros((len(coefficients), len(theta)), dtype=complex)
+        for n_idx, n in enumerate(coefficients):
+            exp_terms[n_idx, :] = np.exp(-1j * n * theta_rad)
+        
+        # Process each coefficient
+        for n_idx, n in enumerate(coefficients):
+            # Compute mode coefficient for theta component
+            CMC_1 = (
+                -1 * ((-1j) ** (-n)) / (4 * np.pi * wavenumber) *
+                np.trapz(
+                    (e_theta[f_idx, :, :].transpose() * exp_terms[n_idx, :]).transpose(),
+                    theta_rad, axis=0
+                )
+            )
+            
+            # Compute mode coefficient for phi component
+            CMC_2 = (
+                -1j * ((-1j) ** (-n)) / (4 * np.pi * wavenumber) *
+                np.trapz(
+                    (e_phi[f_idx, :, :].transpose() * exp_terms[n_idx, :]).transpose(),
+                    theta_rad, axis=0
+                )
+            )
+            
+            # Sum the modes
+            CMC_1_term = np.outer(exp_terms[n_idx, :], (-1j) ** n * CMC_1)
+            CMC_2_term = np.outer(exp_terms[n_idx, :], (-1j) ** n * CMC_2)
+            
+            CMC_1_sum += CMC_1_term
+            CMC_2_sum += CMC_2_term
+        
+        # Compute final field components
+        e_phi_new[f_idx, :, :] = 2 * 1j * wavenumber * CMC_2_sum
+        e_theta_new[f_idx, :, :] = -2 * wavenumber * CMC_1_sum
+    
+    # Flip the theta axis because of coordinate system difference from reference
+    e_theta_flipped = np.flip(e_theta_new, axis=1)
+    e_phi_flipped = np.flip(e_phi_new, axis=1)
+    
+    # Import here to avoid circular import
+    from .pattern import AntennaPattern
+    
+    return AntennaPattern(
+        theta=theta,
+        phi=phi,
+        frequency=frequency,
+        e_theta=e_theta_flipped,
+        e_phi=e_phi_flipped,
+        polarization=pattern.polarization
+    )
+
+
+def translate_phase_pattern(pattern, translation):
+    """
+    Shifts the antenna phase pattern to place the origin at the location defined by the shift.
+    
+    Args:
+        pattern: AntennaPattern object to translate
+        translation: [x, y, z] translation vector in meters
+        
+    Returns:
+        AntennaPattern: New pattern with translated phase
+    """
+    
+    # Get underlying numpy arrays
+    frequency = pattern.data.frequency.values
+    theta = pattern.data.theta.values
+    phi = pattern.data.phi.values
+    e_theta = pattern.data.e_theta.values
+    e_phi = pattern.data.e_phi.values
+    
+    # Get amplitude and phase components
+    e_theta_phase = np.angle(e_theta)
+    e_phi_phase = np.angle(e_phi)
+    e_theta_mag = np.abs(e_theta)
+    e_phi_mag = np.abs(e_phi)
+    
+    # Convert angles to radians
+    theta_rad = np.radians(theta)
+    phi_rad = np.radians(phi)
+    
+    # Apply translation to phase patterns
+    e_theta_phase_new = phase_pattern_translate(
+        frequency, theta_rad, phi_rad, translation, e_theta_phase
+    )
+    e_phi_phase_new = phase_pattern_translate(
+        frequency, theta_rad, phi_rad, translation, e_phi_phase
+    )
+    
+    # Reconstruct complex values
+    e_theta_new = e_theta_mag * np.exp(1j * e_theta_phase_new)
+    e_phi_new = e_phi_mag * np.exp(1j * e_phi_phase_new)
+    
+    # Import here to avoid circular import
+    from .pattern import AntennaPattern
+    
+    # Create new antenna pattern
+    return AntennaPattern(
+        theta=theta,
+        phi=phi,
+        frequency=frequency,
+        e_theta=e_theta_new,
+        e_phi=e_phi_new,
+        polarization=pattern.polarization
+    )
+
+
+def principal_plane_phase_center(frequency, theta1, theta2, theta3, phase1, phase2, phase3):
+    """
+    Calculate phase center using three points on a principal plane.
+    
+    Args:
+        frequency: Frequency in Hz
+        theta1: Theta angle (radians) of first point
+        theta2: Theta angle (radians) of second point
+        theta3: Theta angle (radians) of third point
+        phase1: Phase (radians) of first point
+        phase2: Phase (radians) of second point
+        phase3: Phase (radians) of third point
+        
+    Returns:
+        Tuple[ndarray, ndarray]: Planar and z-axis displacement
+    """
+    
+    wavelength = frequency_to_wavelength(frequency)
+    wavenumber = 2 * np.pi / wavelength
+    
+    # Ensure all inputs are arrays
+    if np.isscalar(theta1): theta1 = np.array([theta1])
+    if np.isscalar(theta2): theta2 = np.array([theta2])
+    if np.isscalar(theta3): theta3 = np.array([theta3])
+    if np.isscalar(phase1): phase1 = np.array([phase1])
+    if np.isscalar(phase2): phase2 = np.array([phase2])
+    if np.isscalar(phase3): phase3 = np.array([phase3])
+    
+    # Compute denominators first to check for division by zero
+    denom1 = ((np.cos(theta2) - np.cos(theta3)) * (np.sin(theta2) - np.sin(theta1))) - \
+            ((np.cos(theta2) - np.cos(theta1)) * (np.sin(theta2) - np.sin(theta3)))
+    
+    # Avoid division by zero
+    if np.any(np.abs(denom1) < 1e-10):
+        logger.warning("Small denominator detected in phase center calculation")
+        denom1 = np.where(np.abs(denom1) < 1e-10, 1e-10 * np.sign(denom1), denom1)
+    
+    planar_displacement = (1 / wavenumber) * (
+        (
+            ((phase2 - phase1) * (np.cos(theta2) - np.cos(theta3)))
+            - ((phase2 - phase3) * (np.cos(theta2) - np.cos(theta1)))
+        ) / denom1
+    )
+    
+    zaxis_displacement = (1 / wavenumber) * (
+        (
+            ((phase2 - phase3) * (np.sin(theta2) - np.sin(theta1)))
+            - ((phase2 - phase1) * (np.sin(theta2) - np.sin(theta3)))
+        ) / denom1
+    )
+        
+    # Check for invalid results
+    if np.any(np.isnan(planar_displacement)) or np.any(np.isinf(planar_displacement)) or \
+        np.any(np.isnan(zaxis_displacement)) or np.any(np.isinf(zaxis_displacement)):
+        logger.warning("Phase center calculation produced invalid values")
+        return np.zeros_like(planar_displacement), np.zeros_like(zaxis_displacement)
+    
+    return planar_displacement.flatten(), zaxis_displacement.flatten()
+
+
+def get_axial_ratio(pattern):
+    """
+    Calculate the axial ratio (ratio of major to minor axis of polarization ellipse).
+    
+    Args:
+        pattern: AntennaPattern object
+        
+    Returns:
+        xr.DataArray: Axial ratio (linear scale)
+    """
+
+    # Convert to circular polarization components if not already
+    if pattern.polarization in ['rhcp', 'lhcp']:
+        e_r = pattern.data.e_co if pattern.polarization == 'rhcp' else pattern.data.e_cx
+        e_l = pattern.data.e_cx if pattern.polarization == 'rhcp' else pattern.data.e_co
+    else:
+        # Need to calculate circular components
+        e_r, e_l = polarization_tp2rl(
+            pattern.data.phi.values,
+            pattern.data.e_theta.values, 
+            pattern.data.e_phi.values
+        )
+        e_r = xr.DataArray(
+            e_r, 
+            dims=pattern.data.e_theta.dims,
+            coords=pattern.data.e_theta.coords
+        )
+        e_l = xr.DataArray(
+            e_l, 
+            dims=pattern.data.e_theta.dims,
+            coords=pattern.data.e_theta.coords
+        )
+    
+    # Calculate axial ratio
+    er_mag = np.abs(e_r)
+    el_mag = np.abs(e_l)
+    
+    # Handle pure circular polarization case
+    min_val = 1e-15
+    er_mag = xr.where(er_mag < min_val, min_val, er_mag)
+    el_mag = xr.where(el_mag < min_val, min_val, el_mag)
+    
+    # Calculate axial ratio
+    return (er_mag + el_mag) / np.maximum(np.abs(er_mag - el_mag), min_val)
+
+
+================================================
+File: src/antenna_pattern/ant_io.py
+================================================
+"""
+File input/output functions for antenna radiation patterns.
+"""
+
+import logging
+import numpy as np
+import json
+from pathlib import Path
+from typing import Dict, Optional, Union, Any, Tuple
+
+from .pattern import AntennaPattern
+from .polarization import polarization_rl2tp, polarization_xy2pt
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+
+def save_pattern_npz(pattern, file_path: Union[str, Path], metadata: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Save an antenna pattern to NPZ format for efficient loading.
+    
+    Args:
+        pattern: AntennaPattern object to save
+        file_path: Path to save the file to
+        metadata: Optional metadata to include
+        
+    Raises:
+        OSError: If file cannot be written
+    """
+    file_path = Path(file_path)
+    
+    # Ensure .npz extension
+    if file_path.suffix.lower() != '.npz':
+        file_path = file_path.with_suffix('.npz')
+    
+    # Extract data from pattern
+    theta = pattern.theta_angles
+    phi = pattern.phi_angles
+    frequency = pattern.frequencies
+    e_theta = pattern.data.e_theta.values
+    e_phi = pattern.data.e_phi.values
+    
+    # Create metadata dictionary
+    meta_dict = {
+        'polarization': pattern.polarization,
+        'version': '1.0',
+        'format': 'AntPy Pattern NPZ'
+    }
+    
+    # Add additional metadata if provided
+    if metadata:
+        meta_dict.update(metadata)
+    
+    # Convert metadata to JSON string
+    meta_json = json.dumps(meta_dict)
+    
+    # Save data to NPZ file
+    np.savez_compressed(
+        file_path,
+        theta=theta,
+        phi=phi,
+        frequency=frequency,
+        e_theta=e_theta,
+        e_phi=e_phi,
+        metadata=meta_json
+    )
+    logger.info(f"Pattern saved to {file_path}")
+
+
+def load_pattern_npz(file_path: Union[str, Path]) -> Tuple:
+    """
+    Load an antenna pattern from NPZ format.
+    
+    Args:
+        file_path: Path to the NPZ file
+        
+    Returns:
+        Tuple containing (pattern, metadata)
+        
+    Raises:
+        FileNotFoundError: If file does not exist
+        ValueError: If file format is invalid
+    """
+    
+    file_path = Path(file_path)
+    
+    if not file_path.exists():
+        raise FileNotFoundError(f"Pattern file not found: {file_path}")
+    
+    # Load data from NPZ file
+    with np.load(file_path, allow_pickle=False) as data:
+        theta = data['theta']
+        phi = data['phi']
+        frequency = data['frequency']
+        e_theta = data['e_theta']
+        e_phi = data['e_phi']
+        
+        # Load metadata
+        metadata_json = str(data['metadata'])
+        metadata = json.loads(metadata_json)
+        
+        polarization = metadata.get('polarization')
+        
+        # Create AntennaPattern object
+        pattern = AntennaPattern(
+            theta=theta,
+            phi=phi,
+            frequency=frequency,
+            e_theta=e_theta,
+            e_phi=e_phi,
+            polarization=polarization
+        )
+        
+        logger.info(f"Pattern loaded from {file_path}")
+        return pattern, metadata
+
+
+def read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end: float):
+    """
+    Read an antenna CUT file and store it in an AntennaPattern.
+    
+    Optimized version with faster file reading and data processing.
+    
+    Args:
+        file_path: Path to the CUT file
+        frequency_start: Frequency of first pattern in Hz
+        frequency_end: Frequency of last pattern in Hz
+        
+    Returns:
+        AntennaPattern: The imported antenna pattern
+    """
+    
+    # Validate inputs
+    file_path = Path(file_path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"CUT file not found: {file_path}")
+    
+    if frequency_start <= 0 or frequency_end <= 0:
+        raise ValueError("Frequencies must be positive")
+    if frequency_start > frequency_end:
+        raise ValueError("frequency_start must be less than or equal to frequency_end")
+    
+    # Read entire file at once for faster processing
+    with open(file_path, "r") as reader:
+        lines = reader.readlines()
+    
+    total_lines = len(lines)
+    line_index = 0
+    
+    # Use lists with pre-estimated size for better performance
+    estimated_phi_count = 36  # Typical number of phi cuts
+    estimated_freq_count = 5  # Typical number of frequencies
+    estimated_theta_count = 181  # Typical number of theta points
+    
+    phi = []
+    ya_data = []
+    yb_data = []
+    
+    # Use NumPy arrays to store theta array once
+    theta = None
+    icomp = None
+    
+    # Preallocate header info
+    theta_start = 0
+    theta_increment = 0
+    theta_length = 0
+    
+    # Scan file structure to determine pattern dimensions
+    # First pass to determine dimensions
+    first_pass = True
+    phi_values = set()
+    header_count = 0
+    
+    if first_pass:
+        while line_index < min(1000, total_lines):  # Just scan the first part of the file
+            if "MHz" in lines[line_index]:
+                line_index += 1
+                if line_index >= total_lines:
+                    break
+                    
+                # This should be a header line
+                header_parts = lines[line_index].strip().split()
+                if len(header_parts) >= 5:
+                    header_count += 1
+                    phi_values.add(float(header_parts[3]))
+                
+            line_index += 1
+        
+        # Reset line index for main parsing
+        line_index = 0
+        first_pass = False
+        
+        # Estimate dimensions more accurately
+        estimated_phi_count = len(phi_values)
+        
+        if header_count > 0:
+            estimated_freq_count = header_count // estimated_phi_count
+    
+    # Main parsing - optimized for speed
+    title_flag = False
+    header_flag = True
+    first_flag = True
+    data_counter = 0
+    line_data_a = []
+    line_data_b = []
+    
+    while line_index < total_lines:
+        # Skip initial line
+        if line_index == 0:
+            line_index += 1
+            continue
+            
+        data_str = lines[line_index]
+        line_index += 1
+        
+        if "MHz" in data_str:
+            # New frequency section begins
+            header_flag = True
+            continue
+            
+        if header_flag:
+            # Parse header efficiently
+            header_parts = data_str.strip().split()
+            if len(header_parts) < 5:
+                continue
+                
+            theta_length = int(header_parts[2])
+            phi.append(float(header_parts[3]))
+            
+            if first_flag:
+                theta_start = float(header_parts[0])
+                theta_increment = float(header_parts[1])
+                theta = np.linspace(
+                    theta_start,
+                    theta_start + (theta_length - 1) * theta_increment,
+                    theta_length
+                )
+                icomp = int(header_parts[4])
+                if icomp not in [1, 2, 3]:
+                    raise ValueError(f"Invalid polarization format (ICOMP): {icomp}")
+                first_flag = False
+            
+            # Preallocate data arrays for this section
+            line_data_a = []
+            line_data_b = []
+            
+            data_counter = theta_length
+            header_flag = False
+        else:
+            parts = np.fromstring(data_str, dtype=float, sep=" ")
+            if len(parts) >= 4:
+                line_data_a.append(complex(parts[0], parts[1]))
+                line_data_b.append(complex(parts[2], parts[3]))
+                data_counter -= 1
+                
+                if data_counter == 0:
+                    header_flag = True
+                    ya_data.append(line_data_a)
+                    yb_data.append(line_data_b)
+
+    # Consistency checks
+    if len(ya_data) == 0 or len(yb_data) == 0:
+        raise ValueError("No valid data found in CUT file")
+    
+    # Make frequency vector more accurately
+    phi_array = np.array(phi)
+    unique_phi = np.sort(np.unique(phi_array))
+    freq_num = len(ya_data) // len(unique_phi)
+    
+    if freq_num <= 0:
+        raise ValueError(f"Invalid frequency count: {freq_num}")
+    
+    frequency = np.linspace(frequency_start, frequency_end, freq_num)
+    
+    # Convert to numpy arrays efficiently - specify dtype for better performance
+    ya_np = np.array(ya_data, dtype=complex)
+    yb_np = np.array(yb_data, dtype=complex)
+    
+    # Determine the correct shape
+    num_theta = len(theta)
+    num_phi = len(unique_phi)
+    
+    # Use optimized reshape approach with direct indexing
+    e_theta = np.zeros((freq_num, num_theta, num_phi), dtype=complex)
+    e_phi = np.zeros((freq_num, num_theta, num_phi), dtype=complex)
+    
+    # Custom reshape logic for the specific data structure
+    for i in range(len(ya_data)):
+        freq_idx = i // num_phi
+        phi_idx = i % num_phi
+        
+        if freq_idx < freq_num and phi_idx < num_phi:
+            e_theta[freq_idx, :, phi_idx] = ya_data[i]
+            e_phi[freq_idx, :, phi_idx] = yb_data[i]
+    
+    # Convert polarizations based on icomp
+    if icomp == 1:
+        # Polarization is theta, phi - already in right form
+        pass
+    elif icomp == 2:
+        # Polarization is right and left - vectorized conversion
+        for phi_idx, phi_val in enumerate(unique_phi):
+            theta_slice, phi_slice = polarization_rl2tp(
+                phi_val, 
+                e_theta[:, :, phi_idx], 
+                e_phi[:, :, phi_idx]
+            )
+            e_theta[:, :, phi_idx] = theta_slice
+            e_phi[:, :, phi_idx] = phi_slice
+    elif icomp == 3:
+        # Polarization is linear co and cross (x and y) - vectorized conversion
+        for phi_idx, phi_val in enumerate(unique_phi):
+            theta_slice, phi_slice = polarization_xy2pt(
+                phi_val, 
+                e_theta[:, :, phi_idx], 
+                e_phi[:, :, phi_idx]
+            )
+            e_theta[:, :, phi_idx] = theta_slice
+            e_phi[:, :, phi_idx] = phi_slice
+            
+    # Create AntennaPattern with results
+    return AntennaPattern(
+        theta=theta,
+        phi=unique_phi,
+        frequency=frequency,
+        e_theta=e_theta,
+        e_phi=e_phi
+    )
+
+
+def read_ffd(file_path: Union[str, Path]):
+    """
+    Read a far field data file from HFSS.
+    
+    Args:
+        file_path: Path to the FFD file
+        
+    Returns:
+        AntennaPattern: The imported antenna pattern
+        
+    Raises:
+        FileNotFoundError: If the file does not exist
+        ValueError: If the file is not a valid FFD file
+    """
+    
+    # Validate input
+    file_path = Path(file_path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"FFD file not found: {file_path}")
+    
+    # Read a far field data file, format ffd
+    with open(file_path, "r") as file_handle:
+        lines = file_handle.readlines()
+
+    # Read theta, phi, and frequency information
+    if len(lines) < 3:
+        raise ValueError("FFD file is too short")
+        
+    theta_info = lines[0].strip().split()
+    phi_info = lines[1].strip().split()
+    freq_info = lines[2].strip().split()
+
+    if len(theta_info) < 3 or len(phi_info) < 3 or len(freq_info) < 2:
+        raise ValueError("Invalid FFD file header format")
+
+    theta_start, theta_stop, theta_points = map(int, theta_info[:3])
+    phi_start, phi_stop, phi_points = map(int, phi_info[:3])
+    num_frequencies = int(freq_info[1])
+
+    theta = np.linspace(theta_start, theta_stop, theta_points)
+    phi = np.linspace(phi_start, phi_stop, phi_points)
+
+    # Initialize storage lists
+    frequency_list = []
+    e_theta_list = []
+    e_phi_list = []
+
+    # Read file
+    index = 3
+    for freq_idx in range(num_frequencies):
+        if index >= len(lines):
+            raise ValueError(f"Unexpected end of file at frequency {freq_idx+1}")
+            
+        freq_line = lines[index].strip().split()
+        if len(freq_line) < 2:
+            raise ValueError(f"Invalid frequency line: {lines[index].strip()}")
+            
+        frequency = float(freq_line[1])
+        e_theta = []
+        e_phi = []
+
+        index += 1
+        for _ in range(int(theta_points) * int(phi_points)):
+            if index >= len(lines):
+                raise ValueError(f"Unexpected end of file at frequency {freq_idx+1}")
+                
+            radiation_line = list(map(float, lines[index].strip().split()))
+            if len(radiation_line) < 4:
+                raise ValueError(f"Invalid radiation line: {lines[index].strip()}")
+                
+            e_th = radiation_line[0] + 1j * radiation_line[1]
+            e_ph = radiation_line[2] + 1j * radiation_line[3]
+            
+            # Convert from HFSS units to standard field units
+            e_theta.append(e_th / np.sqrt(60))
+            e_phi.append(e_ph / np.sqrt(60))
+            index += 1
+
+        # Append into storage lists
+        frequency_list.append(frequency)
+        e_theta_list.append(e_theta)
+        e_phi_list.append(e_phi)
+
+    # Consistency checks
+    if len(frequency_list) == 0:
+        raise ValueError("No frequency data found in FFD file")
+        
+    # Convert to numpy
+    frequency_np = np.array(frequency_list)
+    e_theta_np = np.array(e_theta_list)
+    e_phi_np = np.array(e_phi_list)
+
+    # Reshape into 3D (freq, theta, phi) format
+    e_theta_final = np.zeros((len(frequency_np), len(theta), len(phi)), dtype=complex)
+    e_phi_final = np.zeros((len(frequency_np), len(theta), len(phi)), dtype=complex)
+    
+    # FFD file format may store data in a different order
+    pattern_points = len(theta) * len(phi)
+    
+    # For each frequency
+    for freq_idx in range(len(frequency_np)):
+        # Process each theta/phi combination for this frequency
+        for phi_idx in range(len(phi)):
+            for theta_idx in range(len(theta)):
+                data_idx = phi_idx * len(theta) + theta_idx
+                
+                if data_idx < len(e_theta_np[freq_idx]):
+                    e_theta_final[freq_idx, theta_idx, phi_idx] = e_theta_np[freq_idx][data_idx]
+                    e_phi_final[freq_idx, theta_idx, phi_idx] = e_phi_np[freq_idx][data_idx]
+
+    # Create AntennaPattern - polarization will be auto-detected
+    return AntennaPattern(
+        theta=theta,
+        phi=phi,
+        frequency=frequency_np,
+        e_theta=e_theta_final,
+        e_phi=e_phi_final
+    )
+
+
+================================================
+File: src/antenna_pattern/pattern.py
+================================================
+"""
+Core class for antenna pattern representation and manipulation.
+"""
+import numpy as np
+import xarray as xr
+from typing import Optional, Union, Tuple, Dict, Any, Set, Generator
+import logging
+from pathlib import Path
+from contextlib import contextmanager
+
+from .utilities import find_nearest, unwrap_phase
+from .polarization import (
+    polarization_tp2xy, polarization_xy2pt, polarization_tp2rl, 
+    polarization_rl2xy, polarization_rl2tp
+)
+from .analysis import translate_phase_pattern, find_phase_center, apply_mars, get_axial_ratio, calculate_beamwidth
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+class AntennaPattern:
+    """
+    A class to represent antenna far field patterns.
+    
+    This class encapsulates antenna pattern data and provides methods for manipulation, 
+    analysis and conversion between different formats and coordinate systems.
+    
+    Attributes:
+        data (xarray.Dataset): The core dataset containing all pattern information
+            with dimensions (frequency, theta, phi) and data variables:
+            - e_theta: Complex theta polarization component
+            - e_phi: Complex phi polarization component
+            - e_co: Co-polarized component (determined by polarization attribute)
+            - e_cx: Cross-polarized component (determined by polarization attribute)
+        polarization (str): The polarization type ('rhcp', 'lhcp', 'x', 'y', 'theta', 'phi')
+    """
+    
+    VALID_POLARIZATIONS: Set[str] = {
+        'rhcp', 'rh', 'r',            # Right-hand circular
+        'lhcp', 'lh', 'l',            # Left-hand circular
+        'x', 'l3x',                   # Linear X (Ludwig's 3rd)
+        'y', 'l3y',                   # Linear Y (Ludwig's 3rd)
+        'theta',                      # Spherical theta
+        'phi'                         # Spherical phi
+    }
+    
+    def __init__(self, 
+                 theta: np.ndarray, 
+                 phi: np.ndarray, 
+                 frequency: np.ndarray,
+                 e_theta: np.ndarray, 
+                 e_phi: np.ndarray,
+                 polarization: Optional[str] = None):
+        """
+        Initialize an AntennaPattern with the given parameters.
+        
+        Args:
+            theta: Array of theta angles in degrees
+            phi: Array of phi angles in degrees
+            frequency: Array of frequencies in Hz
+            e_theta: Complex array of e_theta values [freq, theta, phi]
+            e_phi: Complex array of e_phi values [freq, theta, phi]
+            polarization: Optional polarization type. If None, determined automatically.
+            
+        Raises:
+            ValueError: If arrays have incompatible dimensions
+            ValueError: If polarization is invalid
+        """
+        # Convert arrays to efficient dtypes for faster processing
+        e_theta = np.asarray(e_theta, dtype=np.complex64)
+        e_phi = np.asarray(e_phi, dtype=np.complex64)
+
+        # Validate array dimensions
+        expected_shape = (len(frequency), len(theta), len(phi))
+        if e_theta.shape != expected_shape:
+            raise ValueError(f"e_theta shape mismatch: expected {expected_shape}, got {e_theta.shape}")
+        if e_phi.shape != expected_shape:
+            raise ValueError(f"e_phi shape mismatch: expected {expected_shape}, got {e_phi.shape}")
+        
+        # Create core dataset
+        self.data = xr.Dataset(
+            data_vars={
+                'e_theta': (('frequency', 'theta', 'phi'), e_theta),
+                'e_phi': (('frequency', 'theta', 'phi'), e_phi),
+            },
+            coords={
+                'theta': theta,
+                'phi': phi,
+                'frequency': frequency,
+            }
+        )
+        
+        # Assign polarization and compute derived components
+        self.assign_polarization(polarization)
+        
+        # Initialize cache
+        self._cache: Dict[str, Any] = {}
+    
+    @property
+    def frequencies(self) -> np.ndarray:
+        """Get frequencies in Hz."""
+        return self.data.frequency.values
+    
+    @property
+    def theta_angles(self) -> np.ndarray:
+        """Get theta angles in degrees."""
+        return self.data.theta.values
+    
+    @property
+    def phi_angles(self) -> np.ndarray:
+        """Get phi angles in degrees."""
+        return self.data.phi.values
+    
+    def clear_cache(self) -> None:
+        """Clear the internal cache."""
+        self._cache = {}
+    
+    @contextmanager
+    def at_frequency(self, frequency: float) -> 'Generator[AntennaPattern, None, None]':
+        """
+        Context manager to temporarily extract a single-frequency pattern.
+        
+        Args:
+            frequency: Frequency in Hz
+            
+        Yields:
+            AntennaPattern: Single-frequency pattern
+            
+        Example:
+            ```python
+            with pattern.at_frequency(2.4e9) as single_freq_pattern:
+                # Work with single_freq_pattern
+            ```
+        """
+        freq_value, freq_idx = find_nearest(self.frequencies, frequency)
+        
+        # Extract data for the nearest frequency
+        single_freq_data = self.data.isel(frequency=freq_idx)
+        
+        # Create a new pattern with the extracted data
+        single_freq_pattern = AntennaPattern(
+            theta=self.theta_angles,
+            phi=self.phi_angles,
+            frequency=np.array([freq_value]),
+            e_theta=np.expand_dims(single_freq_data.e_theta.values, axis=0),
+            e_phi=np.expand_dims(single_freq_data.e_phi.values, axis=0),
+            polarization=self.polarization
+        )
+        
+        yield single_freq_pattern
+    
+    def assign_polarization(self, polarization: Optional[str] = None) -> None:
+        """
+        Assign a polarization to the antenna pattern and compute e_co and e_cx.
+        
+        If polarization is None, it is automatically determined based on which 
+        polarization component has the highest peak gain.
+        
+        Args:
+            polarization: Polarization type or None to auto-detect
+            
+        Raises:
+            ValueError: If the specified polarization is invalid
+        """
+        # Get underlying numpy arrays for calculations
+        phi = self.data.phi.values
+        e_theta = self.data.e_theta.values
+        e_phi = self.data.e_phi.values
+        
+        # Calculate different polarization components
+        e_x, e_y = polarization_tp2xy(phi, e_theta, e_phi)
+        e_r, e_l = polarization_tp2rl(phi, e_theta, e_phi)
+        
+        # Auto-detect polarization if not specified
+        if polarization is None:
+            e_x_max = np.max(np.abs(e_x))
+            e_y_max = np.max(np.abs(e_y))
+            e_r_max = np.max(np.abs(e_r))
+            e_l_max = np.max(np.abs(e_l))
+            
+            max_val = max(e_x_max, e_y_max, e_r_max, e_l_max)
+            
+            if e_x_max == max_val:
+                polarization = "x"
+            elif e_y_max == max_val:
+                polarization = "y"
+            elif e_r_max == max_val:
+                polarization = "rhcp"
+            elif e_l_max == max_val:
+                polarization = "lhcp"
+        
+        # Map variations to standard polarization names
+        pol_lower = polarization.lower() if polarization else ""
+        
+        if pol_lower in {"rhcp", "rh", "r"}:
+            e_co, e_cx = e_r, e_l
+            standard_pol = "rhcp"
+        elif pol_lower in {"lhcp", "lh", "l"}:
+            e_co, e_cx = e_l, e_r
+            standard_pol = "lhcp"
+        elif pol_lower in {"x", "l3x"}:
+            e_co, e_cx = e_x, e_y
+            standard_pol = "x"
+        elif pol_lower in {"y", "l3y"}:
+            e_co, e_cx = e_y, e_x
+            standard_pol = "y"
+        elif pol_lower == "theta":
+            e_co, e_cx = e_theta, e_phi
+            standard_pol = "theta"
+        elif pol_lower == "phi":
+            e_co, e_cx = e_phi, e_theta
+            standard_pol = "phi"
+        else:
+            raise ValueError(f"Invalid polarization: {polarization}")
+        
+        # Store polarization components and type
+        self.data['e_co'] = (('frequency', 'theta', 'phi'), e_co)
+        self.data['e_cx'] = (('frequency', 'theta', 'phi'), e_cx)
+        self.polarization = standard_pol
+    
+    def change_polarization(self, new_polarization: str) -> 'AntennaPattern':
+        """
+        Create a new pattern with a different polarization assignment.
+        
+        Args:
+            new_polarization: New polarization type to use
+        
+        Returns:
+            AntennaPattern: New pattern with the specified polarization
+            
+        Raises:
+            ValueError: If the new polarization is invalid
+        """
+
+        # Create a new pattern with the same data but different polarization
+        return AntennaPattern(
+            theta=self.theta_angles,
+            phi=self.phi_angles,
+            frequency=self.frequencies,
+            e_theta=self.data.e_theta.values,
+            e_phi=self.data.e_phi.values,
+            polarization=new_polarization
+        )
+    
+    def translate(self, translation: np.ndarray) -> 'AntennaPattern':
+        """
+        Shifts the antenna phase pattern to place the origin of the coordinate 
+        system at the location defined by the translation.
+        
+        Args:
+            translation: [x, y, z] translation vector in meters. Can be 1D (applied to
+                all frequencies) or 2D with shape (num_frequencies, 3).
+        
+        Returns:
+            AntennaPattern: A new AntennaPattern with translated phase
+            
+        Raises:
+            ValueError: If translation has incorrect shape
+        """
+        # Delegate to the analysis module
+        return translate_phase_pattern(self, translation)
+    
+    def find_phase_center(self, theta_angle: float, frequency: Optional[float] = None) -> np.ndarray:
+        """
+        Finds the optimum phase center given a theta angle and frequency.
+        
+        The optimum phase center is the point that, when used as the origin,
+        minimizes the phase variation across the beam from -theta_angle to +theta_angle.
+        
+        Args:
+            theta_angle: Angle in degrees to optimize phase center for
+            frequency: Optional specific frequency to use, or None to use all frequencies
+        
+        Returns:
+            np.ndarray: [x, y, z] coordinates of the optimum phase center
+        """
+        return find_phase_center(self, theta_angle, frequency)
+    
+    def shift_to_phase_center(self, theta_angle: float, frequency: Optional[float] = None) -> Tuple['AntennaPattern', np.ndarray]:
+        """
+        Find the phase center and shift the pattern to it.
+        
+        Args:
+            theta_angle: Angle in degrees to optimize phase center for
+            frequency: Optional specific frequency to use, or None to use all frequencies
+            
+        Returns:
+            Tuple[AntennaPattern, np.ndarray]: Shifted pattern and the translation vector
+        """
+        translation = self.find_phase_center(theta_angle, frequency)
+        return self.translate(translation), translation
+    
+    def apply_mars(self, maximum_radial_extent: float) -> 'AntennaPattern':
+        """
+        Apply Mathematical Absorber Reflection Suppression technique.
+        
+        The MARS algorithm transforms antenna measurement data to mitigate reflections
+        from the measurement chamber. It is particularly effective for electrically
+        large antennas.
+        
+        Args:
+            maximum_radial_extent: Maximum radial extent of the antenna in meters
+            
+        Returns:
+            AntennaPattern: New pattern with MARS algorithm applied
+        """
+
+        return apply_mars(self, maximum_radial_extent)
+    
+    def swap_polarization_axes(self) -> 'AntennaPattern':
+        """
+        Swap vertical and horizontal polarization ports.
+        
+        Returns:
+            AntennaPattern: New pattern with swapped polarization
+        """
+        phi = self.data.phi.values
+        e_theta = self.data.e_theta.values 
+        e_phi = self.data.e_phi.values
+        
+        # Convert to x/y and back to swap the axes
+        e_x, e_y = polarization_tp2xy(phi, e_theta, e_phi)
+        e_theta_new, e_phi_new = polarization_xy2pt(phi, e_y, e_x)  # Note: x and y are swapped
+        
+        return AntennaPattern(
+            theta=self.theta_angles,
+            phi=phi,
+            frequency=self.frequencies,
+            e_theta=e_theta_new,
+            e_phi=e_phi_new,
+            polarization=self.polarization
+        )
+    
+    def get_gain_db(self, component: str = 'e_co') -> xr.DataArray:
+        """
+        Get gain in dB for a specific field component.
+        
+        Args:
+            component: Field component ('e_co', 'e_cx', 'e_theta', 'e_phi')
+            
+        Returns:
+            xr.DataArray: Gain in dB
+            
+        Raises:
+            KeyError: If component does not exist
+        """
+        cache_key = f"gain_db_{component}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+            
+        result = 20 * np.log10(np.abs(self.data[component]))
+        self._cache[cache_key] = result
+        return result
+    
+    def get_phase(self, component: str = 'e_co', unwrapped: bool = False) -> xr.DataArray:
+        """
+        Get phase for a specific field component.
+        
+        Args:
+            component: Field component ('e_co', 'e_cx', 'e_theta', 'e_phi')
+            unwrapped: If True, return unwrapped phase (no 2Ï€ discontinuities)
+            
+        Returns:
+            xr.DataArray: Phase in radians
+            
+        Raises:
+            KeyError: If component does not exist
+        """
+        if component not in self.data:
+            raise KeyError(f"Component {component} not found in pattern data. "
+                          f"Available: {list(self.data.data_vars.keys())}")
+        
+        phase = np.angle(self.data[component])
+        
+        if unwrapped:
+            # Unwrap along theta dimension to remove discontinuities
+            phase = xr.apply_ufunc(
+                unwrap_phase,
+                phase,
+                input_core_dims=[["theta"]],
+                output_core_dims=[["theta"]],
+                vectorize=True
+            )
+        
+        return phase
+    
+    def get_polarization_ratio(self) -> xr.DataArray:
+        """
+        Calculate the ratio of cross-pol to co-pol in dB.
+        
+        Returns:
+            xr.DataArray: Cross-pol/co-pol ratio in dB
+        """
+        co_mag = np.abs(self.data.e_co)
+        cx_mag = np.abs(self.data.e_cx)
+        
+        # Prevent division by zero
+        co_mag = xr.where(co_mag < 1e-15, 1e-15, co_mag)
+        
+        return 20 * np.log10(cx_mag / co_mag)
+    
+    def get_axial_ratio(self) -> xr.DataArray:
+        """
+        Calculate the axial ratio (ratio of major to minor axis of polarization ellipse).
+        
+        Returns:
+            xr.DataArray: Axial ratio (linear scale)
+        """
+
+        return get_axial_ratio(self)
+    
+    def calculate_beamwidth(self, frequency: Optional[float] = None, level_db: float = -3.0) -> Dict[str, float]:
+        """
+        Calculate the beamwidth at specified level for principal planes.
+        
+        Args:
+            frequency: Optional frequency to calculate beamwidth for, or None for all
+            level_db: Level relative to maximum at which to measure beamwidth (default: -3 dB)
+            
+        Returns:
+            Dict[str, float]: Beamwidths in degrees for E and H planes
+        """
+
+        return calculate_beamwidth(self, frequency, level_db)
+    
+    def write_cut(self, file_path: Union[str, Path], polarization_format: int = 1) -> None:
+        """
+        Write the antenna pattern to a CUT file.
+        
+        Args:
+            file_path: Path to the output CUT file
+            polarization_format: Format for polarization components
+                1 = Linear theta and phi
+                2 = Right and left hand circular
+                3 = Linear co and cross (Ludwig's 3rd definition)
+                
+        Raises:
+            ValueError: If polarization_format is invalid
+            IOError: If file cannot be written
+        """
+        # Extract data
+        theta = self.data.theta.values
+        phi = self.data.phi.values
+        frequency = self.data.frequency.values
+        e_theta = self.data.e_theta.values
+        e_phi = self.data.e_phi.values
+        
+        # Set polarization components based on format
+        if polarization_format == 1:
+            e_co = e_theta
+            e_cx = e_phi
+        elif polarization_format == 2:
+            e_co, e_cx = polarization_tp2rl(phi, e_theta, e_phi)
+        elif polarization_format == 3:
+            e_co, e_cx = polarization_tp2xy(phi, e_theta, e_phi)
+        else:
+            raise ValueError(f"Invalid polarization format: {polarization_format}. Must be 1, 2, or 3.")
+
+        # Calculate frequency increment
+        freq_num = len(frequency)
+        theta_length = len(theta)
+        phi_length = len(phi)
+
+        # Ensure file_path is a Path object
+        file_path = Path(file_path)
+        
+        with open(file_path, "w") as writer:
+            for f_idx in range(freq_num):
+                for p_idx in range(phi_length):
+                    writer.write(f"{frequency[f_idx]/1e6}MHz\n")
+                    # Write header for each phi cut
+                    theta_start = theta[0]
+                    theta_increment = theta[1] - theta[0] if len(theta) > 1 else 0.0
+                    header = f"{theta_start} {theta_increment} {theta_length} {phi[p_idx]} {polarization_format} 1 2\n"
+                    writer.write(header)
+
+                    # Write data lines for each theta value
+                    for t_idx in range(theta_length):
+                        YA = e_co[f_idx, t_idx, p_idx]
+                        YB = e_cx[f_idx, t_idx, p_idx]
+                        line = f"{YA.real} {YA.imag} {YB.real} {YB.imag}\n"
+                        writer.write(line)
+
+
+================================================
+File: src/antenna_pattern/polarization.py
+================================================
+"""
+Polarization conversion functions for antenna radiation patterns.
+
+This module provides mathematical functions for converting between different
+polarization representations (spherical, Ludwig-3, circular).
+"""
+import numpy as np
+import logging
+from typing import Tuple, Union
+from .utilities import frequency_to_wavelength
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Type aliases for clarity
+ComplexArray = Union[np.ndarray]
+RealArray = Union[np.ndarray]
+
+
+def polarization_tp2xy(phi: RealArray, e_theta: ComplexArray, e_phi: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
+    """
+    Convert spherical field components to Ludwig's III field components.
+    
+    Args:
+        phi: Spherical angle phi in degrees
+        e_theta: Spherical polarization component theta
+        e_phi: Spherical polarization component phi
+        
+    Returns:
+        Tuple[ndarray, ndarray]: Ludwig's III field components e_x and e_y
+    """
+    # Convert phi to numpy array and to radians
+    phi_rad = np.radians(np.asarray(phi))
+    
+    # Handle broadcasting for different dimensions
+    if np.ndim(e_theta) > np.ndim(phi_rad):
+        # Add necessary dimensions for broadcasting
+        extra_dims = np.ndim(e_theta) - np.ndim(phi_rad)
+        phi_rad = np.expand_dims(phi_rad, axis=tuple(range(extra_dims)))
+    
+    # Vectorized computation
+    cos_phi = np.cos(phi_rad)
+    sin_phi = np.sin(phi_rad)
+    
+    e_x = cos_phi * e_theta - sin_phi * e_phi
+    e_y = sin_phi * e_theta + cos_phi * e_phi
+    
+    return e_x, e_y
+
+
+def polarization_xy2pt(phi: RealArray, e_x: ComplexArray, e_y: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
+    """
+    Convert Ludwig's III field components to spherical field components.
+    
+    Args:
+        phi: Spherical angle phi in degrees
+        e_x: Ludwig's III co-polarization field component
+        e_y: Ludwig's III cross-polarization field component
+        
+    Returns:
+        Tuple[ndarray, ndarray]: Spherical field components e_theta and e_phi
+    """
+    # Convert phi to radians
+    phi_rad = np.radians(np.asarray(phi))
+    
+    # Handle broadcasting for different dimensions
+    if np.ndim(e_x) > np.ndim(phi_rad):
+        extra_dims = np.ndim(e_x) - np.ndim(phi_rad)
+        phi_rad = np.expand_dims(phi_rad, axis=tuple(range(extra_dims)))
+    
+    # Vectorized computation
+    cos_phi = np.cos(phi_rad)
+    sin_phi = np.sin(phi_rad)
+    
+    e_theta = cos_phi * e_x + sin_phi * e_y
+    e_phi = -sin_phi * e_x + cos_phi * e_y
+    
+    return e_theta, e_phi
+
+
+def polarization_tp2rl(phi: RealArray, e_theta: ComplexArray, e_phi: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
+    """
+    Convert spherical field components to circularly polarized components.
+    
+    Args:
+        phi: Spherical angle phi in degrees
+        e_theta: Spherical polarization component theta
+        e_phi: Spherical polarization component phi
+        
+    Returns:
+        Tuple[ndarray, ndarray]: Circular field components e_right and e_left
+    """
+    # First convert to x,y
+    e_x, e_y = polarization_tp2xy(phi, e_theta, e_phi)
+    
+    # Calculate RHCP and LHCP components
+    sqrt2_inv = 1 / np.sqrt(2)
+    e_right = sqrt2_inv * (e_x + 1j * e_y)
+    e_left = sqrt2_inv * (e_x - 1j * e_y)
+    
+    return e_right, e_left
+
+
+def polarization_rl2xy(e_right: ComplexArray, e_left: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
+    """
+    Convert circularly polarized components to Ludwig's III field components.
+    
+    Args:
+        e_right: Right hand circular field component
+        e_left: Left hand circular field component
+        
+    Returns:
+        Tuple[ndarray, ndarray]: Ludwig's III field components e_x and e_y
+    """
+    sqrt2_inv = 1 / np.sqrt(2)
+    e_x = sqrt2_inv * (e_right + e_left)
+    e_y = 1j * sqrt2_inv * (e_left - e_right)
+    
+    return e_x, e_y
+
+
+def polarization_rl2tp(phi: RealArray, e_right: ComplexArray, e_left: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
+    """
+    Convert circularly polarized components to spherical field components.
+    
+    Args:
+        phi: Spherical angle phi in degrees
+        e_right: Right hand circular field component
+        e_left: Left hand circular field component
+        
+    Returns:
+        Tuple[ndarray, ndarray]: Spherical field components e_theta and e_phi
+    """
+    # First convert to x,y
+    e_x, e_y = polarization_rl2xy(e_right, e_left)
+    
+    # Then convert to theta,phi
+    e_theta, e_phi = polarization_xy2pt(phi, e_x, e_y)
+    
+    return e_theta, e_phi
+
+
+def phase_pattern_translate(frequency, theta, phi, translation, phase_pattern):
+    """
+    Shifts the antenna phase pattern to place the origin at the location defined by the shift.
+    
+    Args:
+        frequency: Frequency in Hz (scalar or array)
+        theta: Array of theta angles in radians
+        phi: Array of phi angles in radians
+        translation: [x, y, z] translation vector in meters
+        phase_pattern: Array of antenna phase pattern in radians
+        
+    Returns:
+        ndarray: Shifted phase pattern
+    """
+    
+    wavelength = frequency_to_wavelength(frequency)
+    wavenumber = 2 * np.pi / wavelength
+    
+    # Handle single frequency case - reshape arrays if needed
+    if np.isscalar(frequency) and phase_pattern.ndim == 2:
+        # This is a single frequency case - no frequency dimension
+        theta_grid, phi_grid = np.meshgrid(theta, phi, indexing='ij')
+
+        sin_theta = np.sin(theta_grid)
+        cos_theta = np.cos(theta_grid)
+        cos_phi = np.cos(phi_grid)
+        sin_phi = np.sin(phi_grid)
+        
+        # Calculate phase shift  
+        phase_shift = wavenumber * (
+            translation[0] * cos_phi * sin_theta +
+            translation[1] * sin_phi * sin_theta +
+            translation[2] * cos_theta
+        )
+        
+        # Apply the shift
+        shifted_pattern = phase_pattern - phase_shift
+        
+    else:
+        # Multi-frequency implementation
+        # Create a tiled array for matrix operations
+        theta_array = np.moveaxis(
+            np.tile(theta, (np.size(phi), np.size(frequency), 1)), -1, 0
+        )
+        phi_array = np.tile(phi, (np.size(theta), np.size(frequency), 1)).swapaxes(1, 2)
+        
+        # Handle per-frequency translation if needed
+        if np.ndim(translation) == 1:
+            translation = np.tile(translation, (np.size(frequency), 1))
+        
+        # Calculate phase shift
+        shifted_pattern = np.moveaxis(phase_pattern, 0, -1) - wavenumber * (
+            translation[:, 0] * np.cos(phi_array) * np.sin(theta_array) +
+            translation[:, 1] * np.sin(phi_array) * np.sin(theta_array) +
+            translation[:, 2] * np.cos(theta_array)
+        )
+        
+        # Move axes back to original order
+        shifted_pattern = np.moveaxis(shifted_pattern, -1, 0)
+    
+    # Normalize to -Ï€ to Ï€ range
+    shifted_pattern = shifted_pattern % (2 * np.pi)
+    shifted_pattern[shifted_pattern > np.pi] -= 2 * np.pi
+    
+    return shifted_pattern
+
+
+================================================
+File: src/antenna_pattern/utilities.py
+================================================
+"""
+Common utility functions and constants for antenna pattern analysis.
+"""
+import numpy as np
+from typing import Tuple, Union, Optional, List, Any
+
+# Physical constants
+lightspeed = 299792458  # Speed of light in vacuum (m/s)
+freespace_permittivity = 8.8541878128e-12  # Vacuum permittivity (F/m)
+freespace_impedance = 376.730313668  # Impedance of free space (Ohms)
+
+# Astronomical constants
+moon_radius = 1737.1e3  # Mean radius of the Moon (m)
+earth_radius = 6378.14e3  # Mean equatorial radius of the Earth (m)
+
+# Type aliases
+NumericArray = Union[np.ndarray, List[float], List[int], Tuple[float, ...], Tuple[int, ...]]
+
+
+def find_nearest(array: NumericArray, value: float) -> Tuple[Union[float, np.ndarray], Union[int, np.ndarray]]:
+    """
+    Find the value in an array that is closest to a specified value and its index.
+    
+    Args:
+        array: Array-like collection of numeric values
+        value: Target value to find the nearest element to
+    
+    Returns:
+        Tuple containing (nearest_value, index_of_nearest_value)
+        
+    Raises:
+        ValueError: If input array is empty
+    """
+    array = np.asarray(array)
+    
+    if array.size == 0:
+        raise ValueError("Input array is empty")
+    
+    idx = np.abs(array - value).argmin()
+    return array[idx], idx
+
+
+def frequency_to_wavelength(frequency: Union[float, np.ndarray], dielectric_constant: float = 1.0) -> np.ndarray:
+    """
+    Convert frequency to wavelength.
+    
+    Args:
+        frequency: Frequency in Hz
+        dielectric_constant: Relative permittivity of the medium (default: 1.0 for vacuum)
+    
+    Returns:
+        Wavelength in meters
+        
+    Raises:
+        ValueError: If frequency is zero or negative
+        ValueError: If dielectric constant is negative
+    """
+    # Convert input to numpy array if it's not already
+    if not isinstance(frequency, np.ndarray):
+        frequency = np.asarray(frequency)
+    
+    # Validate inputs
+    if np.any(frequency <= 0):
+        raise ValueError("Frequency must be positive")
+    
+    if dielectric_constant < 0:
+        raise ValueError("Dielectric constant must be non-negative")
+    
+    return lightspeed / (frequency * np.sqrt(dielectric_constant))
+
+
+def wavelength_to_frequency(wavelength: Union[float, np.ndarray], dielectric_constant: float = 1.0) -> np.ndarray:
+    """
+    Convert wavelength to frequency.
+    
+    Args:
+        wavelength: Wavelength in meters
+        dielectric_constant: Relative permittivity of the medium (default: 1.0 for vacuum)
+    
+    Returns:
+        Frequency in Hz
+        
+    Raises:
+        ValueError: If wavelength is zero or negative
+        ValueError: If dielectric constant is negative
+    """
+    # Convert input to numpy array if it's not already
+    if not isinstance(wavelength, np.ndarray):
+        wavelength = np.asarray(wavelength)
+    
+    # Validate inputs
+    if np.any(wavelength <= 0):
+        raise ValueError("Wavelength must be positive")
+    
+    if dielectric_constant < 0:
+        raise ValueError("Dielectric constant must be non-negative")
+    
+    return lightspeed / (wavelength * np.sqrt(dielectric_constant))
+
+
+def db_to_linear(db_value: Union[float, np.ndarray]) -> np.ndarray:
+    """
+    Convert a dB value to linear scale.
+    
+    Args:
+        db_value: Value in dB
+    
+    Returns:
+        Value in linear scale
+    """
+    if not isinstance(db_value, np.ndarray):
+        db_value = np.asarray(db_value)
+        
+    return 10 ** (db_value / 10.0)
+
+
+def linear_to_db(linear_value: Union[float, np.ndarray]) -> np.ndarray:
+    """
+    Convert a linear value to dB scale.
+    
+    Args:
+        linear_value: Value in linear scale
+    
+    Returns:
+        Value in dB
+        
+    Raises:
+        ValueError: If linear value is negative
+    """
+    if not isinstance(linear_value, np.ndarray):
+        linear_value = np.asarray(linear_value)
+    
+    if np.any(linear_value < 0):
+        raise ValueError("Linear values must be non-negative for dB conversion")
+    
+    # Set values close to zero to a small positive number to avoid log(0)
+    linear_value = np.maximum(linear_value, 1e-15)
+    
+    return 10.0 * np.log10(linear_value)
+
+
+def unwrap_phase(phase: np.ndarray, discont: float = np.pi) -> np.ndarray:
+    """
+    Enhanced phase unwrapping with adjustable discontinuity threshold.
+    
+    Args:
+        phase: Array of phase values in radians
+        discont: Size of the discontinuity for unwrapping (default: Ï€)
+    
+    Returns:
+        Unwrapped phase array
+    """
+    return np.unwrap(phase, discont=discont)
+
+
+def interpolate_crossing(x: np.ndarray, y: np.ndarray, threshold: float) -> float:
+    """
+    Linearly interpolate to find the x value where y crosses a threshold.
+    
+    Args:
+        x: Array of x coordinates (size 2)
+        y: Array of y coordinates (size 2)
+        threshold: The y value to find the crossing for
+    
+    Returns:
+        Interpolated x value at the crossing
+    """
+    return x[0] + (threshold - y[0]) * (x[1] - x[0]) / (y[1] - y[0])
+
+
+
+================================================
+File: tests/__init__.py
+================================================
+# Tests package for antenna_pattern
+
+
+================================================
+File: tests/test_antenna_pattern.py
+================================================
+"""
+Basic tests for the AntennaPattern package.
+"""
+import os
+import sys
+
+# Add the src directory to the path if not already installed
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src'))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
+import numpy as np
+import pytest
+from antenna_pattern import AntennaPattern, polarization_tp2xy, polarization_tp2rl
+
+
+def test_create_antenna_pattern():
+    """Test creating a simple AntennaPattern object."""
+    # Create test data
+    theta = np.linspace(-180, 180, 10)
+    phi = np.array([0, 90])
+    frequency = np.array([10e9])  # 10 GHz
+    
+    # Create simple field patterns
+    e_theta = np.zeros((len(frequency), len(theta), len(phi)), dtype=complex)
+    e_phi = np.zeros((len(frequency), len(theta), len(phi)), dtype=complex)
+    
+    # Fill with a simple cosine pattern
+    for t_idx, t_val in enumerate(theta):
+        for p_idx, p_val in enumerate(phi):
+            e_theta[0, t_idx, p_idx] = np.cos(np.radians(t_val/2))
+    
+    # Create antenna pattern
+    pattern = AntennaPattern(
+        theta=theta,
+        phi=phi,
+        frequency=frequency,
+        e_theta=e_theta,
+        e_phi=e_phi,
+        polarization="theta"
+    )
+    
+    # Verify basic properties
+    assert pattern.polarization == "theta"
+    assert len(pattern.frequencies) == 1
+    assert len(pattern.theta_angles) == 10
+    assert len(pattern.phi_angles) == 2
+    
+    # Verify data was correctly stored
+    np.testing.assert_allclose(pattern.data.e_theta.values, e_theta)
+    np.testing.assert_allclose(pattern.data.e_phi.values, e_phi)
+
+
+def test_polarization_conversion():
+    """Test basic polarization conversion functions."""
+    # Create test data
+    phi = np.array([0, 45, 90])
+    e_theta = np.array([1+0j, 0.7+0.7j, 0+1j])
+    e_phi = np.array([0+0j, 0.7-0.7j, 1+0j])
+    
+    # Test tp2xy conversion
+    e_x, e_y = polarization_tp2xy(phi, e_theta, e_phi)
+    
+    # For phi=0, e_x should equal e_theta and e_y should equal -e_phi
+    np.testing.assert_allclose(e_x[0], e_theta[0])
+    np.testing.assert_allclose(e_y[0], -e_phi[0])
+    
+    # Test tp2rl conversion
+    e_r, e_l = polarization_tp2rl(phi, e_theta, e_phi)
+    
+    # Simple verification (could be expanded)
+    assert e_r.shape == e_theta.shape
+    assert e_l.shape == e_phi.shape
+
+
+def test_change_polarization():
+    """Test changing polarization of an antenna pattern."""
+    # Create simple pattern
+    theta = np.linspace(-90, 90, 7)
+    phi = np.array([0, 90])
+    frequency = np.array([10e9])
+    e_theta = np.ones((1, len(theta), len(phi)), dtype=complex)
+    e_phi = np.zeros((1, len(theta), len(phi)), dtype=complex)
+    
+    # Create pattern with theta polarization
+    pattern = AntennaPattern(
+        theta=theta,
+        phi=phi,
+        frequency=frequency,
+        e_theta=e_theta,
+        e_phi=e_phi,
+        polarization="theta"
+    )
+    
+    # Change to RHCP
+    rhcp_pattern = pattern.change_polarization("rhcp")
+    
+    # Verify the change
+    assert rhcp_pattern.polarization == "rhcp"
+    assert pattern.polarization == "theta"  # Original unchanged
+    
+    # Check co-pol/cross-pol components
+    # For pure theta polarization converted to RHCP:
+    # Both RHCP and LHCP components should be present with equal magnitude
+    mag_co = np.abs(rhcp_pattern.data.e_co.values)
+    mag_cx = np.abs(rhcp_pattern.data.e_cx.values)
+    np.testing.assert_allclose(mag_co, mag_cx)
+
+
+if __name__ == "__main__":
+    # Run tests manually
+    test_create_antenna_pattern()
+    test_polarization_conversion()
+    test_change_polarization()
+    print("All tests passed!")
+
