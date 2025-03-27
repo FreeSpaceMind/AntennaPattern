@@ -49,6 +49,7 @@ pattern.shift_to_phase_center(theta_angle: float, frequency: Optional[float] = N
 
 # Analysis
 pattern.apply_mars(maximum_radial_extent: float) -> AntennaPattern
+pattern.beamwidth_from_pattern(gain_pattern: np.ndarray, angles: np.ndarray, level_db: float = -3.0) -> float:
 pattern.calculate_beamwidth(frequency: Optional[float] = None, level_db: float = -3.0) -> Dict[str, float]
 pattern.get_gain_db(component: str = 'e_co') -> xr.DataArray
 pattern.get_phase(component: str = 'e_co', unwrapped: bool = False) -> xr.DataArray

@@ -7,9 +7,9 @@ from scipy import optimize
 from typing import Dict, Tuple, Optional, List, Union
 import xarray as xr
 
-from .utilities import find_nearest, unwrap_phase, beamwidth_from_pattern, frequency_to_wavelength
+from .utilities import find_nearest, unwrap_phase, frequency_to_wavelength
 from .polarization import phase_pattern_translate, polarization_tp2rl
-from .utilities import lightspeed
+from .utilities import lightspeed, interpolate_crossing
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -118,6 +118,62 @@ def find_phase_center(pattern, theta_angle: float, frequency: Optional[float] = 
         
     return translation
 
+def beamwidth_from_pattern(gain_pattern: np.ndarray, angles: np.ndarray, level_db: float = -3.0) -> float:
+    """
+    Calculate beamwidth at specified level from a gain pattern.
+    
+    Args:
+        gain_pattern: Gain pattern in dB
+        angles: Corresponding angle values in degrees
+        level_db: Level relative to maximum at which to measure beamwidth (default: -3 dB)
+    
+    Returns:
+        Beamwidth in degrees
+        
+    Raises:
+        ValueError: If pattern or angles array is empty
+        ValueError: If no points at or below the specified level are found
+    """
+    if len(gain_pattern) == 0 or len(angles) == 0:
+        raise ValueError("Input arrays cannot be empty")
+    
+    if len(gain_pattern) != len(angles):
+        raise ValueError(f"Length mismatch: gain_pattern ({len(gain_pattern)}) != angles ({len(angles)})")
+    
+    # Find the maximum gain value and its index
+    max_gain = np.max(gain_pattern)
+    threshold = max_gain + level_db
+    
+    # Find indices where the gain crosses the threshold
+    above_threshold = gain_pattern >= threshold
+    
+    # Find the transition points (where the boolean array changes from True to False or vice versa)
+    transitions = np.where(np.diff(above_threshold))[0]
+    
+    if len(transitions) < 2:
+        raise ValueError(f"Could not find two crossing points at {level_db} dB level")
+    
+    # For multiple crossings, use the widest crossing points around the maximum
+    max_idx = np.argmax(gain_pattern)
+    
+    # Find crossing points before and after the maximum
+    left_crossings = transitions[transitions < max_idx]
+    right_crossings = transitions[transitions > max_idx]
+    
+    if len(left_crossings) == 0 or len(right_crossings) == 0:
+        raise ValueError(f"Maximum is too close to the edge of the pattern - could not find crossings on both sides")
+    
+    left_idx = left_crossings[-1]
+    right_idx = right_crossings[0]
+    
+    # Interpolate to find the exact angles where the pattern crosses the threshold
+    left_angle = interpolate_crossing(angles[left_idx:left_idx+2], gain_pattern[left_idx:left_idx+2], threshold)
+    right_angle = interpolate_crossing(angles[right_idx:right_idx+2], gain_pattern[right_idx:right_idx+2], threshold)
+    
+    # Calculate beamwidth
+    beamwidth = abs(right_angle - left_angle)
+    
+    return beamwidth
 
 def calculate_beamwidth(pattern, frequency: Optional[float] = None, level_db: float = -3.0) -> Dict[str, float]:
     """
@@ -163,7 +219,6 @@ def calculate_beamwidth(pattern, frequency: Optional[float] = None, level_db: fl
         'H_plane': h_plane_bw,
         'Average': (e_plane_bw + h_plane_bw) / 2
     }
-
 
 def apply_mars(pattern, maximum_radial_extent: float):
     """

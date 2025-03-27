@@ -23,6 +23,7 @@ from .polarization import (
 from .analysis import (
     find_phase_center,
     translate_phase_pattern,
+    beamwidth_from_pattern,
     calculate_beamwidth,
     apply_mars,
     get_axial_ratio
@@ -50,6 +51,7 @@ __all__ = [
     'polarization_rl2tp',
     'find_phase_center',
     'translate_phase_pattern',
+    'beamwidth_from_pattern',
     'calculate_beamwidth',
     'apply_mars',
     'get_axial_ratio',
