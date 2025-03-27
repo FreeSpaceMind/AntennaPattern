@@ -133,8 +133,6 @@ clean_pattern = pattern.apply_mars(maximum_radial_extent=0.5)
 ## Usage with AI
 The AntennaPattern_reference.md file is intended to be a minimal instruction set to provide to AI models so that they can sucessfully use the AntennaPattern package.
 
-digest.txt is a full set of the codebase generated with gitingest, and can be provided if the AI tool requires more information.
-
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.

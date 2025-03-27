@@ -25,6 +25,9 @@ wheels/
 *.egg
 MANIFEST
 
+# gitingest file
+digest.txt
+
 # PyInstaller
 *.manifest
 *.spec
