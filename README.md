@@ -105,6 +105,12 @@ shifted_pattern = pattern.translate(phase_center)
 
 ## Features
 
+### Importing, Converting, Exporting Far-Field Patterns
+The library allows importing, conversion between, and exporting of common antenna files:
+- **.ffd** : this is the HFSS far field data format.
+- **.cut** : this is the GRASP cut file format. .cut files do not natively include frequenc, so that must be provided as well.
+- **.npz** : a numpy zip file used for saving and loading patterns within this library. Faster than reading .ffd or .cut repeatedly.
+
 ### Polarization Conversions
 
 The library supports conversions between:
@@ -114,7 +120,7 @@ The library supports conversions between:
 
 ### Phase Center Analysis
 
-Find optimal phase centers to minimize phase variations across the beam:
+This library allows manipulations of the phase origin reference so that phase center analysis can be done. The library includes an optimizer to find the optimum phase center within a beamwidth.
 
 ```python
 phase_center = pattern.find_phase_center(theta_angle=30.0)
@@ -123,11 +129,16 @@ shifted_pattern = pattern.translate(phase_center)
 
 ### MARS Algorithm
 
-Apply the Mathematical Absorber Reflection Suppression algorithm to mitigate chamber reflections:
+Apply the Mathematical Absorber Reflection Suppression (MARS) algorithm to mitigate chamber reflections, see ["Application of Mathematical Absorber Reflection Supression
+to Direct Far-Field Antenna Range Measurements](https://www.nsi-mi.com/-/media/project/oneweb/oneweb/nsi/files/technical-papers/2011/application-of-mathematical-absorber-reflection-suppression-to-direct-far-field-antenna-range-measurements.pdf?la=en&revision=0a4b7b72-f427-4e4f-992c-40c0377fff2a&hash=6CBFD6C61EFAB9AA82ED1443A6C2F89C). Note that effective use of MARS requires that the antenna was displaced from the center of rotation during measurement. The antenna must be shifted back to the center of rotation, and then MARS can be applied.
 
 ```python
+# Find the antenna phase center and move the phase pattern to that location
+phase_center = pattern.find_phase_center(theta_angle=30.0)
+shifted_pattern = pattern.translate(phase_center)
+
 # Apply MARS with a maximum radial extent of 0.5 meters
-clean_pattern = pattern.apply_mars(maximum_radial_extent=0.5)
+clean_pattern = shited_pattern.apply_mars(maximum_radial_extent=0.5)
 ```
 
 ## Usage with AI
