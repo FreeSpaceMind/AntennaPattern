@@ -33,6 +33,7 @@ from .utilities import (
     frequency_to_wavelength,
     lightspeed,
     freespace_permittivity,
+    freespace_impedance,
     db_to_linear,
     linear_to_db
 )
@@ -59,6 +60,7 @@ __all__ = [
     'frequency_to_wavelength',
     'lightspeed',
     'freespace_permittivity',
+    'freespace_impedance',
     'db_to_linear',
     'linear_to_db'
 ]
