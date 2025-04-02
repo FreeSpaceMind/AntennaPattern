@@ -455,11 +455,64 @@ class AntennaPattern:
         # Get pattern dimensions
         pattern_freq = self.frequencies
         pattern_phi = self.phi_angles
+        pattern_theta = self.theta_angles
         n_freq = len(pattern_freq)
         n_phi = len(pattern_phi)
-        n_theta = len(self.theta_angles)
+        n_theta = len(pattern_theta)
         
-        # Cases 1-3 remain the same as before...
+        # Case 1: Single scalar value - apply uniformly
+        if np.isscalar(scale_db):
+            # Create a new pattern with scaled field components
+            return AntennaPattern(
+                theta=pattern_theta,
+                phi=pattern_phi,
+                frequency=pattern_freq,
+                e_theta=scale_amplitude(self.data.e_theta.values, scale_db),
+                e_phi=scale_amplitude(self.data.e_phi.values, scale_db),
+                polarization=self.polarization
+            )
+        
+        # Convert to numpy array if not already
+        scale_db = np.asarray(scale_db)
+        
+        # Case 2: 1D array matching frequency length
+        if scale_db.ndim == 1 and len(scale_db) == n_freq and freq_scale is None:
+            # Reshape for broadcasting - add axes for theta and phi dimensions
+            scale_factor = scale_db.reshape(-1, 1, 1)
+            
+            return AntennaPattern(
+                theta=pattern_theta,
+                phi=pattern_phi,
+                frequency=pattern_freq,
+                e_theta=scale_amplitude(self.data.e_theta.values, scale_factor),
+                e_phi=scale_amplitude(self.data.e_phi.values, scale_factor),
+                polarization=self.polarization
+            )
+        
+        # Case 3: 1D array with custom frequencies - need interpolation
+        if scale_db.ndim == 1 and freq_scale is not None:
+            if len(scale_db) != len(freq_scale):
+                raise ValueError(f"scale_db length ({len(scale_db)}) must match freq_scale length ({len(freq_scale)})")
+            
+            # Interpolate to match pattern frequencies
+            from scipy.interpolate import interp1d
+            interp_func = interp1d(freq_scale, scale_db, bounds_error=False, fill_value="extrapolate")
+            interp_scale = interp_func(pattern_freq)
+            
+            # Set reasonable limits to prevent overflow
+            interp_scale = np.clip(interp_scale, -50.0, 50.0)
+            
+            # Reshape for broadcasting
+            scale_factor = interp_scale.reshape(-1, 1, 1)
+            
+            return AntennaPattern(
+                theta=pattern_theta,
+                phi=pattern_phi,
+                frequency=pattern_freq,
+                e_theta=scale_amplitude(self.data.e_theta.values, scale_factor),
+                e_phi=scale_amplitude(self.data.e_phi.values, scale_factor),
+                polarization=self.polarization
+            )
         
         # Case 4: 2D array - need interpolation for both frequency and phi
         if scale_db.ndim == 2:
