@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from contextlib import contextmanager
 
-from .utilities import find_nearest, unwrap_phase
+from .utilities import find_nearest, unwrap_phase, scale_amplitude
 from .polarization import (
     polarization_tp2xy, polarization_xy2pt, polarization_tp2rl, 
     polarization_rl2xy, polarization_rl2tp
@@ -422,6 +422,139 @@ class AntennaPattern:
         """
 
         return calculate_beamwidth(self, frequency, level_db)
+    
+    def scale_pattern(self, scale_db: Union[float, np.ndarray], 
+                  freq_scale: Optional[np.ndarray] = None,
+                  phi_scale: Optional[np.ndarray] = None) -> 'AntennaPattern':
+        """
+        Scale the amplitude of the antenna pattern by the input value in dB.
+        
+        This method supports several input formats:
+        1. A scalar value: Apply the same scaling to all frequencies and angles
+        2. A 1D array matching frequency length: Apply frequency-dependent scaling
+        3. A 1D array with custom frequencies: Interpolate to pattern frequencies
+        4. A 2D array with scaling values for freq/phi combinations
+        
+        Args:
+            scale_db: Scaling values in dB. Can be:
+                - float: Single value applied to all frequencies and angles
+                - 1D array[freq]: Values for each frequency in pattern
+                - 2D array[freq, phi]: Values for each frequency/phi combination
+            freq_scale: Optional frequency vector in Hz when scale_db doesn't match
+                pattern frequency points. Required if scale_db is 1D and doesn't 
+                match pattern frequencies, or if scale_db is 2D.
+            phi_scale: Optional phi angle vector in degrees when scale_db is 2D and 
+                doesn't match pattern phi points.
+                
+        Returns:
+            AntennaPattern: New pattern with scaled amplitude
+            
+        Raises:
+            ValueError: If input arrays have incompatible dimensions
+        """
+        # Get pattern dimensions
+        pattern_freq = self.frequencies
+        pattern_phi = self.phi_angles
+        n_freq = len(pattern_freq)
+        n_phi = len(pattern_phi)
+        
+        # Case 1: Single scalar value - apply uniformly
+        if np.isscalar(scale_db):
+            # Create a new pattern with scaled field components
+            return AntennaPattern(
+                theta=self.theta_angles,
+                phi=pattern_phi,
+                frequency=pattern_freq,
+                e_theta=scale_amplitude(self.data.e_theta.values, scale_db),
+                e_phi=scale_amplitude(self.data.e_phi.values, scale_db),
+                polarization=self.polarization
+            )
+        
+        # Convert to numpy array if not already
+        scale_db = np.asarray(scale_db)
+        
+        # Case 2: 1D array matching frequency length
+        if scale_db.ndim == 1 and len(scale_db) == n_freq and freq_scale is None:
+            # Reshape for broadcasting - add axes for theta and phi dimensions
+            scale_factor = scale_db.reshape(-1, 1, 1)
+            
+            return AntennaPattern(
+                theta=self.theta_angles,
+                phi=pattern_phi,
+                frequency=pattern_freq,
+                e_theta=scale_amplitude(self.data.e_theta.values, scale_factor),
+                e_phi=scale_amplitude(self.data.e_phi.values, scale_factor),
+                polarization=self.polarization
+            )
+        
+        # Case 3: 1D array with custom frequencies - need interpolation
+        if scale_db.ndim == 1 and freq_scale is not None:
+            if len(scale_db) != len(freq_scale):
+                raise ValueError(f"scale_db length ({len(scale_db)}) must match freq_scale length ({len(freq_scale)})")
+            
+            # Interpolate to match pattern frequencies
+            from scipy.interpolate import interp1d
+            interp_func = interp1d(freq_scale, scale_db, bounds_error=False, fill_value="extrapolate")
+            interp_scale = interp_func(pattern_freq)
+            
+            # Reshape for broadcasting
+            scale_factor = interp_scale.reshape(-1, 1, 1)
+            
+            return AntennaPattern(
+                theta=self.theta_angles,
+                phi=pattern_phi,
+                frequency=pattern_freq,
+                e_theta=scale_amplitude(self.data.e_theta.values, scale_factor),
+                e_phi=scale_amplitude(self.data.e_phi.values, scale_factor),
+                polarization=self.polarization
+            )
+        
+        # Case 4: 2D array - need interpolation for both frequency and phi
+        if scale_db.ndim == 2:
+            if freq_scale is None:
+                raise ValueError("freq_scale must be provided when scale_db is 2D")
+            
+            # Handle phi_scale
+            if phi_scale is None:
+                if scale_db.shape[1] != n_phi:
+                    raise ValueError(f"scale_db phi dimension ({scale_db.shape[1]}) "
+                                    f"must match pattern phi count ({n_phi})")
+                phi_scale = pattern_phi
+            
+            if len(freq_scale) != scale_db.shape[0] or len(phi_scale) != scale_db.shape[1]:
+                raise ValueError(f"scale_db shape ({scale_db.shape}) must match "
+                                f"(freq_scale length, phi_scale length) = ({len(freq_scale)}, {len(phi_scale)})")
+            
+            # Use 2D interpolation to match pattern frequencies and phi angles
+            from scipy.interpolate import RegularGridInterpolator
+            
+            # Define interpolation points
+            points = (freq_scale, phi_scale)
+            interp_func = RegularGridInterpolator(points, scale_db, 
+                                                 bounds_error=False, 
+                                                 fill_value=None)
+            
+            # Create grid of all frequency and phi combinations in pattern
+            freq_grid, phi_grid = np.meshgrid(pattern_freq, pattern_phi, indexing='ij')
+            points_to_interp = np.column_stack((freq_grid.ravel(), phi_grid.ravel()))
+            
+            # Interpolate and reshape to match pattern dimensions
+            interp_values = interp_func(points_to_interp).reshape(n_freq, 1, n_phi)
+            
+            # Apply scaling to each field component
+            e_theta_scaled = scale_amplitude(self.data.e_theta.values, interp_values)
+            e_phi_scaled = scale_amplitude(self.data.e_phi.values, interp_values)
+            
+            return AntennaPattern(
+                theta=self.theta_angles,
+                phi=pattern_phi,
+                frequency=pattern_freq,
+                e_theta=e_theta_scaled,
+                e_phi=e_phi_scaled,
+                polarization=self.polarization
+            )
+        
+        raise ValueError("Invalid scale_db format. Must be scalar, 1D or 2D array.")
     
     def write_cut(self, file_path: Union[str, Path], polarization_format: int = 1) -> None:
         """

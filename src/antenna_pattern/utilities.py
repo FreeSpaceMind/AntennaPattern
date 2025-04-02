@@ -166,3 +166,24 @@ def interpolate_crossing(x: np.ndarray, y: np.ndarray, threshold: float) -> floa
         Interpolated x value at the crossing
     """
     return x[0] + (threshold - y[0]) * (x[1] - x[0]) / (y[1] - y[0])
+
+
+def scale_amplitude(values: np.ndarray, scale_db: Union[float, np.ndarray]) -> np.ndarray:
+    """
+    Scale complex amplitude values by multiplying by a linear factor derived from dB.
+    
+    Args:
+        values: Complex array of field values to scale
+        scale_db: Value(s) in dB to scale by, can be scalar or array
+        
+    Returns:
+        np.ndarray: Scaled complex values
+        
+    Note:
+        This multiplies the amplitude by 10^(scale_db/20), maintaining the phase.
+    """
+    # Convert dB scaling to linear scale factor (amplitude, not power)
+    scale_factor = 10**(scale_db / 20.0)
+    
+    # Apply scaling factor to complex values (preserves phase)
+    return values * scale_factor
