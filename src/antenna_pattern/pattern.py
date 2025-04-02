@@ -424,8 +424,8 @@ class AntennaPattern:
         return calculate_beamwidth(self, frequency, level_db)
     
     def scale_pattern(self, scale_db: Union[float, np.ndarray], 
-                  freq_scale: Optional[np.ndarray] = None,
-                  phi_scale: Optional[np.ndarray] = None) -> 'AntennaPattern':
+                    freq_scale: Optional[np.ndarray] = None,
+                    phi_scale: Optional[np.ndarray] = None) -> 'AntennaPattern':
         """
         Scale the amplitude of the antenna pattern by the input value in dB.
         
@@ -497,6 +497,9 @@ class AntennaPattern:
             interp_func = interp1d(freq_scale, scale_db, bounds_error=False, fill_value="extrapolate")
             interp_scale = interp_func(pattern_freq)
             
+            # Set reasonable limits to prevent overflow
+            interp_scale = np.clip(interp_scale, -50.0, 50.0)
+            
             # Reshape for broadcasting
             scale_factor = interp_scale.reshape(-1, 1, 1)
             
@@ -525,25 +528,51 @@ class AntennaPattern:
                 raise ValueError(f"scale_db shape ({scale_db.shape}) must match "
                                 f"(freq_scale length, phi_scale length) = ({len(freq_scale)}, {len(phi_scale)})")
             
-            # Use 2D interpolation to match pattern frequencies and phi angles
-            from scipy.interpolate import RegularGridInterpolator
+            # Use more robust griddata interpolation
+            from scipy.interpolate import griddata
             
-            # Define interpolation points
-            points = (freq_scale, phi_scale)
-            interp_func = RegularGridInterpolator(points, scale_db, 
-                                                 bounds_error=False, 
-                                                 fill_value=None)
+            # Create meshgrid of input frequencies and phi angles
+            freq_grid_in, phi_grid_in = np.meshgrid(freq_scale, phi_scale, indexing='ij')
+            points_in = np.column_stack((freq_grid_in.ravel(), phi_grid_in.ravel()))
+            values_in = scale_db.ravel()
             
-            # Create grid of all frequency and phi combinations in pattern
-            freq_grid, phi_grid = np.meshgrid(pattern_freq, pattern_phi, indexing='ij')
-            points_to_interp = np.column_stack((freq_grid.ravel(), phi_grid.ravel()))
+            # Create meshgrid for output points
+            freq_grid_out, phi_grid_out = np.meshgrid(pattern_freq, pattern_phi, indexing='ij')
+            points_out = np.column_stack((freq_grid_out.ravel(), phi_grid_out.ravel()))
             
-            # Interpolate and reshape to match pattern dimensions
-            interp_values = interp_func(points_to_interp).reshape(n_freq, 1, n_phi)
+            # Perform interpolation with reasonable fill value and linear method
+            interp_raw = griddata(points_in, values_in, points_out, 
+                                method='linear', fill_value=0.0)
             
-            # Apply scaling to each field component
-            e_theta_scaled = scale_amplitude(self.data.e_theta.values, interp_values)
-            e_phi_scaled = scale_amplitude(self.data.e_phi.values, interp_values)
+            # Set reasonable limits to prevent overflow
+            max_db_value = 50.0
+            min_db_value = -50.0
+            interp_clipped = np.clip(interp_raw, min_db_value, max_db_value)
+            
+            # Check for NaN or Inf values and replace them
+            interp_safe = np.nan_to_num(interp_clipped, nan=0.0, posinf=max_db_value, neginf=min_db_value)
+            
+            # Log warning if extreme values were detected
+            if np.any(np.isnan(interp_raw)) or np.any(np.isinf(interp_raw)) or \
+            np.any(interp_raw >= max_db_value) or np.any(interp_raw <= min_db_value):
+                logger.warning("Extreme scaling values detected in interpolation and clipped to range [%f, %f] dB", 
+                            min_db_value, max_db_value)
+            
+            # Reshape to match pattern dimensions (freq, theta, phi)
+            interp_values = interp_safe.reshape(n_freq, n_phi)
+            
+            # Create array to store scaled field components
+            e_theta_scaled = np.zeros_like(self.data.e_theta.values, dtype=complex)
+            e_phi_scaled = np.zeros_like(self.data.e_phi.values, dtype=complex)
+            
+            # Apply scaling to each frequency and phi combination
+            for f_idx in range(n_freq):
+                for p_idx in range(n_phi):
+                    scale_val = interp_values[f_idx, p_idx]
+                    e_theta_scaled[f_idx, :, p_idx] = scale_amplitude(
+                        self.data.e_theta.values[f_idx, :, p_idx], scale_val)
+                    e_phi_scaled[f_idx, :, p_idx] = scale_amplitude(
+                        self.data.e_phi.values[f_idx, :, p_idx], scale_val)
             
             return AntennaPattern(
                 theta=self.theta_angles,
