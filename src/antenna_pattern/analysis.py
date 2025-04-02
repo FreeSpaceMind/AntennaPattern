@@ -96,7 +96,7 @@ def find_phase_center(pattern, theta_angle: float, frequency: Optional[float] = 
         phase_spread_cost, 
         initial_guess,
         method='Nelder-Mead',
-        options={'maxiter': 100, 'xatol': 1e-4, 'fatol': 1e-4}
+        options={'maxiter': 500, 'xatol': 1e-4, 'fatol': 1e-4}
     )
     
     if result.success:
