@@ -530,41 +530,62 @@ class AntennaPattern:
                 raise ValueError(f"scale_db shape ({scale_db.shape}) must match "
                                 f"(freq_scale length, phi_scale length) = ({len(freq_scale)}, {len(phi_scale)})")
             
-            # Use more robust griddata interpolation
-            from scipy.interpolate import griddata
-            
-            # Create meshgrid of input frequencies and phi angles
-            freq_grid_in, phi_grid_in = np.meshgrid(freq_scale, phi_scale, indexing='ij')
-            points_in = np.column_stack((freq_grid_in.ravel(), phi_grid_in.ravel()))
-            values_in = scale_db.ravel()
-            
             # Set reasonable limits for dB values to prevent overflow
             max_db_value = 50.0
             min_db_value = -50.0
             
             # Create a 3D array to store scaling factors for each point in the pattern
-            # This ensures we apply the exact same scaling to both e_theta and e_phi
-            # at each point, preserving polarization characteristics
             scale_factors = np.zeros((n_freq, n_theta, n_phi))
             
-            # For each phi cut, interpolate the scaling value at each frequency
-            for p_idx, phi_val in enumerate(pattern_phi):
-                # Create interpolation points for this phi value
-                points_out = np.column_stack((pattern_freq, np.full_like(pattern_freq, phi_val)))
+            # Use interp2d for each frequency, but handle phi as a circular coordinate
+            from scipy.interpolate import interp1d
+            
+            # For each frequency, create a periodic interpolator for phi
+            for f_idx, freq in enumerate(pattern_freq):
+                # Find the nearest frequency in freq_scale
+                nearest_freq_idx = np.abs(freq_scale - freq).argmin()
                 
-                # Interpolate scaling values for this phi angle at each frequency
-                scale_vals = griddata(points_in, values_in, points_out, 
-                                    method='linear', fill_value=0.0)
+                # Get scaling values for this frequency
+                scale_values_freq = scale_db[nearest_freq_idx, :]
                 
-                # Clip to reasonable range
-                scale_vals = np.clip(scale_vals, min_db_value, max_db_value)
+                # Now handle phi interpolation with circular wrapping
+                # Convert phi_scale to radians for easier circular handling
+                phi_scale_rad = np.radians(phi_scale)
+                pattern_phi_rad = np.radians(pattern_phi)
                 
-                # Replace any NaN values
-                scale_vals = np.nan_to_num(scale_vals, nan=0.0)
+                # Convert the problem to interpolating complex values around a unit circle
+                # This ensures proper wrapping at ±180° boundary
+                phi_complex = np.exp(1j * phi_scale_rad)
                 
-                # Assign to all theta values for this phi angle
-                for f_idx in range(n_freq):
-                    scale_factors[f_idx, :, p_idx] = scale_vals[f_idx]
+                # Real and imaginary components of phi for interpolation
+                phi_real = np.real(phi_complex)
+                phi_imag = np.imag(phi_complex)
+                
+                # Create interpolators for real and imaginary components
+                real_interp = interp1d(phi_scale, phi_real * scale_values_freq, 
+                                    bounds_error=False, fill_value="extrapolate")
+                imag_interp = interp1d(phi_scale, phi_imag * scale_values_freq,
+                                    bounds_error=False, fill_value="extrapolate")
+                
+                # Interpolate for each phi angle in the pattern
+                for p_idx, phi in enumerate(pattern_phi):
+                    # Get interpolated real and imaginary components
+                    real_val = real_interp(phi)
+                    imag_val = imag_interp(phi)
+                    
+                    # Reconstruct the scaled value, accounting for the unit circle normalization
+                    scale_val = (real_val + 1j * imag_val) / np.exp(1j * np.radians(phi))
+                    scale_val = np.real(scale_val)  # Should be real after division
+                    
+                    # Clip to reasonable range
+                    scale_val = np.clip(scale_val, min_db_value, max_db_value)
+                    
+                    # Replace any NaN values
+                    if np.isnan(scale_val):
+                        scale_val = 0.0
+                    
+                    # Assign to all theta values for this phi angle and frequency
+                    scale_factors[f_idx, :, p_idx] = scale_val
             
             # Log warning if extreme values were detected
             if np.any(scale_factors >= max_db_value) or np.any(scale_factors <= min_db_value):
@@ -580,7 +601,7 @@ class AntennaPattern:
             e_phi_scaled = self.data.e_phi.values * linear_scale_factors
             
             return AntennaPattern(
-                theta=self.theta_angles,
+                theta=pattern_theta,
                 phi=pattern_phi,
                 frequency=pattern_freq,
                 e_theta=e_theta_scaled,
