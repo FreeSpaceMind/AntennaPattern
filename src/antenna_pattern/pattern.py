@@ -537,66 +537,36 @@ class AntennaPattern:
             # Create a 3D array to store scaling factors for each point in the pattern
             scale_factors = np.zeros((n_freq, n_theta, n_phi))
             
-            # Use interp2d for each frequency, but handle phi as a circular coordinate
-            from scipy.interpolate import interp1d
-            
-            # For each frequency, create a periodic interpolator for phi
+            # Use a simple nearest-neighbor approach for each (frequency, phi) point
+            # This avoids any complex interpolation that could distort your pattern
             for f_idx, freq in enumerate(pattern_freq):
-                # Find the nearest frequency in freq_scale
-                nearest_freq_idx = np.abs(freq_scale - freq).argmin()
+                # Find nearest frequency in freq_scale
+                f_nearest_idx = np.abs(freq_scale - freq).argmin()
                 
-                # Get scaling values for this frequency
-                scale_values_freq = scale_db[nearest_freq_idx, :]
-                
-                # Now handle phi interpolation with circular wrapping
-                # Convert phi_scale to radians for easier circular handling
-                phi_scale_rad = np.radians(phi_scale)
-                pattern_phi_rad = np.radians(pattern_phi)
-                
-                # Convert the problem to interpolating complex values around a unit circle
-                # This ensures proper wrapping at ±180° boundary
-                phi_complex = np.exp(1j * phi_scale_rad)
-                
-                # Real and imaginary components of phi for interpolation
-                phi_real = np.real(phi_complex)
-                phi_imag = np.imag(phi_complex)
-                
-                # Create interpolators for real and imaginary components
-                real_interp = interp1d(phi_scale, phi_real * scale_values_freq, 
-                                    bounds_error=False, fill_value="extrapolate")
-                imag_interp = interp1d(phi_scale, phi_imag * scale_values_freq,
-                                    bounds_error=False, fill_value="extrapolate")
-                
-                # Interpolate for each phi angle in the pattern
                 for p_idx, phi in enumerate(pattern_phi):
-                    # Get interpolated real and imaginary components
-                    real_val = real_interp(phi)
-                    imag_val = imag_interp(phi)
+                    # Find nearest phi in phi_scale, accounting for periodicity
+                    # Calculate the angular distance considering wrap-around
+                    phi_dists = np.abs(np.mod(phi_scale - phi + 180, 360) - 180)
+                    p_nearest_idx = np.argmin(phi_dists)
                     
-                    # Reconstruct the scaled value, accounting for the unit circle normalization
-                    scale_val = (real_val + 1j * imag_val) / np.exp(1j * np.radians(phi))
-                    scale_val = np.real(scale_val)  # Should be real after division
+                    # Get scaling value from the nearest point
+                    scale_val = scale_db[f_nearest_idx, p_nearest_idx]
                     
                     # Clip to reasonable range
                     scale_val = np.clip(scale_val, min_db_value, max_db_value)
-                    
-                    # Replace any NaN values
-                    if np.isnan(scale_val):
-                        scale_val = 0.0
                     
                     # Assign to all theta values for this phi angle and frequency
                     scale_factors[f_idx, :, p_idx] = scale_val
             
             # Log warning if extreme values were detected
             if np.any(scale_factors >= max_db_value) or np.any(scale_factors <= min_db_value):
-                logger.warning("Extreme scaling values detected in interpolation and clipped to range [%f, %f] dB", 
+                logger.warning("Extreme scaling values detected and clipped to range [%f, %f] dB", 
                             min_db_value, max_db_value)
             
             # Convert dB to linear scale factors
             linear_scale_factors = 10**(scale_factors / 20.0)
             
-            # Apply scaling using numpy broadcasting - this is more efficient
-            # and ensures the same scaling is applied to both field components
+            # Apply scaling using numpy broadcasting
             e_theta_scaled = self.data.e_theta.values * linear_scale_factors
             e_phi_scaled = self.data.e_phi.values * linear_scale_factors
             
