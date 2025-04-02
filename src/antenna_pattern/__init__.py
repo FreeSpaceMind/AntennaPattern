@@ -36,7 +36,8 @@ from .utilities import (
     freespace_impedance,
     db_to_linear,
     linear_to_db,
-    scale_amplitude
+    scale_amplitude,
+    create_synthetic_pattern
 )
 
 # Define what gets imported with "from antenna_pattern import *"
@@ -64,5 +65,6 @@ __all__ = [
     'freespace_impedance',
     'db_to_linear',
     'linear_to_db',
-    'scale_amplitude'
+    'scale_amplitude',
+    'create_synthetic_pattern'
 ]

@@ -2,7 +2,7 @@
 Common utility functions and constants for antenna pattern analysis.
 """
 import numpy as np
-from typing import Tuple, Union, Optional, List, Any
+from typing import Tuple, Union, Optional, List, Any, Callable
 
 # Physical constants
 lightspeed = 299792458  # Speed of light in vacuum (m/s)
@@ -187,3 +187,223 @@ def scale_amplitude(values: np.ndarray, scale_db: Union[float, np.ndarray]) -> n
     
     # Apply scaling factor to complex values (preserves phase)
     return values * scale_factor
+
+
+def create_synthetic_pattern(
+    frequencies: np.ndarray,
+    theta_angles: np.ndarray,
+    phi_angles: np.ndarray,
+    peak_gain_dbi: Union[float, np.ndarray],
+    polarization: str = 'rhcp',
+    beamwidth_deg: Union[float, np.ndarray] = 30.0,
+    axial_ratio_db: Union[float, np.ndarray, Callable] = 0.0,
+    front_to_back_db: Union[float, np.ndarray] = 25.0,
+    sidelobe_level_db: Union[float, np.ndarray] = -20.0
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Create a synthetic antenna pattern based on key antenna parameters.
+    
+    This function generates realistic e_theta and e_phi field components based on
+    common antenna parameters, allowing easy creation of test patterns without
+    requiring detailed electromagnetic modeling.
+    
+    Args:
+        frequencies: Array of frequencies in Hz
+        theta_angles: Array of theta angles in degrees (-90 to 90 for elevation cuts)
+        phi_angles: Array of phi angles in degrees (0-360 for azimuth cuts)
+        peak_gain_dbi: Peak gain in dBi. Can be single value or array for each frequency
+        polarization: Desired polarization ('rhcp', 'lhcp', 'x', 'y', 'theta', 'phi')
+        beamwidth_deg: 3dB beamwidth in degrees. Can be single value or array for each frequency
+        axial_ratio_db: Axial ratio in dB. Can be:
+            - Single value for constant axial ratio
+            - Array matching frequencies for frequency-dependent axial ratio
+            - Function taking theta angle (deg) that returns axial ratio (dB)
+        front_to_back_db: Front-to-back ratio in dB. Can be single value or array for each frequency
+        sidelobe_level_db: Relative sidelobe level in dB. Can be single value or array for each frequency
+        
+    Returns:
+        Tuple of (e_theta, e_phi) complex arrays with shape [freq, theta, phi]
+        
+    Note:
+        To use this pattern, create an AntennaPattern with these components:
+        ```
+        e_theta, e_phi = create_synthetic_pattern(...)
+        pattern = AntennaPattern(
+            theta=theta_angles,
+            phi=phi_angles,
+            frequency=frequencies,
+            e_theta=e_theta,
+            e_phi=e_phi,
+            polarization=polarization  # Optional - will be auto-detected if omitted
+        )
+        ```
+    """
+    # Convert inputs to arrays if needed
+    if np.isscalar(peak_gain_dbi):
+        peak_gain_dbi = np.full(len(frequencies), peak_gain_dbi)
+    elif len(peak_gain_dbi) != len(frequencies):
+        raise ValueError(f"peak_gain_dbi length ({len(peak_gain_dbi)}) must match frequencies length ({len(frequencies)})")
+        
+    if np.isscalar(beamwidth_deg):
+        beamwidth_deg = np.full(len(frequencies), beamwidth_deg)
+    elif len(beamwidth_deg) != len(frequencies):
+        raise ValueError(f"beamwidth_deg length ({len(beamwidth_deg)}) must match frequencies length ({len(frequencies)})")
+        
+    if np.isscalar(front_to_back_db):
+        front_to_back_db = np.full(len(frequencies), front_to_back_db)
+    elif len(front_to_back_db) != len(frequencies):
+        raise ValueError(f"front_to_back_db length ({len(front_to_back_db)}) must match frequencies length ({len(frequencies)})")
+        
+    if np.isscalar(sidelobe_level_db):
+        sidelobe_level_db = np.full(len(frequencies), sidelobe_level_db)
+    elif len(sidelobe_level_db) != len(frequencies):
+        raise ValueError(f"sidelobe_level_db length ({len(sidelobe_level_db)}) must match frequencies length ({len(frequencies)})")
+    
+    # Initialize arrays for field components
+    e_theta = np.zeros((len(frequencies), len(theta_angles), len(phi_angles)), dtype=complex)
+    e_phi = np.zeros((len(frequencies), len(theta_angles), len(phi_angles)), dtype=complex)
+    
+    # Pattern generation for each frequency
+    for freq_idx, freq in enumerate(frequencies):
+        # Convert peak gain to linear scale
+        peak_gain_linear = 10**(peak_gain_dbi[freq_idx]/10)
+        
+        # Convert beamwidth to pattern parameter (sigma for Gaussian, parameter for cos^n)
+        sigma_deg = beamwidth_deg[freq_idx] / (2 * np.sqrt(2 * np.log(2)))  # Convert HPBW to Gaussian sigma
+        cos_n = -np.log(0.5) / np.log(np.cos(np.radians(beamwidth_deg[freq_idx]/2)))  # Power for cosine pattern
+        
+        # Front-to-back ratio as linear scale
+        ftb_linear = 10**(front_to_back_db[freq_idx]/10)
+        back_level = 1 / ftb_linear
+        
+        # Sidelobe level as linear scale relative to peak
+        sl_linear = 10**(sidelobe_level_db[freq_idx]/20)  # Convert from dB to amplitude ratio
+        
+        # Generate pattern for each phi cut
+        for phi_idx, phi_val in enumerate(phi_angles):
+            # Calculate phi-dependent factors (for patterns with different E/H plane beamwidths)
+            # This gives slightly wider beamwidth in H-plane compared to E-plane
+            phi_factor = 1.0 + 0.1 * np.cos(np.radians(2 * phi_val))
+            pattern_sigma = sigma_deg * phi_factor
+            
+            for theta_idx, theta_val in enumerate(theta_angles):
+                # Calculate normalized angle from boresight
+                norm_angle = abs(theta_val) / beamwidth_deg[freq_idx]
+                
+                # Generate main beam pattern shape
+                # Use a modified Gaussian pattern with smoother falloff
+                main_beam = np.exp(-(theta_val**2) / (2 * pattern_sigma**2))
+                
+                # Apply a slight softening to the beam edge to eliminate any discontinuities
+                edge_softening = 0.02 * np.exp(-(theta_val**2 - (beamwidth_deg[freq_idx]/1.5)**2)**2 / (beamwidth_deg[freq_idx]**2))
+                main_beam = main_beam + edge_softening
+                
+                # Create a smooth blended pattern of main beam and sidelobes
+                
+                # First null position based on beamwidth
+                null_pos = beamwidth_deg[freq_idx] * 1.5
+                
+                # Create sidelobe pattern using sinc function
+                x = theta_val / null_pos
+                if x != 0:
+                    sidelobe = sl_linear * abs(np.sin(np.pi * x) / (np.pi * x))
+                    
+                    # Apply damping to reduce far sidelobes
+                    sidelobe *= np.exp(-(theta_val**2) / (2 * (4*pattern_sigma)**2))
+                else:
+                    sidelobe = 0
+                
+                # Use analytical function to create continuous pattern
+                # This ensures smoothness of both the function and its derivatives
+                
+                # Determine a continuous transition based on the beamwidth 
+                # The width parameter controls the transition zone width
+                width = beamwidth_deg[freq_idx] * 0.3  
+                
+                # Create a smooth continuous weighting using tanh function
+                # This ensures C∞ continuity (all derivatives are continuous)
+                w_mainbeam = 0.5 * (1 - np.tanh((abs(theta_val) - beamwidth_deg[freq_idx]*0.7) / width))
+                w_sidelobe = 1 - w_mainbeam
+                
+                # Create final pattern with perfectly smooth transition between regions
+                pattern_shape = main_beam * w_mainbeam + sidelobe * w_sidelobe
+                
+                # Ensure pattern never has abrupt fluctuations
+                pattern_shape = pattern_shape * (0.998 + 0.002 * np.cos(np.pi * theta_val / 180))
+                
+                # Apply front-to-back effect - reduce gain in back hemisphere
+                if abs(theta_val) > 90:
+                    back_angle = 180 - abs(theta_val)
+                    # Smooth transition to back level
+                    reduction = back_level + (1 - back_level) * np.exp(-(back_angle**2) / 100)
+                    pattern_shape *= reduction
+                
+                # Apply peak gain to get absolute field magnitude
+                amplitude = np.sqrt(peak_gain_linear) * pattern_shape
+                
+                # Calculate axial ratio - support different modes of specification
+                if callable(axial_ratio_db):
+                    # Function of theta angle
+                    ar_db = axial_ratio_db(theta_val)
+                elif np.isscalar(axial_ratio_db):
+                    # Constant value
+                    ar_db = axial_ratio_db
+                elif len(axial_ratio_db) == len(frequencies):
+                    # Value per frequency
+                    ar_db = axial_ratio_db[freq_idx]
+                else:
+                    # Default good circular polarization
+                    ar_db = 0.0
+                
+                # Convert axial ratio to linear scale for field component calculation
+                ar_linear = 10**(ar_db/20)
+                
+                # Set phase based on phi angle
+                phi_phase = np.radians(phi_val)
+                
+                # Apply polarization and axial ratio to field components
+                if polarization.lower() in ['rhcp', 'rh', 'r']:
+                    # For RHCP with specified axial ratio
+                    if ar_linear > 1.0:
+                        # Elliptical polarization - major axis
+                        e_theta[freq_idx, theta_idx, phi_idx] = amplitude * ar_linear * np.exp(1j * phi_phase)
+                        # Elliptical polarization - minor axis with 90° phase
+                        e_phi[freq_idx, theta_idx, phi_idx] = amplitude * np.exp(1j * (phi_phase + np.pi/2))
+                    else:
+                        # Maintain total power with different AR definition
+                        e_theta[freq_idx, theta_idx, phi_idx] = amplitude * np.exp(1j * phi_phase)
+                        e_phi[freq_idx, theta_idx, phi_idx] = amplitude * (1/ar_linear) * np.exp(1j * (phi_phase + np.pi/2))
+                
+                elif polarization.lower() in ['lhcp', 'lh', 'l']:
+                    # For LHCP with specified axial ratio
+                    if ar_linear > 1.0:
+                        # Elliptical polarization - major axis
+                        e_theta[freq_idx, theta_idx, phi_idx] = amplitude * ar_linear * np.exp(1j * phi_phase)
+                        # Elliptical polarization - minor axis with -90° phase
+                        e_phi[freq_idx, theta_idx, phi_idx] = amplitude * np.exp(1j * (phi_phase - np.pi/2))
+                    else:
+                        # Maintain total power with different AR definition
+                        e_theta[freq_idx, theta_idx, phi_idx] = amplitude * np.exp(1j * phi_phase)
+                        e_phi[freq_idx, theta_idx, phi_idx] = amplitude * (1/ar_linear) * np.exp(1j * (phi_phase - np.pi/2))
+                
+                elif polarization.lower() in ['x', 'l3x']:
+                    # For X polarization
+                    e_theta[freq_idx, theta_idx, phi_idx] = amplitude * np.cos(np.radians(phi_val)) * np.exp(1j * phi_phase)
+                    e_phi[freq_idx, theta_idx, phi_idx] = -amplitude * np.sin(np.radians(phi_val)) * (1/ar_linear) * np.exp(1j * phi_phase)
+                
+                elif polarization.lower() in ['y', 'l3y']:
+                    # For Y polarization
+                    e_theta[freq_idx, theta_idx, phi_idx] = amplitude * np.sin(np.radians(phi_val)) * np.exp(1j * phi_phase)
+                    e_phi[freq_idx, theta_idx, phi_idx] = amplitude * np.cos(np.radians(phi_val)) * (1/ar_linear) * np.exp(1j * phi_phase)
+                
+                elif polarization.lower() == 'theta':
+                    # For theta polarization
+                    e_theta[freq_idx, theta_idx, phi_idx] = amplitude * np.exp(1j * phi_phase)
+                    e_phi[freq_idx, theta_idx, phi_idx] = amplitude * (1/ar_linear) * np.exp(1j * phi_phase) * 0.01
+                
+                elif polarization.lower() == 'phi':
+                    # For phi polarization
+                    e_theta[freq_idx, theta_idx, phi_idx] = amplitude * (1/ar_linear) * np.exp(1j * phi_phase) * 0.01
+                    e_phi[freq_idx, theta_idx, phi_idx] = amplitude * np.exp(1j * phi_phase)
+    
+    return e_theta, e_phi
