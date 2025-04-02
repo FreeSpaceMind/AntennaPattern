@@ -183,7 +183,7 @@ def scale_amplitude(values: np.ndarray, scale_db: Union[float, np.ndarray]) -> n
         This multiplies the amplitude by 10^(scale_db/20), maintaining the phase.
     """
     # Convert dB scaling to linear scale factor (amplitude, not power)
-    scale_factor = 10**(scale_db / 20.0)
+    scale_factor = 10**(scale_db / 10.0)
     
     # Apply scaling factor to complex values (preserves phase)
     return values * scale_factor
