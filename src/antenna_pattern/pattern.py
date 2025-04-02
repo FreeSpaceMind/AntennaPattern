@@ -564,7 +564,7 @@ class AntennaPattern:
                             min_db_value, max_db_value)
             
             # Convert dB to linear scale factors
-            linear_scale_factors = 10**(scale_factors / 10.0)
+            linear_scale_factors = 10**(scale_factors / 20.0)
             
             # Apply scaling using numpy broadcasting
             e_theta_scaled = self.data.e_theta.values * linear_scale_factors
