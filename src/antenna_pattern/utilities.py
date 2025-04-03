@@ -410,11 +410,13 @@ def create_synthetic_pattern(
 
 def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Transforms from spherical coordinates to direction cosine coordinates.
+    Transforms from extended spherical coordinates to direction cosine coordinates.
+    
+    Handles extended range: theta [-180°, +180°], phi [-180°, +180°]
     
     Args:
-        theta: Array of theta angles in degrees (from positive z-axis)
-        phi: Array of phi angles in degrees (azimuth in x-y plane from x-axis)
+        theta: Array of theta angles in degrees (-180 to +180)
+        phi: Array of phi angles in degrees (-180 to +180)
     
     Returns:
         Tuple[np.ndarray, np.ndarray, np.ndarray]: Direction cosines (u, v, w)
@@ -430,17 +432,32 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
         theta_rad = THETA
         phi_rad = PHI
     
+    # For theta outside [-90, 90], we need special handling
+    # When |theta| > 90, we're in the back hemisphere
+    back_hemisphere = np.abs(theta_rad) > np.pi/2
+    
+    # Adjust theta to be in [-π/2, π/2] range
+    theta_adj = np.where(back_hemisphere, np.sign(theta_rad) * (np.pi - np.abs(theta_rad)), theta_rad)
+    
+    # Adjust phi - flip by 180° when in back hemisphere
+    phi_adj = np.where(back_hemisphere, phi_rad + np.pi, phi_rad)
+    
     # Calculate direction cosines
-    u = np.sin(theta_rad) * np.cos(phi_rad)
-    v = np.sin(theta_rad) * np.sin(phi_rad)
-    w = np.cos(theta_rad)
+    u = np.sin(theta_adj) * np.cos(phi_adj)
+    v = np.sin(theta_adj) * np.sin(phi_adj)
+    w = np.cos(theta_adj)
+    
+    # Negate w in back hemisphere
+    w = np.where(back_hemisphere, -w, w)
     
     return u, v, w
 
 
 def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Transforms from direction cosine coordinates to spherical coordinates.
+    Transforms from direction cosine coordinates to extended spherical coordinates.
+    
+    Returns angles in extended range: theta [-180°, +180°], phi [-180°, +180°]
     
     Args:
         u: Direction cosine u (-1 to +1)
@@ -452,20 +469,39 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     """
     # Normalize the direction cosines to ensure unit vector
     magnitude = np.sqrt(u**2 + v**2 + w**2)
-    valid = magnitude > 1e-10
+    # Handle potential division by zero
+    safe_mag = np.maximum(magnitude, 1e-10)
     
-    u_norm = np.where(valid, u / magnitude, 0)
-    v_norm = np.where(valid, v / magnitude, 0)
-    w_norm = np.where(valid, w / magnitude, 0)
+    u_norm = u / safe_mag
+    v_norm = v / safe_mag
+    w_norm = w / safe_mag
     
-    # Calculate theta (elevation angle from z-axis)
-    theta = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
+    # First, calculate theta in standard range [0, 180°]
+    # This is the angle from positive z-axis
+    theta_standard = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
     
-    # Calculate phi (azimuth angle in x-y plane)
+    # Determine phi in range [-180°, 180°]
     phi = np.degrees(np.arctan2(v_norm, u_norm))
     
-    # Ensure phi is in range [0, 360)
-    phi = np.mod(phi, 360.0)
+    # Now convert theta to extended range [-180°, 180°]
+    # For points in the "back" hemisphere (w < 0), we need special handling
+    front_hemisphere = (theta_standard <= 90)
+    back_hemisphere = (theta_standard > 90)
+    
+    # In front hemisphere: theta in [-90°, 90°]
+    # In back hemisphere: theta in [-180°, -90°) ∪ (90°, 180°]
+    theta = np.zeros_like(theta_standard)
+    
+    # Front hemisphere - standard angle
+    theta = np.where(front_hemisphere, theta_standard, theta)
+    
+    # Back hemisphere - convert to extended range
+    # Sign depends on which side of the xz-plane we're on (determined by phi)
+    theta_back = np.where(phi >= 0, 
+                         180 - theta_standard,  # phi ≥ 0: [90°, 180°]
+                         theta_standard - 180)  # phi < 0: [-180°, -90°]
+    
+    theta = np.where(back_hemisphere, theta_back, theta)
     
     return theta, phi
 
