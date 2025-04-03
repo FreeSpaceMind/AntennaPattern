@@ -407,3 +407,114 @@ def create_synthetic_pattern(
                     e_phi[freq_idx, theta_idx, phi_idx] = amplitude * np.exp(1j * phi_phase)
     
     return e_theta, e_phi
+
+def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Transforms from spherical coordinates to direction cosine coordinates.
+    
+    Implements equations A1.34 to 36 of "Theory and Practice of Modern Antenna Range 
+    Measurements" by C. Parini et al.
+    
+    Args:
+        theta: Array of theta angles in degrees
+        phi: Array of phi angles in degrees
+    
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: Direction cosines (u, v, w)
+    """
+    # Create theta, phi meshgrid if needed
+    if theta.ndim == 1 and phi.ndim == 1:
+        PHI, THETA = np.meshgrid(np.radians(phi), np.radians(theta))
+    else:
+        # Assume inputs are already in meshgrid form
+        THETA = np.radians(theta)
+        PHI = np.radians(phi)
+
+    # Calculate direction cosines
+    u = np.sin(THETA) * np.cos(PHI)
+    v = np.sin(THETA) * np.sin(PHI)
+    w = np.cos(THETA)
+    
+    return u, v, w
+
+
+def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Transforms from direction cosine coordinates to spherical coordinates.
+    
+    Args:
+        u: Direction cosine u (-1 to +1)
+        v: Direction cosine v (-1 to +1)
+        w: Direction cosine w (-1 to +1)
+    
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Spherical coordinates (theta, phi) in degrees
+    """
+    # Calculate theta (elevation angle from z-axis)
+    theta = np.degrees(np.arccos(np.clip(w, -1.0, 1.0)))
+    
+    # Calculate phi (azimuth angle in x-y plane)
+    phi = np.degrees(np.arctan2(v, u))
+    
+    # Ensure phi is in range [0, 360)
+    phi = np.mod(phi, 360.0)
+    
+    return theta, phi
+
+
+def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray, 
+                       az: float, el: float, roll: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Performs an isometric rotation of the direction cosines.
+    
+    Implements the rotation matrices from Section A1.7.1 of "Theory and Practice 
+    of Modern Antenna Range Measurements" by C. Parini et al.
+    
+    Args:
+        u: Direction cosine u (-1 to +1)
+        v: Direction cosine v (-1 to +1)
+        w: Direction cosine w (-1 to +1)
+        az: Azimuth rotation angle in degrees
+        el: Elevation rotation angle in degrees
+        roll: Roll rotation angle in degrees
+    
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: Rotated direction cosines (u', v', w')
+    """
+    # Store the original shape
+    shape = np.shape(u)
+    
+    # Define rotation matrices (as in the reference)
+    # Roll matrix (rotation around z-axis)
+    a1 = np.array([
+        [np.cos(np.radians(roll)), np.sin(np.radians(roll)), 0],
+        [-np.sin(np.radians(roll)), np.cos(np.radians(roll)), 0],
+        [0, 0, 1]
+    ])
+    
+    # Elevation matrix (rotation around x-axis)
+    a2 = np.array([
+        [1, 0, 0],
+        [0, np.cos(np.radians(el)), -np.sin(np.radians(el))],
+        [0, np.sin(np.radians(el)), np.cos(np.radians(el))]
+    ])
+    
+    # Azimuth matrix (rotation around y-axis)
+    a3 = np.array([
+        [np.cos(np.radians(az)), 0, -np.sin(np.radians(az))],
+        [0, 1, 0],
+        [np.sin(np.radians(az)), 0, np.cos(np.radians(az))]
+    ])
+    
+    # Flatten the input arrays and combine into a matrix
+    data_matrix = np.array([u.flatten(), v.flatten(), w.flatten()])
+    
+    # Apply the rotation matrices
+    result = np.matmul(np.matmul(np.matmul(a1, a2), a3), data_matrix)
+    
+    # Extract and reshape the results
+    u_rot = np.reshape(result[0, :], shape)
+    v_rot = np.reshape(result[1, :], shape)
+    w_rot = np.reshape(result[2, :], shape)
+    
+    return u_rot, v_rot, w_rot

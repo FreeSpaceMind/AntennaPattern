@@ -7,6 +7,7 @@ from typing import Optional, Union, Tuple, Dict, Any, Set, Generator
 import logging
 from pathlib import Path
 from contextlib import contextmanager
+from scipy.interpolate import RegularGridInterpolator, interp1d
 
 from .utilities import find_nearest, unwrap_phase, scale_amplitude
 from .polarization import (
@@ -515,7 +516,6 @@ class AntennaPattern:
                 raise ValueError(f"scale_db length ({len(scale_db)}) must match freq_scale length ({len(freq_scale)})")
             
             # Interpolate to match pattern frequencies
-            from scipy.interpolate import interp1d
             interp_func = interp1d(freq_scale, scale_db, bounds_error=False, fill_value="extrapolate")
             interp_scale = interp_func(pattern_freq)
             
@@ -600,6 +600,94 @@ class AntennaPattern:
             )
         
         raise ValueError("Invalid scale_db format. Must be scalar, 1D or 2D array.")
+    
+    def rotate(self, azimuth: float, elevation: float, roll: float) -> 'AntennaPattern':
+        """
+        Rotate the antenna pattern by specified angles.
+        
+        Applies an isometric rotation to the antenna pattern using rotation angles
+        in the given order: roll (around z-axis), then elevation (around x-axis), 
+        then azimuth (around y-axis).
+        
+        Args:
+            azimuth: Rotation around y-axis in degrees
+            elevation: Rotation around x-axis in degrees
+            roll: Rotation around z-axis in degrees
+            
+        Returns:
+            AntennaPattern: New pattern with rotated coordinates
+            
+        Note:
+            The rotation follows the convention in Section A1.7.1 of "Theory and Practice 
+            of Modern Antenna Range Measurements" by C. Parini et al.
+        """
+        from .utilities import transform_tp2uvw, isometric_rotation, transform_uvw2tp
+        
+        # Get pattern dimensions
+        freq_array = self.frequencies
+        theta_array = self.theta_angles
+        phi_array = self.phi_angles
+        
+        # Create output arrays
+        e_theta_rotated = np.zeros_like(self.data.e_theta.values)
+        e_phi_rotated = np.zeros_like(self.data.e_phi.values)
+        
+        # Process each frequency
+        for freq_idx, freq in enumerate(freq_array):
+            # Original fields
+            e_theta_orig = self.data.e_theta.values[freq_idx]
+            e_phi_orig = self.data.e_phi.values[freq_idx]
+            
+            # Create meshgrids for theta and phi
+            THETA, PHI = np.meshgrid(theta_array, phi_array, indexing='ij')
+            
+            # Convert to direction cosines
+            u, v, w = transform_tp2uvw(THETA, PHI)
+            
+            # Apply rotation
+            u_rot, v_rot, w_rot = isometric_rotation(u, v, w, azimuth, elevation, roll)
+            
+            # Convert back to theta, phi coordinates
+            theta_rot, phi_rot = transform_uvw2tp(u_rot, v_rot, w_rot)
+            
+            # Interpolate field values from original to rotated coordinates
+
+            # Create interpolation function for e_theta
+            e_theta_interp = RegularGridInterpolator(
+                (theta_array, phi_array),
+                e_theta_orig,
+                bounds_error=False,
+                fill_value=0
+            )
+            
+            # Create interpolation function for e_phi
+            e_phi_interp = RegularGridInterpolator(
+                (theta_array, phi_array),
+                e_phi_orig,
+                bounds_error=False,
+                fill_value=0
+            )
+            
+            # Prepare points for interpolation
+            points = np.column_stack((theta_rot.flatten(), phi_rot.flatten()))
+            
+            # Interpolate field values
+            e_theta_values = e_theta_interp(points).reshape(THETA.shape)
+            e_phi_values = e_phi_interp(points).reshape(THETA.shape)
+            
+            # Store in output arrays
+            e_theta_rotated[freq_idx] = e_theta_values
+            e_phi_rotated[freq_idx] = e_phi_values
+        
+        # Create new antenna pattern with rotated fields
+        return AntennaPattern(
+            theta=theta_array,
+            phi=phi_array,
+            frequency=freq_array,
+            e_theta=e_theta_rotated,
+            e_phi=e_phi_rotated,
+            polarization=self.polarization
+        )
     
     def write_cut(self, file_path: Union[str, Path], polarization_format: int = 1) -> None:
         """

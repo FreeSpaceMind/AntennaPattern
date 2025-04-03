@@ -26,7 +26,8 @@ from .analysis import (
     beamwidth_from_pattern,
     calculate_beamwidth,
     apply_mars,
-    get_axial_ratio
+    get_axial_ratio,
+    normalize_phase
 )
 from .utilities import (
     find_nearest,
@@ -37,7 +38,10 @@ from .utilities import (
     db_to_linear,
     linear_to_db,
     scale_amplitude,
-    create_synthetic_pattern
+    create_synthetic_pattern,
+    transform_tp2uvw,
+    transform_uvw2tp,
+    isometric_rotation,
 )
 
 # Define what gets imported with "from antenna_pattern import *"
@@ -58,6 +62,7 @@ __all__ = [
     'calculate_beamwidth',
     'apply_mars',
     'get_axial_ratio',
+    'normalize_phase',
     'find_nearest',
     'frequency_to_wavelength',
     'lightspeed',
@@ -66,5 +71,8 @@ __all__ = [
     'db_to_linear',
     'linear_to_db',
     'scale_amplitude',
-    'create_synthetic_pattern'
+    'create_synthetic_pattern',
+    'transform_tp2uvw',
+    'transform_uvw2tp',
+    'isometric_rotation'
 ]
