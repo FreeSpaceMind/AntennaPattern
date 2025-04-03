@@ -316,13 +316,14 @@ def apply_mars(pattern, maximum_radial_extent: float):
     )
 
 
-def translate_phase_pattern(pattern, translation):
+def translate_phase_pattern(pattern, translation, normalize=True):
     """
     Shifts the antenna phase pattern to place the origin at the location defined by the shift.
     
     Args:
         pattern: AntennaPattern object to translate
         translation: [x, y, z] translation vector in meters
+        normalize: if true, normalize the translated phase pattern to zero degrees
         
     Returns:
         AntennaPattern: New pattern with translated phase
@@ -356,6 +357,24 @@ def translate_phase_pattern(pattern, translation):
     # Reconstruct complex values
     e_theta_new = e_theta_mag * np.exp(1j * e_theta_phase_new)
     e_phi_new = e_phi_mag * np.exp(1j * e_phi_phase_new)
+
+    # normalize
+    if normalize:
+        # Find the indices for theta=0, phi=0 (or closest values)
+        theta_0_idx = np.argmin(np.abs(theta))
+        phi_0_idx = np.argmin(np.abs(phi))
+        
+        # Get the phase at reference point for each frequency
+        ref_phases = np.angle(e_theta_new[:, theta_0_idx, phi_0_idx])
+        
+        # Reshape for broadcasting across theta and phi dimensions
+        ref_phases_reshaped = ref_phases.reshape(-1, 1, 1)
+        
+        # Apply phase normalization by subtracting reference phase
+        # This preserves relative phase relationships between e_theta and e_phi
+        phase_correction = np.exp(-1j * ref_phases_reshaped)
+        e_theta_new = e_theta_new * phase_correction
+        e_phi_new = e_phi_new * phase_correction
     
     # Import here to avoid circular import
     from .pattern import AntennaPattern
