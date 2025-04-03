@@ -9,7 +9,10 @@ from pathlib import Path
 from contextlib import contextmanager
 from scipy.interpolate import RegularGridInterpolator, interp1d
 
-from .utilities import find_nearest, unwrap_phase, scale_amplitude
+from .utilities import (
+        find_nearest, unwrap_phase, scale_amplitude,
+        transform_tp2uvw, isometric_rotation, transform_uvw2tp
+        )
 from .polarization import (
     polarization_tp2xy, polarization_xy2pt, polarization_tp2rl, 
     polarization_rl2xy, polarization_rl2tp
