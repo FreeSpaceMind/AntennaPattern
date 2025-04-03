@@ -13,7 +13,10 @@ from .polarization import (
     polarization_tp2xy, polarization_xy2pt, polarization_tp2rl, 
     polarization_rl2xy, polarization_rl2tp
 )
-from .analysis import translate_phase_pattern, find_phase_center, apply_mars, get_axial_ratio, calculate_beamwidth
+from .analysis import (
+    translate_phase_pattern, find_phase_center, apply_mars, get_axial_ratio, 
+    calculate_beamwidth, normalize_phase
+    )
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -290,6 +293,23 @@ class AntennaPattern:
         translation = self.find_phase_center(theta_angle, frequency)
         return self.translate(translation), translation
     
+    def normalize_phase(self, reference_theta=0, reference_phi=0):
+        """
+        Normalize the phase of an antenna pattern based on its polarization type.
+        
+        This function sets the phase of the co-polarized component at the reference
+        point (closest to reference_theta, reference_phi) to zero, while preserving
+        the relative phase between components.
+        
+        Args:
+            reference_theta: Reference theta angle in degrees (default: 0)
+            reference_phi: Reference phi angle in degrees (default: 0)
+            
+        Returns:
+            AntennaPattern: New pattern with normalized phase
+        """
+        return normalize_phase(self, reference_theta, reference_phi)
+
     def apply_mars(self, maximum_radial_extent: float) -> 'AntennaPattern':
         """
         Apply Mathematical Absorber Reflection Suppression technique.
@@ -638,3 +658,4 @@ class AntennaPattern:
                         YB = e_cx[f_idx, t_idx, p_idx]
                         line = f"{YA.real} {YA.imag} {YB.real} {YB.imag}\n"
                         writer.write(line)
+

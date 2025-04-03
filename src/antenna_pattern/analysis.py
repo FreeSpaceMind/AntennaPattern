@@ -10,6 +10,7 @@ import xarray as xr
 from .utilities import find_nearest, unwrap_phase, frequency_to_wavelength
 from .polarization import phase_pattern_translate, polarization_tp2rl
 from .utilities import lightspeed, interpolate_crossing
+from .pattern import AntennaPattern
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -358,38 +359,8 @@ def translate_phase_pattern(pattern, translation, normalize=True):
     e_theta_new = e_theta_mag * np.exp(1j * e_theta_phase_new)
     e_phi_new = e_phi_mag * np.exp(1j * e_phi_phase_new)
 
-    # normalize
-    if normalize:
-        # Find the indices for theta=0, phi=0 (or closest values)
-        theta_0_idx = np.argmin(np.abs(theta))
-        phi_0_idx = np.argmin(np.abs(phi))
-        
-        # Convert e_theta and e_phi to e_x and e_y at the reference point
-        from .polarization import polarization_tp2xy
-        
-        # Get the phase reference using Ludwig-3 components
-        for f_idx in range(len(frequency)):
-            # Convert theta/phi to x/y for this frequency
-            e_x_single, e_y_single = polarization_tp2xy(
-                phi, 
-                e_theta_new[f_idx], 
-                e_phi_new[f_idx]
-            )
-            
-            # Get the phase at reference point for e_y
-            ref_phase = np.angle(e_x_single[theta_0_idx, phi_0_idx])
-            
-            # Apply phase normalization by subtracting reference phase
-            # This preserves relative phase relationships
-            phase_correction = np.exp(-1j * ref_phase)
-            e_theta_new[f_idx] = e_theta_new[f_idx] * phase_correction
-            e_phi_new[f_idx] = e_phi_new[f_idx] * phase_correction
-    
-    # Import here to avoid circular import
-    from .pattern import AntennaPattern
-    
     # Create new antenna pattern
-    return AntennaPattern(
+    translated_pattern = AntennaPattern(
         theta=theta,
         phi=phi,
         frequency=frequency,
@@ -397,6 +368,12 @@ def translate_phase_pattern(pattern, translation, normalize=True):
         e_phi=e_phi_new,
         polarization=pattern.polarization
     )
+    
+    # Normalize if requested
+    if normalize:
+        translated_pattern = normalize_phase(translated_pattern)
+    
+    return translated_pattern
 
 
 def principal_plane_phase_center(frequency, theta1, theta2, theta3, phase1, phase2, phase3):
@@ -503,3 +480,99 @@ def get_axial_ratio(pattern):
     
     # Calculate axial ratio
     return (er_mag + el_mag) / np.maximum(np.abs(er_mag - el_mag), min_val)
+
+def normalize_phase(pattern, reference_theta=0, reference_phi=0):
+    """
+    Normalize the phase of an antenna pattern based on its polarization type.
+    
+    This function sets the phase of the co-polarized component at the reference
+    point (closest to reference_theta, reference_phi) to zero, while preserving
+    the relative phase between components.
+    
+    Args:
+        pattern: AntennaPattern object to normalize
+        reference_theta: Reference theta angle in degrees (default: 0)
+        reference_phi: Reference phi angle in degrees (default: 0)
+        
+    Returns:
+        AntennaPattern: New pattern with normalized phase
+    """
+    # Get underlying numpy arrays
+    frequency = pattern.data.frequency.values
+    theta = pattern.data.theta.values
+    phi = pattern.data.phi.values
+    e_theta = pattern.data.e_theta.values.copy()
+    e_phi = pattern.data.e_phi.values.copy()
+    
+    # Find the indices for reference angles (or closest values)
+    theta_ref_idx = np.argmin(np.abs(theta - reference_theta))
+    phi_ref_idx = np.argmin(np.abs(phi - reference_phi))
+    
+    # Get reference angle values (for logging)
+    theta_ref_actual = theta[theta_ref_idx]
+    phi_ref_actual = phi[phi_ref_idx]
+    
+    # Determine which component to use as reference based on polarization
+    pol = pattern.polarization.lower()
+    
+    # Process each frequency separately
+    for f_idx in range(len(frequency)):
+        # Select reference component based on polarization type
+        if pol in ('theta', 'phi'):
+            # For spherical polarization, use the corresponding component
+            if pol == 'theta':
+                ref_phase = np.angle(e_theta[f_idx, theta_ref_idx, phi_ref_idx])
+            else:  # phi polarization
+                ref_phase = np.angle(e_phi[f_idx, theta_ref_idx, phi_ref_idx])
+        
+        elif pol in ('x', 'l3x', 'y', 'l3y'):
+            # For Ludwig-3 polarization, calculate e_x and e_y
+            from .polarization import polarization_tp2xy
+            e_x, e_y = polarization_tp2xy(
+                phi, 
+                e_theta[f_idx], 
+                e_phi[f_idx]
+            )
+            if pol in ('x', 'l3x'):
+                ref_phase = np.angle(e_x[theta_ref_idx, phi_ref_idx])
+            else:  # y polarization
+                ref_phase = np.angle(e_y[theta_ref_idx, phi_ref_idx])
+        
+        elif pol in ('rhcp', 'rh', 'r', 'lhcp', 'lh', 'l'):
+            # For circular polarization, calculate RHCP and LHCP components
+            from .polarization import polarization_tp2rl
+            e_r, e_l = polarization_tp2rl(
+                phi,
+                e_theta[f_idx],
+                e_phi[f_idx]
+            )
+            if pol in ('rhcp', 'rh', 'r'):
+                ref_phase = np.angle(e_r[theta_ref_idx, phi_ref_idx])
+            else:  # LHCP polarization
+                ref_phase = np.angle(e_l[theta_ref_idx, phi_ref_idx])
+        
+        else:
+            # Fallback to e_theta for unknown polarization
+            logger.warning(f"Unknown polarization '{pol}', using e_theta as reference")
+            ref_phase = np.angle(e_theta[f_idx, theta_ref_idx, phi_ref_idx])
+        
+        # Apply phase normalization by subtracting reference phase
+        # This preserves relative phase relationships
+        phase_correction = np.exp(-1j * ref_phase)
+        e_theta[f_idx] = e_theta[f_idx] * phase_correction
+        e_phi[f_idx] = e_phi[f_idx] * phase_correction
+    
+    logger.debug(f"Phase pattern normalized to {pol} polarization at θ≈{theta_ref_actual}°, φ≈{phi_ref_actual}°")
+    
+    # Import here to avoid circular import
+    from .pattern import AntennaPattern
+    
+    # Create new antenna pattern
+    return AntennaPattern(
+        theta=theta,
+        phi=phi,
+        frequency=frequency,
+        e_theta=e_theta,
+        e_phi=e_phi,
+        polarization=pattern.polarization
+    )
