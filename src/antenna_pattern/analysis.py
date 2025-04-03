@@ -377,7 +377,7 @@ def translate_phase_pattern(pattern, translation, normalize=True):
             )
             
             # Get the phase at reference point for e_y
-            ref_phase = np.angle(e_y_single[theta_0_idx, phi_0_idx])
+            ref_phase = np.angle(e_x_single[theta_0_idx, phi_0_idx])
             
             # Apply phase normalization by subtracting reference phase
             # This preserves relative phase relationships
