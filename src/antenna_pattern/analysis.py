@@ -10,7 +10,6 @@ import xarray as xr
 from .utilities import find_nearest, unwrap_phase, frequency_to_wavelength
 from .polarization import phase_pattern_translate, polarization_tp2rl
 from .utilities import lightspeed, interpolate_crossing
-from .pattern import AntennaPattern
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -358,6 +357,9 @@ def translate_phase_pattern(pattern, translation, normalize=True):
     # Reconstruct complex values
     e_theta_new = e_theta_mag * np.exp(1j * e_theta_phase_new)
     e_phi_new = e_phi_mag * np.exp(1j * e_phi_phase_new)
+
+    # Import here to avoid circular import
+    from .pattern import AntennaPattern
 
     # Create new antenna pattern
     translated_pattern = AntennaPattern(
