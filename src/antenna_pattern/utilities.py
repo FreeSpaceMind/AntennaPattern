@@ -412,28 +412,28 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
     """
     Transforms from spherical coordinates to direction cosine coordinates.
     
-    Implements equations A1.34 to 36 of "Theory and Practice of Modern Antenna Range 
-    Measurements" by C. Parini et al.
-    
     Args:
-        theta: Array of theta angles in degrees
-        phi: Array of phi angles in degrees
+        theta: Array of theta angles in degrees (from positive z-axis)
+        phi: Array of phi angles in degrees (azimuth in x-y plane from x-axis)
     
     Returns:
         Tuple[np.ndarray, np.ndarray, np.ndarray]: Direction cosines (u, v, w)
     """
-    # Create theta, phi meshgrid if needed
+    # Convert to radians
+    theta_rad = np.radians(theta)
+    phi_rad = np.radians(phi)
+    
+    # Handle meshgrid case correctly
     if theta.ndim == 1 and phi.ndim == 1:
-        PHI, THETA = np.meshgrid(np.radians(phi), np.radians(theta))
-    else:
-        # Assume inputs are already in meshgrid form
-        THETA = np.radians(theta)
-        PHI = np.radians(phi)
-
+        # Create meshgrid with correct indexing
+        THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
+        theta_rad = THETA
+        phi_rad = PHI
+    
     # Calculate direction cosines
-    u = np.sin(THETA) * np.cos(PHI)
-    v = np.sin(THETA) * np.sin(PHI)
-    w = np.cos(THETA)
+    u = np.sin(theta_rad) * np.cos(phi_rad)
+    v = np.sin(theta_rad) * np.sin(phi_rad)
+    w = np.cos(theta_rad)
     
     return u, v, w
 
@@ -450,17 +450,24 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     Returns:
         Tuple[np.ndarray, np.ndarray]: Spherical coordinates (theta, phi) in degrees
     """
+    # Normalize the direction cosines to ensure unit vector
+    magnitude = np.sqrt(u**2 + v**2 + w**2)
+    valid = magnitude > 1e-10
+    
+    u_norm = np.where(valid, u / magnitude, 0)
+    v_norm = np.where(valid, v / magnitude, 0)
+    w_norm = np.where(valid, w / magnitude, 0)
+    
     # Calculate theta (elevation angle from z-axis)
-    theta = np.degrees(np.arccos(np.clip(w, -1.0, 1.0)))
+    theta = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
     
     # Calculate phi (azimuth angle in x-y plane)
-    phi = np.degrees(np.arctan2(v, u))
+    phi = np.degrees(np.arctan2(v_norm, u_norm))
     
     # Ensure phi is in range [0, 360)
     phi = np.mod(phi, 360.0)
     
     return theta, phi
-
 
 def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray, 
                        az: float, el: float, roll: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -484,37 +491,43 @@ def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray,
     # Store the original shape
     shape = np.shape(u)
     
-    # Define rotation matrices (as in the reference)
+    # Convert angles to radians
+    az_rad = np.radians(az)
+    el_rad = np.radians(el)
+    roll_rad = np.radians(roll)
+    
+    # Define rotation matrices correctly
     # Roll matrix (rotation around z-axis)
-    a1 = np.array([
-        [np.cos(np.radians(roll)), np.sin(np.radians(roll)), 0],
-        [-np.sin(np.radians(roll)), np.cos(np.radians(roll)), 0],
+    R_roll = np.array([
+        [np.cos(roll_rad), -np.sin(roll_rad), 0],
+        [np.sin(roll_rad), np.cos(roll_rad), 0],
         [0, 0, 1]
     ])
     
     # Elevation matrix (rotation around x-axis)
-    a2 = np.array([
+    R_el = np.array([
         [1, 0, 0],
-        [0, np.cos(np.radians(el)), -np.sin(np.radians(el))],
-        [0, np.sin(np.radians(el)), np.cos(np.radians(el))]
+        [0, np.cos(el_rad), -np.sin(el_rad)],
+        [0, np.sin(el_rad), np.cos(el_rad)]
     ])
     
     # Azimuth matrix (rotation around y-axis)
-    a3 = np.array([
-        [np.cos(np.radians(az)), 0, -np.sin(np.radians(az))],
+    R_az = np.array([
+        [np.cos(az_rad), 0, np.sin(az_rad)],
         [0, 1, 0],
-        [np.sin(np.radians(az)), 0, np.cos(np.radians(az))]
+        [-np.sin(az_rad), 0, np.cos(az_rad)]
     ])
     
-    # Flatten the input arrays and combine into a matrix
-    data_matrix = np.array([u.flatten(), v.flatten(), w.flatten()])
+    # Combined rotation matrix - apply in correct order: roll, then elevation, then azimuth
+    R_combined = R_az @ R_el @ R_roll
     
-    # Apply the rotation matrices
-    result = np.matmul(np.matmul(np.matmul(a1, a2), a3), data_matrix)
+    # Apply rotation to direction cosines
+    data_matrix = np.vstack([u.flatten(), v.flatten(), w.flatten()])
+    result = R_combined @ data_matrix
     
     # Extract and reshape the results
-    u_rot = np.reshape(result[0, :], shape)
-    v_rot = np.reshape(result[1, :], shape)
-    w_rot = np.reshape(result[2, :], shape)
+    u_rot = result[0].reshape(shape)
+    v_rot = result[1].reshape(shape)
+    w_rot = result[2].reshape(shape)
     
     return u_rot, v_rot, w_rot

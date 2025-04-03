@@ -616,8 +616,14 @@ class AntennaPattern:
             
         Returns:
             AntennaPattern: New pattern with rotated coordinates
+            
+        Note:
+            The rotation follows the convention in Section A1.7.1 of "Theory and Practice 
+            of Modern Antenna Range Measurements" by C. Parini et al.
         """
         from .utilities import transform_tp2uvw, isometric_rotation, transform_uvw2tp
+        from scipy.interpolate import LinearNDInterpolator
+        import numpy as np
         
         # Get pattern dimensions
         freq_array = self.frequencies
@@ -628,72 +634,61 @@ class AntennaPattern:
         e_theta_rotated = np.zeros_like(self.data.e_theta.values)
         e_phi_rotated = np.zeros_like(self.data.e_phi.values)
         
+        # Create meshgrids for theta and phi
+        THETA, PHI = np.meshgrid(theta_array, phi_array, indexing='ij')
+        
         # Process each frequency
         for freq_idx, freq in enumerate(freq_array):
-            # Original fields - keep as complex values
+            # Original fields
             e_theta_orig = self.data.e_theta.values[freq_idx]
             e_phi_orig = self.data.e_phi.values[freq_idx]
             
-            # Create meshgrids for theta and phi
-            THETA, PHI = np.meshgrid(theta_array, phi_array, indexing='ij')
+            # The input coordinate system - the pattern grid
+            input_coords = np.column_stack((THETA.flatten(), PHI.flatten()))
             
             # Convert to direction cosines
             u, v, w = transform_tp2uvw(THETA, PHI)
             
-            # Apply rotation
-            u_rot, v_rot, w_rot = isometric_rotation(u, v, w, azimuth, elevation, roll)
+            # Create inverse rotation (negative angles) to map from output to input
+            # This is more numerically stable for interpolation
+            u_inv, v_inv, w_inv = isometric_rotation(u, v, w, -azimuth, -elevation, -roll)
             
             # Convert back to theta, phi coordinates
-            theta_rot, phi_rot = transform_uvw2tp(u_rot, v_rot, w_rot)
+            theta_inv, phi_inv = transform_uvw2tp(u_inv, v_inv, w_inv)
             
-            # Interpolate field values from original to rotated coordinates
-            from scipy.interpolate import RegularGridInterpolator
+            # These are the coordinates in the original system that correspond to each
+            # rotated grid point
+            source_coords = np.column_stack((theta_inv.flatten(), phi_inv.flatten()))
             
-            # Create complex interpolation functions - interpolate real and imag parts separately
-            e_theta_real_interp = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.real(e_theta_orig),
-                bounds_error=False,
+            # For each point in the output grid, find the corresponding value from the input
+            # Interpolate real and imaginary parts separately
+            e_theta_real = LinearNDInterpolator(
+                input_coords, 
+                np.real(e_theta_orig).flatten(),
                 fill_value=0
-            )
+            )(source_coords).reshape(THETA.shape)
             
-            e_theta_imag_interp = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.imag(e_theta_orig),
-                bounds_error=False,
+            e_theta_imag = LinearNDInterpolator(
+                input_coords, 
+                np.imag(e_theta_orig).flatten(),
                 fill_value=0
-            )
+            )(source_coords).reshape(THETA.shape)
             
-            e_phi_real_interp = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.real(e_phi_orig),
-                bounds_error=False,
+            e_phi_real = LinearNDInterpolator(
+                input_coords, 
+                np.real(e_phi_orig).flatten(),
                 fill_value=0
-            )
+            )(source_coords).reshape(THETA.shape)
             
-            e_phi_imag_interp = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.imag(e_phi_orig),
-                bounds_error=False,
+            e_phi_imag = LinearNDInterpolator(
+                input_coords, 
+                np.imag(e_phi_orig).flatten(),
                 fill_value=0
-            )
+            )(source_coords).reshape(THETA.shape)
             
-            # Prepare points for interpolation
-            points = np.column_stack((theta_rot.flatten(), phi_rot.flatten()))
-            
-            # Interpolate real and imaginary components separately
-            e_theta_real = e_theta_real_interp(points).reshape(THETA.shape)
-            e_theta_imag = e_theta_imag_interp(points).reshape(THETA.shape)
-            e_phi_real = e_phi_real_interp(points).reshape(THETA.shape)
-            e_phi_imag = e_phi_imag_interp(points).reshape(THETA.shape)
-            
-            # Recombine into complex values
-            e_theta_values = e_theta_real + 1j * e_theta_imag
-            e_phi_values = e_phi_real + 1j * e_phi_imag
-            
-            # Store in output arrays
-            e_theta_rotated[freq_idx] = e_theta_values
-            e_phi_rotated[freq_idx] = e_phi_values
+            # Recombine real and imaginary parts
+            e_theta_rotated[freq_idx] = e_theta_real + 1j * e_theta_imag
+            e_phi_rotated[freq_idx] = e_phi_real + 1j * e_phi_imag
         
         # Create new antenna pattern with rotated fields
         return AntennaPattern(
