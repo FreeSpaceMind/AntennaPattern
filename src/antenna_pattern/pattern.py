@@ -616,10 +616,6 @@ class AntennaPattern:
             
         Returns:
             AntennaPattern: New pattern with rotated coordinates
-            
-        Note:
-            The rotation follows the convention in Section A1.7.1 of "Theory and Practice 
-            of Modern Antenna Range Measurements" by C. Parini et al.
         """
         from .utilities import transform_tp2uvw, isometric_rotation, transform_uvw2tp
         
@@ -634,7 +630,7 @@ class AntennaPattern:
         
         # Process each frequency
         for freq_idx, freq in enumerate(freq_array):
-            # Original fields
+            # Original fields - keep as complex values
             e_theta_orig = self.data.e_theta.values[freq_idx]
             e_phi_orig = self.data.e_phi.values[freq_idx]
             
@@ -651,19 +647,33 @@ class AntennaPattern:
             theta_rot, phi_rot = transform_uvw2tp(u_rot, v_rot, w_rot)
             
             # Interpolate field values from original to rotated coordinates
-
-            # Create interpolation function for e_theta
-            e_theta_interp = RegularGridInterpolator(
+            from scipy.interpolate import RegularGridInterpolator
+            
+            # Create complex interpolation functions - interpolate real and imag parts separately
+            e_theta_real_interp = RegularGridInterpolator(
                 (theta_array, phi_array),
-                e_theta_orig,
+                np.real(e_theta_orig),
                 bounds_error=False,
                 fill_value=0
             )
             
-            # Create interpolation function for e_phi
-            e_phi_interp = RegularGridInterpolator(
+            e_theta_imag_interp = RegularGridInterpolator(
                 (theta_array, phi_array),
-                e_phi_orig,
+                np.imag(e_theta_orig),
+                bounds_error=False,
+                fill_value=0
+            )
+            
+            e_phi_real_interp = RegularGridInterpolator(
+                (theta_array, phi_array),
+                np.real(e_phi_orig),
+                bounds_error=False,
+                fill_value=0
+            )
+            
+            e_phi_imag_interp = RegularGridInterpolator(
+                (theta_array, phi_array),
+                np.imag(e_phi_orig),
                 bounds_error=False,
                 fill_value=0
             )
@@ -671,9 +681,15 @@ class AntennaPattern:
             # Prepare points for interpolation
             points = np.column_stack((theta_rot.flatten(), phi_rot.flatten()))
             
-            # Interpolate field values
-            e_theta_values = e_theta_interp(points).reshape(THETA.shape)
-            e_phi_values = e_phi_interp(points).reshape(THETA.shape)
+            # Interpolate real and imaginary components separately
+            e_theta_real = e_theta_real_interp(points).reshape(THETA.shape)
+            e_theta_imag = e_theta_imag_interp(points).reshape(THETA.shape)
+            e_phi_real = e_phi_real_interp(points).reshape(THETA.shape)
+            e_phi_imag = e_phi_imag_interp(points).reshape(THETA.shape)
+            
+            # Recombine into complex values
+            e_theta_values = e_theta_real + 1j * e_theta_imag
+            e_phi_values = e_phi_real + 1j * e_phi_imag
             
             # Store in output arrays
             e_theta_rotated[freq_idx] = e_theta_values
