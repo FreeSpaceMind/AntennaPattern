@@ -364,17 +364,26 @@ def translate_phase_pattern(pattern, translation, normalize=True):
         theta_0_idx = np.argmin(np.abs(theta))
         phi_0_idx = np.argmin(np.abs(phi))
         
-        # Get the phase at reference point for each frequency
-        ref_phases = np.angle(e_theta_new[:, theta_0_idx, phi_0_idx])
+        # Convert e_theta and e_phi to e_x and e_y at the reference point
+        from .polarization import polarization_tp2xy
         
-        # Reshape for broadcasting across theta and phi dimensions
-        ref_phases_reshaped = ref_phases.reshape(-1, 1, 1)
-        
-        # Apply phase normalization by subtracting reference phase
-        # This preserves relative phase relationships between e_theta and e_phi
-        phase_correction = np.exp(-1j * ref_phases_reshaped)
-        e_theta_new = e_theta_new * phase_correction
-        e_phi_new = e_phi_new * phase_correction
+        # Get the phase reference using Ludwig-3 components
+        for f_idx in range(len(frequency)):
+            # Convert theta/phi to x/y for this frequency
+            e_x_single, e_y_single = polarization_tp2xy(
+                phi, 
+                e_theta_new[f_idx], 
+                e_phi_new[f_idx]
+            )
+            
+            # Get the phase at reference point for e_y
+            ref_phase = np.angle(e_y_single[theta_0_idx, phi_0_idx])
+            
+            # Apply phase normalization by subtracting reference phase
+            # This preserves relative phase relationships
+            phase_correction = np.exp(-1j * ref_phase)
+            e_theta_new[f_idx] = e_theta_new[f_idx] * phase_correction
+            e_phi_new[f_idx] = e_phi_new[f_idx] * phase_correction
     
     # Import here to avoid circular import
     from .pattern import AntennaPattern
