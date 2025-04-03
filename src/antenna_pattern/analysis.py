@@ -60,7 +60,7 @@ def find_phase_center(pattern, theta_angle: float, frequency: Optional[float] = 
         idx_p = idx_p.item()
     
     # Get unwrapped phase data for co-polarization
-    co_pol_phase = np.angle(pattern.data.e_co.values[freq_idx])
+    co_pol_phase = np.angle(pattern.data.e_co.values[freq_idx, :, :], axis = 0)
     co_pol_phase_unwrap = unwrap_phase(co_pol_phase, discont=np.pi)
     
     # Define a cost function for optimization
