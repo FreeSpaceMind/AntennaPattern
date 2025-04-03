@@ -150,7 +150,7 @@ def unwrap_phase(phase: np.ndarray, discont: float = np.pi) -> np.ndarray:
     Returns:
         Unwrapped phase array
     """
-    return np.unwrap(phase, discont=discont)
+    return np.unwrap(phase, discont=discont, axis=0)
 
 
 def interpolate_crossing(x: np.ndarray, y: np.ndarray, threshold: float) -> float:
