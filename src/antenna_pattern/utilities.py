@@ -438,46 +438,59 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
     return u, v, w
 
 
-def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Transforms from direction cosines to antenna pattern spherical coordinates.
-    
-    Coordinate system:
-    - w = 1 along z-axis (boresight)
-    - u = 1 along x-axis (theta=90, phi=0)
-    - v = 1 along y-axis (theta=90, phi=90)
-    
-    Args:
-        u: Direction cosine u (-1 to +1)
-        v: Direction cosine v (-1 to +1)
-        w: Direction cosine w (-1 to +1)
-    
-    Returns:
-        Tuple[np.ndarray, np.ndarray]: Spherical coordinates (theta, phi) in degrees
-        theta is in range [-180, 180], preserving the sign
-    """
-    # Normalize direction cosines
-    magnitude = np.sqrt(u**2 + v**2 + w**2)
-    eps = 1e-10  # Small epsilon to avoid division by zero
-    safe_mag = np.maximum(magnitude, eps)
-    
-    u_norm = u / safe_mag
-    v_norm = v / safe_mag
-    w_norm = w / safe_mag
-    
-    # Calculate magnitude of theta from z-axis (0 to 180 degrees)
-    theta_mag = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
-
-    # For points in the hemisphere where u < 0, theta should be negative
-    if np.isscalar(u_norm):
-        theta = -theta_mag if u_norm < 0 else theta_mag
-    else:
-        theta = np.where(u_norm < 0, -theta_mag, theta_mag)
-
-    # Calculate phi normally (0 to 360 degrees)
-    phi = np.degrees(np.arctan2(v_norm, u_norm))
-    
-    return theta, phi
+    def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Transforms from direction cosines to antenna pattern spherical coordinates.
+        
+        Handles full spherical coverage with:
+        - theta in [-180, 180] degrees
+        - phi in [0, 360] degrees
+        """
+        # Normalize direction cosines
+        magnitude = np.sqrt(u**2 + v**2 + w**2)
+        eps = 1e-10  # Small epsilon to avoid division by zero
+        safe_mag = np.maximum(magnitude, eps)
+        
+        u_norm = u / safe_mag
+        v_norm = v / safe_mag
+        w_norm = w / safe_mag
+        
+        # Calculate theta angle (magnitude) from z-axis
+        theta_mag = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
+        
+        # Calculate phi in [0, 360] range
+        phi = np.degrees(np.arctan2(v_norm, u_norm))
+        phi = np.mod(phi, 360)  # Ensure phi is in [0, 360]
+        
+        # For points with u < 0 and phi in [0, 180], map to negative theta
+        # For points with u < 0 and phi in [180, 360], map to negative theta
+        # This consistently applies negative theta to points in the "back" hemisphere
+        if np.isscalar(u_norm):
+            # Scalar case
+            if u_norm < 0:
+                theta = -theta_mag
+            else:
+                theta = theta_mag
+        else:
+            # Array case
+            # Initialize theta as positive
+            theta = np.copy(theta_mag)
+            
+            # For points in the back hemisphere (u < 0), use negative theta
+            back_hemisphere = (u_norm < 0)
+            theta[back_hemisphere] = -theta_mag[back_hemisphere]
+        
+        # Handle poles (where u and v are nearly zero)
+        pole_threshold = 1e-6
+        rho = np.sqrt(u_norm**2 + v_norm**2)
+        
+        if np.isscalar(rho):
+            if rho < pole_threshold:
+                phi = 0.0  # At poles, default phi to 0
+        else:
+            phi = np.where(rho < pole_threshold, 0.0, phi)
+        
+        return theta, phi
 
 def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray, 
                    az: float, el: float, roll: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:

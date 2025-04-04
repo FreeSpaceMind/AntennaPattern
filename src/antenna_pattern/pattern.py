@@ -608,22 +608,9 @@ class AntennaPattern:
         """
         Rotate the antenna pattern by specified angles.
         
-        Applies an isometric rotation to the antenna pattern using rotation angles
-        in the given order: roll (around z-axis), then elevation (around x-axis), 
-        then azimuth (around y-axis).
-        
-        Coordinate system:
-        - z-axis is boresight (theta=0)
-        - x-axis corresponds to theta=90, phi=0
-        - y-axis corresponds to theta=90, phi=90
-        
-        Args:
-            azimuth: Rotation around y-axis in degrees
-            elevation: Rotation around x-axis in degrees
-            roll: Rotation around z-axis in degrees
-            
-        Returns:
-            AntennaPattern: New pattern with rotated coordinates
+        Handles full spherical data with:
+        - theta in [-180, 180] degrees
+        - phi in [0, 360] degrees
         """
         # Get pattern dimensions
         freq_array = self.frequencies
@@ -646,106 +633,99 @@ class AntennaPattern:
         # Convert back to theta-phi coordinates
         theta_in, phi_in = transform_uvw2tp(u_in, v_in, w_in)
         
-        # Ensure phi_in is within the range of original phi values
-        phi_min, phi_max = np.min(phi_array), np.max(phi_array)
-        phi_range = phi_max - phi_min
-        phi_normalized = np.mod(phi_in - phi_min, phi_range) + phi_min
-        
         # Process each frequency
         for freq_idx, freq in enumerate(freq_array):
-            # Extract original pattern data for this frequency
+            # Get electric field components
             e_theta_orig = self.data.e_theta.values[freq_idx]
             e_phi_orig = self.data.e_phi.values[freq_idx]
             
-            # Create interpolators for amplitude and phase components separately
-            # This helps maintain better numerical stability
-            interp_theta_amp = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.abs(e_theta_orig),
-                bounds_error=False,
-                fill_value=0,
-                method='linear'
-            )
+            # Transform spherical field components to cartesian for interpolation
+            Ex = np.zeros_like(THETA, dtype=complex)
+            Ey = np.zeros_like(THETA, dtype=complex)
+            Ez = np.zeros_like(THETA, dtype=complex)
             
-            interp_theta_phase = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.angle(e_theta_orig),
-                bounds_error=False,
-                fill_value=0,
-                method='linear'
-            )
-            
-            interp_phi_amp = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.abs(e_phi_orig),
-                bounds_error=False,
-                fill_value=0,
-                method='linear'
-            )
-            
-            interp_phi_phase = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.angle(e_phi_orig),
-                bounds_error=False,
-                fill_value=0,
-                method='linear'
-            )
-            
-            # Prepare interpolation points, using absolute value of theta
-            # to handle interpolation correctly
-            theta_interp = np.abs(theta_in)
-            
-            # Find points that need special handling
-            negative_theta = theta_in < 0
-            
-            # Prepare interpolation points
-            points = np.column_stack((theta_interp.flatten(), phi_normalized.flatten()))
-            
-            # Interpolate field components
-            amp_theta = interp_theta_amp(points).reshape(theta_in.shape)
-            phase_theta = interp_theta_phase(points).reshape(theta_in.shape)
-            amp_phi = interp_phi_amp(points).reshape(theta_in.shape)
-            phase_phi = interp_phi_phase(points).reshape(theta_in.shape)
-            
-            # Convert back to complex values
-            e_theta_complex = amp_theta * np.exp(1j * phase_theta)
-            e_phi_complex = amp_phi * np.exp(1j * phase_phi)
-            
-            # Field component transformation for negative theta
-            # For negative theta, we need to apply a coordinate transform to the field components
-            if np.any(negative_theta):
-                # For each point with negative theta, transform field components
-                e_theta_complex[negative_theta] = -e_theta_complex[negative_theta]
-                e_phi_complex[negative_theta] = -e_phi_complex[negative_theta]
-            
-            # Handle special case near poles (theta ≈ 0° or 180°)
-            near_poles = (np.abs(theta_in) < 1e-5) | (np.abs(np.abs(theta_in) - 180) < 1e-5)
-            
-            if np.any(near_poles):
-                # Get indices of pole points
-                pole_indices = np.where(near_poles)
-                
-                # Process each pole point using vectorized operations when possible
-                for i, j in zip(*pole_indices):
-                    # Calculate phi difference
-                    phi_diff = phi_normalized[i, j] - phi_array[j]
-                    phi_diff_rad = np.radians(phi_diff)
+            for i in range(THETA.shape[0]):
+                for j in range(THETA.shape[1]):
+                    # Get angles for this point
+                    theta_rad = np.radians(THETA[i, j])
+                    phi_rad = np.radians(PHI[i, j])
                     
-                    # Calculate rotation matrix components
-                    cos_phi = np.cos(phi_diff_rad)
-                    sin_phi = np.sin(phi_diff_rad)
+                    # Pre-compute trig functions
+                    sin_theta = np.sin(theta_rad)
+                    cos_theta = np.cos(theta_rad)
+                    sin_phi = np.sin(phi_rad)
+                    cos_phi = np.cos(phi_rad)
                     
                     # Get field components at this point
-                    e_th = e_theta_complex[i, j]
-                    e_ph = e_phi_complex[i, j]
+                    e_th = e_theta_orig[i, j]
+                    e_ph = e_phi_orig[i, j]
                     
-                    # Apply field component rotation
-                    e_theta_complex[i, j] = e_th * cos_phi - e_ph * sin_phi
-                    e_phi_complex[i, j] = e_th * sin_phi + e_ph * cos_phi
+                    # Transform to cartesian field components
+                    # These transformations preserve field orientation and sign correctly
+                    Ex[i, j] = sin_theta * cos_phi * e_th + cos_theta * cos_phi * e_ph
+                    Ey[i, j] = sin_theta * sin_phi * e_th + cos_theta * sin_phi * e_ph
+                    Ez[i, j] = cos_theta * e_th - sin_theta * e_ph
             
-            # Store the rotated field components
-            e_theta_rotated[freq_idx] = e_theta_complex
-            e_phi_rotated[freq_idx] = e_phi_complex
+            # Create interpolators for cartesian field components (real/imag separately)
+            interp_functions = {}
+            for field_name, field_data in [('Ex_re', np.real(Ex)), ('Ex_im', np.imag(Ex)),
+                                        ('Ey_re', np.real(Ey)), ('Ey_im', np.imag(Ey)),
+                                        ('Ez_re', np.real(Ez)), ('Ez_im', np.imag(Ez))]:
+                interp_functions[field_name] = RegularGridInterpolator(
+                    (theta_array, phi_array),
+                    field_data,
+                    bounds_error=False,
+                    fill_value=0,
+                    method='linear'
+                )
+            
+            # Prepare points for interpolation
+            # When interpolating, we need to handle the fact that theta ranges from -180 to 180
+            # We can use abs(theta) for indexing, but need to track which points had negative theta
+            is_negative_theta = theta_in < 0
+            interpolation_points = np.column_stack((np.abs(theta_in.flatten()), phi_in.flatten()))
+            
+            # Interpolate each field component
+            Ex_interpolated = (interp_functions['Ex_re'](interpolation_points) + 
+                            1j * interp_functions['Ex_im'](interpolation_points)).reshape(theta_in.shape)
+            Ey_interpolated = (interp_functions['Ey_re'](interpolation_points) + 
+                            1j * interp_functions['Ey_im'](interpolation_points)).reshape(theta_in.shape)
+            Ez_interpolated = (interp_functions['Ez_re'](interpolation_points) + 
+                            1j * interp_functions['Ez_im'](interpolation_points)).reshape(theta_in.shape)
+            
+            # Convert back to spherical field components
+            for i in range(theta_in.shape[0]):
+                for j in range(theta_in.shape[1]):
+                    # Get angles for this point in the rotated pattern
+                    theta_rad = np.radians(theta_in[i, j])
+                    phi_rad = np.radians(phi_in[i, j])
+                    
+                    # Pre-compute trig functions
+                    sin_theta = np.sin(np.abs(theta_rad))  # Use abs for magnitude
+                    cos_theta = np.cos(theta_rad)
+                    sin_phi = np.sin(phi_rad)
+                    cos_phi = np.cos(phi_rad)
+                    
+                    # Account for sign of theta when converting back
+                    if theta_in[i, j] < 0:
+                        # For negative theta, adjust the coordinate transform slightly
+                        # to maintain the correct field component orientations
+                        e_theta_rotated[freq_idx, i, j] = (sin_theta * cos_phi * Ex_interpolated[i, j] + 
+                                                        sin_theta * sin_phi * Ey_interpolated[i, j] + 
+                                                        cos_theta * Ez_interpolated[i, j])
+                        
+                        e_phi_rotated[freq_idx, i, j] = (cos_theta * cos_phi * Ex_interpolated[i, j] + 
+                                                    cos_theta * sin_phi * Ey_interpolated[i, j] - 
+                                                    sin_theta * Ez_interpolated[i, j])
+                    else:
+                        # For positive theta, use standard transform
+                        e_theta_rotated[freq_idx, i, j] = (sin_theta * cos_phi * Ex_interpolated[i, j] + 
+                                                        sin_theta * sin_phi * Ey_interpolated[i, j] + 
+                                                        cos_theta * Ez_interpolated[i, j])
+                        
+                        e_phi_rotated[freq_idx, i, j] = (cos_theta * cos_phi * Ex_interpolated[i, j] + 
+                                                    cos_theta * sin_phi * Ey_interpolated[i, j] - 
+                                                    sin_theta * Ez_interpolated[i, j])
         
         # Create new pattern with the rotated field components
         return AntennaPattern(
