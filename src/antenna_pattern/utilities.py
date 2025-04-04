@@ -511,21 +511,21 @@ def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray,
     roll_rad = np.radians(roll)
     
     # Define rotation matrices
-    # Roll matrix (rotation around z-axis)
+    # Roll matrix
     R_roll = np.array([
         [np.cos(roll_rad), np.sin(roll_rad), 0],
         [-np.sin(roll_rad), np.cos(roll_rad), 0],
         [0, 0, 1]
     ])
     
-    # Elevation matrix (rotation around x-axis)
+    # Elevation matrix
     R_el = np.array([
         [1, 0, 0],
         [0, np.cos(el_rad), -np.sin(el_rad)],
         [0, np.sin(el_rad), np.cos(el_rad)]
     ])
     
-    # Azimuth matrix (rotation around y-axis)
+    # Azimuth matrix
     R_az = np.array([
         [np.cos(az_rad), 0, -np.sin(az_rad)],
         [0, 1, 0],

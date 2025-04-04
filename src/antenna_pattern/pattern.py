@@ -620,7 +620,7 @@ class AntennaPattern:
         Returns:
             AntennaPattern: New pattern with rotated coordinates
         """
-        from scipy.interpolate import LinearNDInterpolator 
+        from scipy.interpolate import RegularGridInterpolator
         import numpy as np
         
         # Get pattern dimensions
@@ -628,27 +628,21 @@ class AntennaPattern:
         theta_array = self.theta_angles
         phi_array = self.phi_angles
         
-        # Create output arrays
+        # Create output arrays with the same shape as input
         e_theta_rotated = np.zeros_like(self.data.e_theta.values)
         e_phi_rotated = np.zeros_like(self.data.e_phi.values)
         
-        # Create meshgrids for theta and phi
-        THETA, PHI = np.meshgrid(theta_array, phi_array, indexing='ij')
-
+        # Create meshgrids for output theta and phi
+        theta_mesh, phi_mesh = np.meshgrid(theta_array, phi_array, indexing='ij')
+        
         # Convert output grid to direction cosines
-        u_out, v_out, w_out = transform_tp2uvw(THETA, PHI)
-
+        u_out, v_out, w_out = transform_tp2uvw(theta_mesh, phi_mesh)
+        
         # Apply inverse rotation to find where each point came from
         u_in, v_in, w_in = isometric_rotation(u_out, v_out, w_out, -azimuth, -elevation, -roll)
-
+        
         # Convert back to theta-phi coordinates
         theta_in, phi_in = transform_uvw2tp(u_in, v_in, w_in)
-
-        # Create a flattened set of original coordinates
-        orig_coords = np.column_stack((THETA.flatten(), PHI.flatten()))
-        
-        # Create a flattened set of input coordinates (where each output point came from)
-        input_coords = np.column_stack((theta_in.flatten(), phi_in.flatten()))
         
         # Process each frequency
         for freq_idx, freq in enumerate(freq_array):
@@ -656,36 +650,66 @@ class AntennaPattern:
             e_theta_orig = self.data.e_theta.values[freq_idx]
             e_phi_orig = self.data.e_phi.values[freq_idx]
             
-            # Flatten the original field values
-            e_theta_real_flat = np.real(e_theta_orig).flatten()
-            e_theta_imag_flat = np.imag(e_theta_orig).flatten()
-            e_phi_real_flat = np.real(e_phi_orig).flatten()
-            e_phi_imag_flat = np.imag(e_phi_orig).flatten()
+            # Create a regular grid interpolator - much faster than LinearNDInterpolator
+            # We need to handle the complex values by interpolating real and imaginary parts separately
             
-            # Interpolate field values
-            # Use LinearNDInterpolator for better handling of irregular grids
-            interpolator_theta_real = LinearNDInterpolator(
-                orig_coords, e_theta_real_flat, fill_value=0
-            )
-            interpolator_theta_imag = LinearNDInterpolator(
-                orig_coords, e_theta_imag_flat, fill_value=0
-            )
-            interpolator_phi_real = LinearNDInterpolator(
-                orig_coords, e_phi_real_flat, fill_value=0
-            )
-            interpolator_phi_imag = LinearNDInterpolator(
-                orig_coords, e_phi_imag_flat, fill_value=0
+            # Normalize phi_in to match phi_array range
+            phi_in_normalized = np.mod(phi_in, 360)  # Ensure in range [0, 360)
+            
+            # Check if theta or phi values are outside the original grid
+            valid_points = (
+                (theta_in >= np.min(theta_array)) & 
+                (theta_in <= np.max(theta_array))
             )
             
-            # Perform interpolation
-            e_theta_real_rot = interpolator_theta_real(input_coords).reshape(THETA.shape)
-            e_theta_imag_rot = interpolator_theta_imag(input_coords).reshape(THETA.shape)
-            e_phi_real_rot = interpolator_phi_real(input_coords).reshape(THETA.shape)
-            e_phi_imag_rot = interpolator_phi_imag(input_coords).reshape(THETA.shape)
+            # Create interpolators for real and imaginary parts of theta component
+            theta_real_interp = RegularGridInterpolator(
+                (theta_array, phi_array), 
+                np.real(e_theta_orig),
+                bounds_error=False, 
+                fill_value=0
+            )
             
-            # Recombine real and imaginary parts
-            e_theta_rotated[freq_idx] = e_theta_real_rot + 1j * e_theta_imag_rot
-            e_phi_rotated[freq_idx] = e_phi_real_rot + 1j * e_phi_imag_rot
+            theta_imag_interp = RegularGridInterpolator(
+                (theta_array, phi_array), 
+                np.imag(e_theta_orig),
+                bounds_error=False, 
+                fill_value=0
+            )
+            
+            # Create interpolators for real and imaginary parts of phi component
+            phi_real_interp = RegularGridInterpolator(
+                (theta_array, phi_array), 
+                np.real(e_phi_orig),
+                bounds_error=False, 
+                fill_value=0
+            )
+            
+            phi_imag_interp = RegularGridInterpolator(
+                (theta_array, phi_array), 
+                np.imag(e_phi_orig),
+                bounds_error=False, 
+                fill_value=0
+            )
+            
+            # Prepare points for interpolation
+            points = np.column_stack((theta_in.flatten(), phi_in_normalized.flatten()))
+            
+            # Apply interpolation
+            theta_real = theta_real_interp(points).reshape(theta_in.shape)
+            theta_imag = theta_imag_interp(points).reshape(theta_in.shape)
+            phi_real = phi_real_interp(points).reshape(theta_in.shape)
+            phi_imag = phi_imag_interp(points).reshape(theta_in.shape)
+            
+            # Set values outside the valid range to zero
+            theta_real[~valid_points] = 0
+            theta_imag[~valid_points] = 0
+            phi_real[~valid_points] = 0
+            phi_imag[~valid_points] = 0
+            
+            # Combine real and imaginary parts
+            e_theta_rotated[freq_idx] = theta_real + 1j * theta_imag
+            e_phi_rotated[freq_idx] = phi_real + 1j * phi_imag
         
         # Create new antenna pattern with rotated fields
         return AntennaPattern(
