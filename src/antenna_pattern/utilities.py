@@ -458,11 +458,6 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     """
     Transforms from direction cosines to antenna pattern spherical coordinates.
     
-    Preserves the antenna pattern coordinate convention:
-    - Front hemisphere: Theta in range [-90°, +90°]
-    - Back hemisphere: Theta in range [-180°, -90°] and [+90°, +180°]
-    - Phi in range [-180°, +180°]
-    
     Args:
         u: Direction cosine u (-1 to +1)
         v: Direction cosine v (-1 to +1)
@@ -479,29 +474,15 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     v_norm = v / safe_mag
     w_norm = w / safe_mag
     
-    # Calculate theta as the angle from z-axis (0° at z-axis, 180° at -z-axis)
-    theta_standard = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
-    
-    # Calculate phi in range [-180°, 180°]
-    phi = np.degrees(np.arctan2(v_norm, u_norm))
-    
     # Get sign of u but use 1 when u is close to zero to avoid discontinuity at theta=0
     u_is_zero = np.abs(u_norm) < 1e-10
     u_sign = np.where(u_is_zero, 1.0, np.sign(u_norm))
+
+    # Calculate theta as the angle from z-axis (0° at z-axis, 180° at -z-axis)
+    theta = np.degrees(np.arccos(w_norm)) * u_sign
     
-    # Front hemisphere - determine sign based on u direction
-    front_hemisphere = (w_norm >= 0)
-    back_hemisphere = ~front_hemisphere
-    
-    # Initialize theta
-    theta = np.zeros_like(theta_standard)
-    
-    # Apply sign to front hemisphere
-    theta[front_hemisphere] = u_sign[front_hemisphere] * theta_standard[front_hemisphere]
-    
-    # Special handling for back hemisphere to maintain the convention
-    theta[back_hemisphere & (u_norm >= 0)] = (180 - theta_standard[back_hemisphere & (u_norm >= 0)])
-    theta[back_hemisphere & (u_norm < 0)] = -(180 - theta_standard[back_hemisphere & (u_norm < 0)])
+    # Calculate phi in range [-180°, 180°]
+    phi = np.degrees(np.arctan2(v_norm, u_norm))
     
     return theta, phi
 
