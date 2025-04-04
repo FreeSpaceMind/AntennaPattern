@@ -408,15 +408,18 @@ def create_synthetic_pattern(
     
     return e_theta, e_phi
 
+import numpy as np
+from typing import Tuple
+
+
 def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Transforms from antenna pattern spherical coordinates to direction cosine coordinates.
+    Transforms from antenna pattern spherical coordinates to direction cosines.
     
-    In antenna pattern coordinates:
-    - Theta: [-180°, +180°] (elevation from boresight)
-      - Front hemisphere: -90° to +90°
-      - Back hemisphere: -180° to -90° and +90° to +180°
-    - Phi: [-180°, +180°] (azimuth)
+    Handles the following antenna pattern coordinate definitions:
+    - Front hemisphere: Theta in range [-90°, +90°]
+    - Back hemisphere: Theta in range [-180°, -90°] and [+90°, +180°]
+    - Phi in range [-180°, +180°]
     
     Args:
         theta: Array of theta angles in degrees (-180 to +180)
@@ -435,8 +438,8 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
         theta_rad = THETA
         phi_rad = PHI
     
-    # Calculate direction cosines directly - preserving the sign of theta
-    # This is the critical part - we use abs(theta) for amplitude but preserve sign for direction
+    # In antenna pattern coordinates, theta is the angle from boresight (z-axis)
+    # Calculate direction cosines directly
     u = np.sin(theta_rad) * np.cos(phi_rad)
     v = np.sin(theta_rad) * np.sin(phi_rad)
     w = np.cos(theta_rad)
@@ -446,11 +449,12 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
 
 def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Transforms from direction cosine coordinates to antenna pattern spherical coordinates.
+    Transforms from direction cosines to antenna pattern spherical coordinates.
     
     Preserves the antenna pattern coordinate convention:
-    - Front hemisphere: Theta in [-90°, +90°]
-    - Back hemisphere: Theta in [-180°, -90°) and (+90°, +180°]
+    - Front hemisphere: Theta in range [-90°, +90°]
+    - Back hemisphere: Theta in range [-180°, -90°] and [+90°, +180°]
+    - Phi in range [-180°, +180°]
     
     Args:
         u: Direction cosine u (-1 to +1)
@@ -468,29 +472,34 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     v_norm = v / safe_mag
     w_norm = w / safe_mag
     
-    # Calculate theta and phi using principal value functions
-    theta = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))  # Range [0°, 180°]
-    phi = np.degrees(np.arctan2(v_norm, u_norm))               # Range [-180°, 180°]
+    # Calculate theta as the angle from z-axis (0° at z-axis, 180° at -z-axis)
+    # This gives theta in range [0°, 180°]
+    theta_standard = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
     
-    # Convert theta to the antenna pattern range [-180°, 180°]
-    # We need to determine which points should use negative theta
-    xy_projection = np.sqrt(u_norm**2 + v_norm**2)
+    # Calculate phi in range [-180°, 180°]
+    phi = np.degrees(np.arctan2(v_norm, u_norm))
     
-    # Points in the positive z hemisphere (w > 0)
-    front_hemisphere = (theta <= 90)
+    # Identify front and back hemispheres
+    back_hemisphere = (theta_standard > 90)
+    front_hemisphere = ~back_hemisphere
     
-    # Points in the negative z hemisphere (w < 0)
-    back_hemisphere = (theta > 90)
+    # Identify points in negative X half-space
+    negative_x = (u_norm < 0)
     
-    # In the back hemisphere, we need to adjust theta
-    # If phi is in [0°, 180°], theta becomes theta-180°
-    # If phi is in [-180°, 0°], theta becomes 180°-theta
-    theta_back = np.where(phi >= 0,
-                          -(180 - theta),  # phi ≥ 0: negative theta in back
-                          (180 - theta))   # phi < 0: positive theta in back
+    # Initialize theta_adjusted
+    theta_adjusted = np.zeros_like(theta_standard)
     
-    # Combine front and back hemisphere values
-    theta_adjusted = np.where(front_hemisphere, theta, theta_back)
+    # Front hemisphere: 
+    # - Positive X half-space: theta stays positive [0°, 90°]
+    # - Negative X half-space: theta becomes negative [-90°, 0°]
+    theta_adjusted[front_hemisphere & ~negative_x] = theta_standard[front_hemisphere & ~negative_x]
+    theta_adjusted[front_hemisphere & negative_x] = -theta_standard[front_hemisphere & negative_x]
+    
+    # Back hemisphere:
+    # - Positive X half-space: theta becomes (180° - theta_standard) [90°, 180°]
+    # - Negative X half-space: theta becomes -(180° - theta_standard) [-180°, -90°]
+    theta_adjusted[back_hemisphere & ~negative_x] = (180 - theta_standard[back_hemisphere & ~negative_x])
+    theta_adjusted[back_hemisphere & negative_x] = -(180 - theta_standard[back_hemisphere & negative_x])
     
     return theta_adjusted, phi
 
@@ -500,15 +509,13 @@ def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray,
     """
     Performs an isometric rotation of the direction cosines.
     
-    Implements the rotation matrices correctly for antenna pattern coordinates.
-    
     Args:
         u: Direction cosine u (-1 to +1)
         v: Direction cosine v (-1 to +1)
         w: Direction cosine w (-1 to +1)
-        az: Azimuth rotation angle in degrees
-        el: Elevation rotation angle in degrees
-        roll: Roll rotation angle in degrees
+        az: Azimuth rotation angle in degrees (around y-axis)
+        el: Elevation rotation angle in degrees (around x-axis)
+        roll: Roll rotation angle in degrees (around z-axis)
     
     Returns:
         Tuple[np.ndarray, np.ndarray, np.ndarray]: Rotated direction cosines (u', v', w')
