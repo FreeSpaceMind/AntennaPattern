@@ -432,24 +432,19 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
         Tuple[np.ndarray, np.ndarray, np.ndarray]: Direction cosines (u, v, w)
     """
     # Convert to radians
-    theta_rad = np.radians(np.abs(theta))
+    theta_rad = np.radians(theta)
     phi_rad = np.radians(phi)
     
-    # Handle meshgrid case
-    if theta.ndim == 1 and phi.ndim == 1:
-        THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
-        ABS_THETA = THETA
-        sign_theta = np.sign(theta)
-        SIGN_THETA, _ = np.meshgrid(sign_theta, phi_rad, indexing='ij')
-    else:
-        ABS_THETA = theta_rad
-        SIGN_THETA = np.sign(theta)
+    THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
+    sign_theta = np.sign(theta)
         
-    # In antenna pattern coordinates, theta is the angle from boresight (z-axis)
     # Calculate direction cosines using the absolute value of theta
-    u = np.sin(ABS_THETA) * np.cos(phi_rad)
-    v = np.sin(ABS_THETA) * np.sin(phi_rad)
-    w = np.cos(ABS_THETA) * SIGN_THETA
+    u = np.sin(THETA) * np.cos(PHI)
+    v = np.sin(THETA) * np.sin(PHI)
+
+    w = np.zeros_like(u)
+    w = np.cos(THETA)
+    w[np.abs(THETA)>np.pi/2] *= -1
     
     return u, v, w
 
@@ -457,6 +452,11 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
 def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Transforms from direction cosines to antenna pattern spherical coordinates.
+    
+    Preserves the antenna pattern coordinate convention:
+    - Front hemisphere: Theta in range [-90°, +90°]
+    - Back hemisphere: Theta in range [-180°, -90°] and [+90°, +180°]
+    - Phi in range [-180°, +180°]
     
     Args:
         u: Direction cosine u (-1 to +1)
@@ -475,9 +475,9 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     w_norm = w / safe_mag
     
     # Get sign of u but use 1 when u is close to zero to avoid discontinuity at theta=0
-    u_is_zero = np.abs(u_norm) < 1e-10
+    u_is_zero = np.abs(u_norm) < 1e-30
     u_sign = np.where(u_is_zero, 1.0, np.sign(u_norm))
-
+    
     # Calculate theta as the angle from z-axis (0° at z-axis, 180° at -z-axis)
     theta = np.degrees(np.arccos(w_norm)) * u_sign
     
