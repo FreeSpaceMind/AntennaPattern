@@ -467,9 +467,6 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     - Back hemisphere: Theta in range [-180°, -90°] and [+90°, +180°]
     - Phi in range [-180°, +180°]
     
-    This function respects the sign of u that was set in transform_tp2uvw to
-    preserve the sign of theta and avoid phase ambiguities.
-    
     Args:
         u: Direction cosine u (-1 to +1)
         v: Direction cosine v (-1 to +1)
@@ -487,16 +484,28 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     w_norm = w / safe_mag
     
     # Calculate theta as the angle from z-axis (0° at z-axis, 180° at -z-axis)
-    # This gives theta in range [0°, 180°]
     theta_standard = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
     
     # Calculate phi in range [-180°, 180°]
-    phi = np.degrees(np.arctan2(v_norm, np.abs(u_norm)))
+    phi = np.degrees(np.arctan2(v_norm, u_norm))
     
-    # Use the sign of u to determine the sign of theta
-    # This preserves the phase information through the coordinate transformation
-    sign_u = np.sign(u_norm)
-    theta = theta_standard * sign_u
+    # Get sign of u but use 1 when u is close to zero to avoid discontinuity at theta=0
+    u_is_zero = np.abs(u_norm) < 1e-10
+    u_sign = np.where(u_is_zero, 1.0, np.sign(u_norm))
+    
+    # Front hemisphere - determine sign based on u direction
+    front_hemisphere = (w_norm >= 0)
+    back_hemisphere = ~front_hemisphere
+    
+    # Initialize theta
+    theta = np.zeros_like(theta_standard)
+    
+    # Apply sign to front hemisphere
+    theta[front_hemisphere] = u_sign[front_hemisphere] * theta_standard[front_hemisphere]
+    
+    # Special handling for back hemisphere to maintain the convention
+    theta[back_hemisphere & (u_norm >= 0)] = (180 - theta_standard[back_hemisphere & (u_norm >= 0)])
+    theta[back_hemisphere & (u_norm < 0)] = -(180 - theta_standard[back_hemisphere & (u_norm < 0)])
     
     return theta, phi
 
