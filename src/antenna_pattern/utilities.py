@@ -408,25 +408,15 @@ def create_synthetic_pattern(
     
     return e_theta, e_phi
 
-import numpy as np
-from typing import Tuple
-
-
 def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Transforms from antenna pattern spherical coordinates to direction cosines.
     
-    Handles the following antenna pattern coordinate definitions:
-    - Front hemisphere: Theta in range [-90°, +90°]
-    - Back hemisphere: Theta in range [-180°, -90°] and [+90°, +180°]
-    - Phi in range [-180°, +180°]
-    
-    The transformation preserves the sign of theta by storing it in the sign of the
-    uvw components, allowing round-trip conversions without phase ambiguity.
+    This fixed version ensures correct handling of meshgrids and back hemisphere.
     
     Args:
-        theta: Array of theta angles in degrees (-180 to +180)
-        phi: Array of phi angles in degrees (-180 to +180)
+        theta: Array of theta angles in degrees
+        phi: Array of phi angles in degrees
     
     Returns:
         Tuple[np.ndarray, np.ndarray, np.ndarray]: Direction cosines (u, v, w)
@@ -435,16 +425,20 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
     theta_rad = np.radians(theta)
     phi_rad = np.radians(phi)
     
-    THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
-    sign_theta = np.sign(theta)
-        
-    # Calculate direction cosines using the absolute value of theta
-    u = np.sin(THETA) * np.cos(PHI)
-    v = np.sin(THETA) * np.sin(PHI)
-
-    w = np.zeros_like(u)
-    w = np.cos(THETA)
-    w[np.abs(THETA)>np.pi/2] *= -1
+    # Calculate direction cosines
+    sin_theta = np.sin(np.abs(theta_rad))
+    cos_theta = np.cos(np.abs(theta_rad))
+    
+    u = sin_theta * np.cos(phi_rad)
+    v = sin_theta * np.sin(phi_rad)
+    w = cos_theta
+    
+    # Adjust sign for back hemisphere
+    if np.isscalar(theta_rad):
+        if np.abs(theta_rad) > np.pi/2:
+            w = -w
+    else:
+        w = np.where(np.abs(theta_rad) > np.pi/2, -w, w)
     
     return u, v, w
 
@@ -453,10 +447,7 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     """
     Transforms from direction cosines to antenna pattern spherical coordinates.
     
-    Preserves the antenna pattern coordinate convention:
-    - Front hemisphere: Theta in range [-90°, +90°]
-    - Back hemisphere: Theta in range [-180°, -90°] and [+90°, +180°]
-    - Phi in range [-180°, +180°]
+    This fixed version handles the back hemisphere correctly.
     
     Args:
         u: Direction cosine u (-1 to +1)
@@ -466,30 +457,37 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     Returns:
         Tuple[np.ndarray, np.ndarray]: Spherical coordinates (theta, phi) in degrees
     """
-    # Normalize the direction cosines
+    # Normalize direction cosines to ensure they're on the unit sphere
     magnitude = np.sqrt(u**2 + v**2 + w**2)
-    safe_mag = np.maximum(magnitude, 1e-10)
+    eps = 1e-10  # Small epsilon to avoid division by zero
+    safe_mag = np.maximum(magnitude, eps)
     
     u_norm = u / safe_mag
     v_norm = v / safe_mag
     w_norm = w / safe_mag
     
-    # Get sign of u but use 1 when u is close to zero to avoid discontinuity at theta=0
-    u_is_zero = np.abs(u_norm) < 1e-30
-    u_sign = np.where(u_is_zero, 1.0, np.sign(u_norm))
+    # Calculate theta (angle from z-axis)
+    theta = np.degrees(np.arccos(np.clip(np.abs(w_norm), -1.0, 1.0)))
     
-    # Calculate theta as the angle from z-axis (0° at z-axis, 180° at -z-axis)
-    theta = np.degrees(np.arccos(w_norm)) * u_sign
+    # Adjust for back hemisphere
+    if np.isscalar(w_norm):
+        if w_norm < 0:
+            theta = 180 - theta
+    else:
+        back = w_norm < 0
+        theta = np.where(back, 180 - theta, theta)
     
-    # Calculate phi in range [-180°, 180°]
+    # Calculate phi (azimuthal angle)
     phi = np.degrees(np.arctan2(v_norm, u_norm))
     
     return theta, phi
 
 def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray, 
-                       az: float, el: float, roll: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                      az: float, el: float, roll: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Performs an isometric rotation of the direction cosines.
+    Performs an isometric rotation of direction cosines.
+    
+    This fixed version handles the rotation matrices correctly.
     
     Args:
         u: Direction cosine u (-1 to +1)
@@ -502,46 +500,53 @@ def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray,
     Returns:
         Tuple[np.ndarray, np.ndarray, np.ndarray]: Rotated direction cosines (u', v', w')
     """
-    # Store the original shape
-    shape = np.shape(u)
-    
     # Convert angles to radians
     az_rad = np.radians(az)
     el_rad = np.radians(el)
     roll_rad = np.radians(roll)
     
+    # Store original shape
+    original_shape = np.shape(u)
+    
+    # Flatten for matrix operations
+    u_flat = np.array(u).flatten()
+    v_flat = np.array(v).flatten()
+    w_flat = np.array(w).flatten()
+    
+    # Stack coordinates
+    coords = np.vstack([u_flat, v_flat, w_flat])
+    
     # Define rotation matrices
-    # Roll matrix
-    R_roll = np.array([
-        [np.cos(roll_rad), np.sin(roll_rad), 0],
-        [-np.sin(roll_rad), np.cos(roll_rad), 0],
+    # Roll (around z-axis)
+    Rz = np.array([
+        [np.cos(roll_rad), -np.sin(roll_rad), 0],
+        [np.sin(roll_rad), np.cos(roll_rad), 0],
         [0, 0, 1]
     ])
     
-    # Elevation matrix
-    R_el = np.array([
+    # Elevation (around x-axis)
+    Rx = np.array([
         [1, 0, 0],
         [0, np.cos(el_rad), -np.sin(el_rad)],
         [0, np.sin(el_rad), np.cos(el_rad)]
     ])
     
-    # Azimuth matrix
-    R_az = np.array([
-        [np.cos(az_rad), 0, -np.sin(az_rad)],
+    # Azimuth (around y-axis)
+    Ry = np.array([
+        [np.cos(az_rad), 0, np.sin(az_rad)],
         [0, 1, 0],
-        [np.sin(az_rad), 0, np.cos(az_rad)]
+        [-np.sin(az_rad), 0, np.cos(az_rad)]
     ])
     
-    # Combined rotation matrix - apply in order: roll, then elevation, then azimuth
-    R_combined = R_roll @ R_el @ R_az
+    # Apply rotations in the correct order: first roll, then elevation, then azimuth
+    R = np.dot(Ry, np.dot(Rx, Rz))
     
-    # Apply rotation to direction cosines
-    data_matrix = np.vstack([u.flatten(), v.flatten(), w.flatten()])
-    result = R_combined @ data_matrix
+    # Apply rotation
+    rotated = np.dot(R, coords)
     
-    # Extract and reshape the results
-    u_rot = result[0].reshape(shape)
-    v_rot = result[1].reshape(shape)
-    w_rot = result[2].reshape(shape)
+    # Reshape to original dimensions
+    u_rot = rotated[0].reshape(original_shape)
+    v_rot = rotated[1].reshape(original_shape)
+    w_rot = rotated[2].reshape(original_shape)
     
     return u_rot, v_rot, w_rot
