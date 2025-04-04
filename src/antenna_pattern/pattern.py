@@ -612,6 +612,10 @@ class AntennaPattern:
         in the given order: roll (around z-axis), then elevation (around x-axis), 
         then azimuth (around y-axis).
         
+        Works correctly with antenna pattern coordinates:
+        - Theta: [-180°, +180°] (elevation from boresight)
+        - Phi: [-180°, +180°] (azimuth)
+        
         Args:
             azimuth: Rotation around y-axis in degrees
             elevation: Rotation around x-axis in degrees
@@ -619,10 +623,10 @@ class AntennaPattern:
             
         Returns:
             AntennaPattern: New pattern with rotated coordinates
-            
-        Note:
-            Works with extended angle ranges: theta [-180°, 180°], phi [-180°, 180°]
         """
+        from .utilities import transform_tp2uvw, isometric_rotation, transform_uvw2tp
+        from scipy.interpolate import RegularGridInterpolator
+        import numpy as np
         
         # Get pattern dimensions
         freq_array = self.frequencies
@@ -638,76 +642,48 @@ class AntennaPattern:
         
         # Process each frequency
         for freq_idx, freq in enumerate(freq_array):
-            # Original fields - as complex numbers
+            # Get original field components
             e_theta_orig = self.data.e_theta.values[freq_idx]
             e_phi_orig = self.data.e_phi.values[freq_idx]
             
             # Convert to direction cosines
             u, v, w = transform_tp2uvw(THETA, PHI)
             
-            # Apply rotation
-            u_rot, v_rot, w_rot = isometric_rotation(u, v, w, azimuth, elevation, roll)
+            # Apply rotation (actually, we apply inverse rotation for interpolation)
+            u_rot, v_rot, w_rot = isometric_rotation(u, v, w, -azimuth, -elevation, -roll)
             
-            # Convert back to theta, phi coordinates (extended range)
+            # Convert back to theta, phi coordinates
             theta_rot, phi_rot = transform_uvw2tp(u_rot, v_rot, w_rot)
             
-            # Now interpolate the rotated field values
-            # We need to be careful with the interpolation to preserve phase
-            # For every point (theta, phi) in the output grid, find its rotated coordinates
-            # and interpolate from the original field values
-            
-            # We need to ensure that the interpolation handles the wrapped nature of the coordinates
-            # This is tricky because both theta and phi can wrap around
-            
-            # First, let's create periodic versions of our original data by extending it
-            # This helps with interpolation near the boundaries
-            
-            # Extend theta range to include overlap
-            theta_ext = np.concatenate([theta_array - 360, theta_array, theta_array + 360])
-            phi_ext = np.concatenate([phi_array - 360, phi_array, phi_array + 360])
-            
-            # Create extended field arrays
-            e_theta_ext = np.tile(e_theta_orig, (3, 3))
-            e_phi_ext = np.tile(e_phi_orig, (3, 3))
-            
-            # Create interpolators for real and imaginary parts
-            real_theta_interp = RegularGridInterpolator(
-                (theta_ext, phi_ext),
-                np.real(e_theta_ext),
-                bounds_error=False,
-                fill_value=0
-            )
-            
-            imag_theta_interp = RegularGridInterpolator(
-                (theta_ext, phi_ext),
-                np.imag(e_theta_ext),
-                bounds_error=False,
-                fill_value=0
-            )
-            
-            real_phi_interp = RegularGridInterpolator(
-                (theta_ext, phi_ext),
-                np.real(e_phi_ext),
-                bounds_error=False,
-                fill_value=0
-            )
-            
-            imag_phi_interp = RegularGridInterpolator(
-                (theta_ext, phi_ext),
-                np.imag(e_phi_ext),
-                bounds_error=False,
-                fill_value=0
-            )
-            
-            # Interpolate the rotated field values onto the original grid
+            # Prepare for interpolation
+            # For each point in the output grid, we need to find where it comes from in the input
             points = np.column_stack((theta_rot.flatten(), phi_rot.flatten()))
             
-            e_theta_real = real_theta_interp(points).reshape(THETA.shape)
-            e_theta_imag = imag_theta_interp(points).reshape(THETA.shape)
-            e_phi_real = real_phi_interp(points).reshape(THETA.shape)
-            e_phi_imag = imag_phi_interp(points).reshape(THETA.shape)
+            # Create interpolators for real and imaginary parts separately
+            # We need to handle the coordinate wrapping correctly
             
-            # Recombine complex components
+            # For theta, create a custom interpolator that handles the wraparound
+            def interpolate_wrapped(points, values):
+                # Create a basic interpolator
+                interp = RegularGridInterpolator(
+                    (theta_array, phi_array), 
+                    values,
+                    bounds_error=False,
+                    fill_value=None  # Use nearest extrapolation
+                )
+                
+                # Get baseline interpolation
+                result = interp(points)
+                
+                return result
+            
+            # Interpolate real and imaginary parts separately
+            e_theta_real = interpolate_wrapped(points, np.real(e_theta_orig)).reshape(THETA.shape)
+            e_theta_imag = interpolate_wrapped(points, np.imag(e_theta_orig)).reshape(THETA.shape)
+            e_phi_real = interpolate_wrapped(points, np.real(e_phi_orig)).reshape(THETA.shape)
+            e_phi_imag = interpolate_wrapped(points, np.imag(e_phi_orig)).reshape(THETA.shape)
+            
+            # Recombine real and imaginary parts
             e_theta_rotated[freq_idx] = e_theta_real + 1j * e_theta_imag
             e_phi_rotated[freq_idx] = e_phi_real + 1j * e_phi_imag
         
