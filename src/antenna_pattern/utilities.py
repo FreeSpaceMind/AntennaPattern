@@ -421,6 +421,9 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
     - Back hemisphere: Theta in range [-180°, -90°] and [+90°, +180°]
     - Phi in range [-180°, +180°]
     
+    The transformation preserves the sign of theta by storing it in the sign of the
+    uvw components, allowing round-trip conversions without phase ambiguity.
+    
     Args:
         theta: Array of theta angles in degrees (-180 to +180)
         phi: Array of phi angles in degrees (-180 to +180)
@@ -429,20 +432,28 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
         Tuple[np.ndarray, np.ndarray, np.ndarray]: Direction cosines (u, v, w)
     """
     # Convert to radians
-    theta_rad = np.radians(theta)
+    theta_rad = np.radians(np.abs(theta))
     phi_rad = np.radians(phi)
     
     # Handle meshgrid case
     if theta.ndim == 1 and phi.ndim == 1:
         THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
-        theta_rad = THETA
-        phi_rad = PHI
-    
+        ABS_THETA = THETA
+        sign_theta = np.sign(theta)
+        SIGN_THETA, _ = np.meshgrid(sign_theta, phi_rad, indexing='ij')
+    else:
+        ABS_THETA = theta_rad
+        SIGN_THETA = np.sign(theta)
+        
     # In antenna pattern coordinates, theta is the angle from boresight (z-axis)
-    # Calculate direction cosines directly
-    u = np.sin(theta_rad) * np.cos(phi_rad)
-    v = np.sin(theta_rad) * np.sin(phi_rad)
-    w = np.cos(theta_rad)
+    # Calculate direction cosines using the absolute value of theta
+    u = np.sin(ABS_THETA) * np.cos(phi_rad)
+    v = np.sin(ABS_THETA) * np.sin(phi_rad)
+    w = np.cos(ABS_THETA)
+    
+    # Important: preserve the sign of theta in the sign of u to maintain phase
+    # information through the coordinate transformation
+    u = u * SIGN_THETA
     
     return u, v, w
 
@@ -455,6 +466,9 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     - Front hemisphere: Theta in range [-90°, +90°]
     - Back hemisphere: Theta in range [-180°, -90°] and [+90°, +180°]
     - Phi in range [-180°, +180°]
+    
+    This function respects the sign of u that was set in transform_tp2uvw to
+    preserve the sign of theta and avoid phase ambiguities.
     
     Args:
         u: Direction cosine u (-1 to +1)
@@ -477,32 +491,14 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     theta_standard = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
     
     # Calculate phi in range [-180°, 180°]
-    phi = np.degrees(np.arctan2(v_norm, u_norm))
+    phi = np.degrees(np.arctan2(v_norm, np.abs(u_norm)))
     
-    # Identify front and back hemispheres
-    back_hemisphere = (theta_standard > 90)
-    front_hemisphere = ~back_hemisphere
+    # Use the sign of u to determine the sign of theta
+    # This preserves the phase information through the coordinate transformation
+    sign_u = np.sign(u_norm)
+    theta = theta_standard * sign_u
     
-    # Identify points in negative X half-space
-    negative_x = (u_norm < 0)
-    
-    # Initialize theta_adjusted
-    theta_adjusted = np.zeros_like(theta_standard)
-    
-    # Front hemisphere: 
-    # - Positive X half-space: theta stays positive [0°, 90°]
-    # - Negative X half-space: theta becomes negative [-90°, 0°]
-    theta_adjusted[front_hemisphere & ~negative_x] = theta_standard[front_hemisphere & ~negative_x]
-    theta_adjusted[front_hemisphere & negative_x] = -theta_standard[front_hemisphere & negative_x]
-    
-    # Back hemisphere:
-    # - Positive X half-space: theta becomes (180° - theta_standard) [90°, 180°]
-    # - Negative X half-space: theta becomes -(180° - theta_standard) [-180°, -90°]
-    theta_adjusted[back_hemisphere & ~negative_x] = (180 - theta_standard[back_hemisphere & ~negative_x])
-    theta_adjusted[back_hemisphere & negative_x] = -(180 - theta_standard[back_hemisphere & negative_x])
-    
-    return theta_adjusted, phi
-
+    return theta, phi
 
 def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray, 
                        az: float, el: float, roll: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
