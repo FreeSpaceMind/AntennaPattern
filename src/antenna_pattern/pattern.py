@@ -625,10 +625,6 @@ class AntennaPattern:
         Returns:
             AntennaPattern: New pattern with rotated coordinates
         """
-        import numpy as np
-        from scipy.interpolate import RegularGridInterpolator
-        import logging
-        
         # Get pattern dimensions
         freq_array = self.frequencies
         theta_array = self.theta_angles
@@ -650,133 +646,107 @@ class AntennaPattern:
         # Convert back to theta-phi coordinates
         theta_in, phi_in = transform_uvw2tp(u_in, v_in, w_in)
         
+        # Ensure phi_in is within the range of original phi values
+        phi_min, phi_max = np.min(phi_array), np.max(phi_array)
+        phi_range = phi_max - phi_min
+        phi_normalized = np.mod(phi_in - phi_min, phi_range) + phi_min
+        
         # Process each frequency
         for freq_idx, freq in enumerate(freq_array):
             # Extract original pattern data for this frequency
             e_theta_orig = self.data.e_theta.values[freq_idx]
             e_phi_orig = self.data.e_phi.values[freq_idx]
             
-            # Normalize phi angles to the range expected by the interpolator
-            phi_min, phi_max = np.min(phi_array), np.max(phi_array)
-            phi_range = phi_max - phi_min
+            # Create interpolators for amplitude and phase components separately
+            # This helps maintain better numerical stability
+            interp_theta_amp = RegularGridInterpolator(
+                (theta_array, phi_array),
+                np.abs(e_theta_orig),
+                bounds_error=False,
+                fill_value=0,
+                method='linear'
+            )
             
-            # Handle edge case where phi wraps around
-            if np.any(phi_in < phi_min) or np.any(phi_in > phi_max):
-                phi_normalized = np.mod(phi_in - phi_min, phi_range) + phi_min
-            else:
-                phi_normalized = phi_in
+            interp_theta_phase = RegularGridInterpolator(
+                (theta_array, phi_array),
+                np.angle(e_theta_orig),
+                bounds_error=False,
+                fill_value=0,
+                method='linear'
+            )
             
-            # Check which points have negative theta in input
-            # This is specific to the issue with negative theta values
-            negative_theta_input = theta_in < 0
+            interp_phi_amp = RegularGridInterpolator(
+                (theta_array, phi_array),
+                np.abs(e_phi_orig),
+                bounds_error=False,
+                fill_value=0,
+                method='linear'
+            )
             
-            # To interpolate properly, we need to use absolute theta values
-            # since the source data might only have positive theta
+            interp_phi_phase = RegularGridInterpolator(
+                (theta_array, phi_array),
+                np.angle(e_phi_orig),
+                bounds_error=False,
+                fill_value=0,
+                method='linear'
+            )
+            
+            # Prepare interpolation points, using absolute value of theta
+            # to handle interpolation correctly
             theta_interp = np.abs(theta_in)
             
-            # For points with negative theta, adjust phi
-            # This is part of the fix for the negative theta phase issue
-            if np.any(negative_theta_input):
-                if np.isscalar(phi_normalized):
-                    if negative_theta_input:
-                        phi_normalized = (phi_normalized + 180) % 360
-                else:
-                    phi_normalized[negative_theta_input] = (phi_normalized[negative_theta_input] + 180) % 360
+            # Find points that need special handling
+            negative_theta = theta_in < 0
             
-            # Prepare points for interpolation using absolute theta
+            # Prepare interpolation points
             points = np.column_stack((theta_interp.flatten(), phi_normalized.flatten()))
             
-            # Create interpolators
-            interp_theta_real = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.real(e_theta_orig),
-                bounds_error=False,
-                fill_value=0,
-                method='linear'
-            )
+            # Interpolate field components
+            amp_theta = interp_theta_amp(points).reshape(theta_in.shape)
+            phase_theta = interp_theta_phase(points).reshape(theta_in.shape)
+            amp_phi = interp_phi_amp(points).reshape(theta_in.shape)
+            phase_phi = interp_phi_phase(points).reshape(theta_in.shape)
             
-            interp_theta_imag = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.imag(e_theta_orig),
-                bounds_error=False,
-                fill_value=0,
-                method='linear'
-            )
+            # Convert back to complex values
+            e_theta_complex = amp_theta * np.exp(1j * phase_theta)
+            e_phi_complex = amp_phi * np.exp(1j * phase_phi)
             
-            interp_phi_real = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.real(e_phi_orig),
-                bounds_error=False,
-                fill_value=0,
-                method='linear'
-            )
+            # Field component transformation for negative theta
+            # For negative theta, we need to apply a coordinate transform to the field components
+            if np.any(negative_theta):
+                # For each point with negative theta, transform field components
+                e_theta_complex[negative_theta] = -e_theta_complex[negative_theta]
+                e_phi_complex[negative_theta] = -e_phi_complex[negative_theta]
             
-            interp_phi_imag = RegularGridInterpolator(
-                (theta_array, phi_array),
-                np.imag(e_phi_orig),
-                bounds_error=False,
-                fill_value=0,
-                method='linear'
-            )
-            
-            # Apply interpolation
-            theta_real = interp_theta_real(points).reshape(theta_in.shape)
-            theta_imag = interp_theta_imag(points).reshape(theta_in.shape)
-            phi_real = interp_phi_real(points).reshape(theta_in.shape)
-            phi_imag = interp_phi_imag(points).reshape(theta_in.shape)
-            
-            # For negative theta points, we need to apply specific phase corrections
-            # to the field components
-            if np.any(negative_theta_input):
-                # For points with negative theta, we need to negate both field components
-                # This is the critical fix for the 180° phase shift issue
-                e_theta_complex = theta_real + 1j * theta_imag
-                e_phi_complex = phi_real + 1j * phi_imag
-                
-                # Apply 180° phase shift and reverse field component directions
-                # for negative theta points
-                e_theta_complex[negative_theta_input] = -e_theta_complex[negative_theta_input]
-                e_phi_complex[negative_theta_input] = -e_phi_complex[negative_theta_input]
-                
-                # Update real and imaginary components
-                theta_real = np.real(e_theta_complex)
-                theta_imag = np.imag(e_theta_complex)
-                phi_real = np.real(e_phi_complex)
-                phi_imag = np.imag(e_phi_complex)
-            
-            # Special handling for points at or very near theta=0 and theta=180 (poles)
-            near_poles = (np.abs(theta_in) < 1e-5) | (np.abs(theta_in - 180) < 1e-5)
+            # Handle special case near poles (theta ≈ 0° or 180°)
+            near_poles = (np.abs(theta_in) < 1e-5) | (np.abs(np.abs(theta_in) - 180) < 1e-5)
             
             if np.any(near_poles):
-                # Apply field component rotation at poles
-                for i in range(THETA.shape[0]):
-                    for j in range(THETA.shape[1]):
-                        if near_poles[i, j]:
-                            # For poles, the field components need to rotate based on phi angle
-                            phi_diff = phi_normalized[i, j] - phi_array[j]
-                            phi_diff_rad = np.radians(phi_diff)
-                            
-                            # Apply field component rotation
-                            cos_phi = np.cos(phi_diff_rad)
-                            sin_phi = np.sin(phi_diff_rad)
-                            
-                            e_th = complex(theta_real[i, j], theta_imag[i, j])
-                            e_ph = complex(phi_real[i, j], phi_imag[i, j])
-                            
-                            # Rotate field components
-                            e_th_new = e_th * cos_phi - e_ph * sin_phi
-                            e_ph_new = e_th * sin_phi + e_ph * cos_phi
-                            
-                            # Store rotated components
-                            theta_real[i, j] = np.real(e_th_new)
-                            theta_imag[i, j] = np.imag(e_th_new)
-                            phi_real[i, j] = np.real(e_ph_new)
-                            phi_imag[i, j] = np.imag(e_ph_new)
+                # Get indices of pole points
+                pole_indices = np.where(near_poles)
+                
+                # Process each pole point using vectorized operations when possible
+                for i, j in zip(*pole_indices):
+                    # Calculate phi difference
+                    phi_diff = phi_normalized[i, j] - phi_array[j]
+                    phi_diff_rad = np.radians(phi_diff)
+                    
+                    # Calculate rotation matrix components
+                    cos_phi = np.cos(phi_diff_rad)
+                    sin_phi = np.sin(phi_diff_rad)
+                    
+                    # Get field components at this point
+                    e_th = e_theta_complex[i, j]
+                    e_ph = e_phi_complex[i, j]
+                    
+                    # Apply field component rotation
+                    e_theta_complex[i, j] = e_th * cos_phi - e_ph * sin_phi
+                    e_phi_complex[i, j] = e_th * sin_phi + e_ph * cos_phi
             
-            # Combine real and imaginary parts
-            e_theta_rotated[freq_idx] = theta_real + 1j * theta_imag
-            e_phi_rotated[freq_idx] = phi_real + 1j * phi_imag
-    
+            # Store the rotated field components
+            e_theta_rotated[freq_idx] = e_theta_complex
+            e_phi_rotated[freq_idx] = e_phi_complex
+        
         # Create new pattern with the rotated field components
         return AntennaPattern(
             theta=theta_array,

@@ -465,121 +465,91 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     v_norm = v / safe_mag
     w_norm = w / safe_mag
     
-    # Calculate theta angle from Z-axis (0 to 180 degrees)
+    # Calculate magnitude of theta from z-axis (0 to 180 degrees)
     theta_mag = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
-    
-    # Calculate sign of theta based on direction in u-v plane
-    # This is crucial for preserving negative theta correctly
+
+    # For points in the hemisphere where u < 0, theta should be negative
     if np.isscalar(u_norm):
-        theta_sign = np.sign(theta_mag * u_norm)
-        # If exactly at u=0, use v to determine sign
-        if u_norm == 0:
-            theta_sign = np.sign(v_norm)
+        theta = -theta_mag if u_norm < 0 else theta_mag
     else:
-        # Default positive
-        theta_sign = np.ones_like(theta_mag)
-        
-        # For points with non-zero u, use sign of u
-        nonzero_u = np.abs(u_norm) > 1e-10
-        theta_sign[nonzero_u] = np.sign(u_norm[nonzero_u])
-        
-        # For points with zero u but non-zero v, use sign of v
-        zero_u_nonzero_v = (np.abs(u_norm) <= 1e-10) & (np.abs(v_norm) > 1e-10)
-        if np.any(zero_u_nonzero_v):
-            theta_sign[zero_u_nonzero_v] = np.sign(v_norm[zero_u_nonzero_v])
-    
-    # Apply sign to theta magnitude to get final theta
-    theta = theta_sign * theta_mag
-    
-    # Calculate phi (0 to 360 degrees)
+        theta = np.where(u_norm < 0, -theta_mag, theta_mag)
+
+    # Calculate phi normally (0 to 360 degrees)
     phi = np.degrees(np.arctan2(v_norm, u_norm))
-    
-    # Convert phi to range [0, 360]
-    if np.isscalar(phi):
-        phi = phi if phi >= 0 else phi + 360
-    else:
-        phi = np.where(phi < 0, phi + 360, phi)
-    
-    # Handle poles (where u and v are nearly zero)
-    pole_threshold = 1e-6
-    rho = np.sqrt(u_norm**2 + v_norm**2)
-    
-    if np.isscalar(rho):
-        if rho < pole_threshold:
-            phi = 0.0
-    else:
-        phi = np.where(rho < pole_threshold, 0.0, phi)
     
     return theta, phi
 
 def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray, 
-                      az: float, el: float, roll: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                   az: float, el: float, roll: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Performs an isometric rotation of direction cosines.
     
-    Coordinate system:
-    - Roll: rotation around z-axis
-    - Elevation: rotation around x-axis
-    - Azimuth: rotation around y-axis
+    The rotation is applied in the following order:
+    1. Roll (around z-axis)
+    2. Elevation (around x-axis)
+    3. Azimuth (around y-axis)
     
     Args:
-        u: Direction cosine u (-1 to +1)
-        v: Direction cosine v (-1 to +1)
-        w: Direction cosine w (-1 to +1)
-        az: Azimuth rotation angle in degrees (around y-axis)
-        el: Elevation rotation angle in degrees (around x-axis)
-        roll: Roll rotation angle in degrees (around z-axis)
-    
+        u, v, w: Direction cosines
+        az: Azimuth angle in degrees
+        el: Elevation angle in degrees
+        roll: Roll angle in degrees
+        
     Returns:
-        Tuple[np.ndarray, np.ndarray, np.ndarray]: Rotated direction cosines (u', v', w')
+        Rotated direction cosines (u', v', w')
     """
     # Convert angles to radians
     az_rad = np.radians(az)
     el_rad = np.radians(el)
     roll_rad = np.radians(roll)
     
-    # Store original shape
+    # Handle scalar inputs
+    scalar_input = np.isscalar(u) and np.isscalar(v) and np.isscalar(w)
+    if scalar_input:
+        u, v, w = np.array([u]), np.array([v]), np.array([w])
+    
+    # Remember original shape
     original_shape = np.shape(u)
     
-    # Flatten for matrix operations
-    u_flat = np.array(u).flatten()
-    v_flat = np.array(v).flatten()
-    w_flat = np.array(w).flatten()
+    # Prepare coordinates as column vectors
+    coords = np.vstack([u.flatten(), v.flatten(), w.flatten()])
     
-    # Stack coordinates
-    coords = np.vstack([u_flat, v_flat, w_flat])
-    
-    # Define rotation matrices
-    # Roll (around z-axis)
+    # Define rotation matrices (for right-handed coordinate system)
+    # Roll - rotation around z-axis
     R_z = np.array([
-        [np.cos(roll_rad), np.sin(roll_rad), 0],
-        [-np.sin(roll_rad), np.cos(roll_rad), 0],
+        [np.cos(roll_rad), -np.sin(roll_rad), 0],
+        [np.sin(roll_rad), np.cos(roll_rad), 0],
         [0, 0, 1]
     ])
     
-    # Elevation (around x-axis)
+    # Elevation - rotation around x-axis
     R_x = np.array([
         [1, 0, 0],
         [0, np.cos(el_rad), -np.sin(el_rad)],
         [0, np.sin(el_rad), np.cos(el_rad)]
     ])
     
-    # Azimuth (around y-axis)
+    # Azimuth - rotation around y-axis
     R_y = np.array([
         [np.cos(az_rad), 0, -np.sin(az_rad)],
         [0, 1, 0],
         [np.sin(az_rad), 0, np.cos(az_rad)]
     ])
     
-    # Apply rotations in the order: azimuth, elevation, roll
-    R = R_y @ R_x @ R_z
+    # Apply rotations in the specified order
+    # Matrix multiplication applies from right to left
+    R = R_y @ R_x @ R_z  # This applies: roll, then elevation, then azimuth
     
-    # Apply rotation
-    rotated = np.dot(R, coords)
+    # Apply rotation matrix to coordinates
+    rotated = R @ coords
     
     # Reshape to original dimensions
     u_rot = rotated[0].reshape(original_shape)
     v_rot = rotated[1].reshape(original_shape)
     w_rot = rotated[2].reshape(original_shape)
+    
+    # Handle scalar return
+    if scalar_input:
+        return u_rot.item(), v_rot.item(), w_rot.item()
     
     return u_rot, v_rot, w_rot
