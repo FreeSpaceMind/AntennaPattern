@@ -634,6 +634,21 @@ class AntennaPattern:
         
         # Create meshgrids for theta and phi
         THETA, PHI = np.meshgrid(theta_array, phi_array, indexing='ij')
+
+        # Convert output grid to direction cosines
+        u_out, v_out, w_out = transform_tp2uvw(THETA, PHI)
+
+        # Apply inverse rotation to find where each point came from
+        u_in, v_in, w_in = isometric_rotation(u_out, v_out, w_out, -azimuth, -elevation, -roll)
+
+        # Convert back to theta-phi coordinates
+        theta_in, phi_in = transform_uvw2tp(u_in, v_in, w_in)
+
+        # Create a flattened set of original coordinates
+        orig_coords = np.column_stack((THETA.flatten(), PHI.flatten()))
+        
+        # Create a flattened set of input coordinates (where each output point came from)
+        input_coords = np.column_stack((theta_in.flatten(), phi_in.flatten()))
         
         # Process each frequency
         for freq_idx, freq in enumerate(freq_array):
@@ -641,33 +656,13 @@ class AntennaPattern:
             e_theta_orig = self.data.e_theta.values[freq_idx]
             e_phi_orig = self.data.e_phi.values[freq_idx]
             
-            # We will use the inverse rotation approach:
-            # 1. For each point in our output grid, find where it came from in the input
-            # 2. Interpolate the field values from the input grid at those locations
-            
-            # Step 1: Convert output grid to direction cosines
-            u_out, v_out, w_out = transform_tp2uvw(THETA, PHI)
-            
-            # Step 2: Apply inverse rotation to find where each point came from
-            u_in, v_in, w_in = isometric_rotation(u_out, v_out, w_out, -azimuth, -elevation, -roll)
-            
-            # Step 3: Convert back to theta-phi coordinates
-            theta_in, phi_in = transform_uvw2tp(u_in, v_in, w_in)
-            
-            # Step 4: Prepare for interpolation
-            # Create a flattened set of original coordinates
-            orig_coords = np.column_stack((THETA.flatten(), PHI.flatten()))
-            
-            # Create a flattened set of input coordinates (where each output point came from)
-            input_coords = np.column_stack((theta_in.flatten(), phi_in.flatten()))
-            
             # Flatten the original field values
             e_theta_real_flat = np.real(e_theta_orig).flatten()
             e_theta_imag_flat = np.imag(e_theta_orig).flatten()
             e_phi_real_flat = np.real(e_phi_orig).flatten()
             e_phi_imag_flat = np.imag(e_phi_orig).flatten()
             
-            # Step 5: Interpolate field values
+            # Interpolate field values
             # Use LinearNDInterpolator for better handling of irregular grids
             interpolator_theta_real = LinearNDInterpolator(
                 orig_coords, e_theta_real_flat, fill_value=0
