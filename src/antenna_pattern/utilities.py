@@ -449,11 +449,7 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
     # Calculate direction cosines using the absolute value of theta
     u = np.sin(ABS_THETA) * np.cos(phi_rad)
     v = np.sin(ABS_THETA) * np.sin(phi_rad)
-    w = np.cos(ABS_THETA)
-    
-    # Important: preserve the sign of theta in the sign of u to maintain phase
-    # information through the coordinate transformation
-    u = u * SIGN_THETA
+    w = np.cos(ABS_THETA) * SIGN_THETA
     
     return u, v, w
 
