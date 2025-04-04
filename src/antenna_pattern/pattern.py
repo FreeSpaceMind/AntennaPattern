@@ -667,8 +667,25 @@ class AntennaPattern:
                 else:
                     phi_normalized = phi_in
                 
-                # Prepare points for interpolation
-                points = np.column_stack((theta_in.flatten(), phi_normalized.flatten()))
+                # Check which points have negative theta in input
+                # This is specific to the issue with negative theta values
+                negative_theta_input = theta_in < 0
+                
+                # To interpolate properly, we need to use absolute theta values
+                # since the source data might only have positive theta
+                theta_interp = np.abs(theta_in)
+                
+                # For points with negative theta, adjust phi
+                # This is part of the fix for the negative theta phase issue
+                if np.any(negative_theta_input):
+                    if np.isscalar(phi_normalized):
+                        if negative_theta_input:
+                            phi_normalized = (phi_normalized + 180) % 360
+                    else:
+                        phi_normalized[negative_theta_input] = (phi_normalized[negative_theta_input] + 180) % 360
+                
+                # Prepare points for interpolation using absolute theta
+                points = np.column_stack((theta_interp.flatten(), phi_normalized.flatten()))
                 
                 # Create interpolators
                 interp_theta_real = RegularGridInterpolator(
@@ -708,6 +725,25 @@ class AntennaPattern:
                 theta_imag = interp_theta_imag(points).reshape(theta_in.shape)
                 phi_real = interp_phi_real(points).reshape(theta_in.shape)
                 phi_imag = interp_phi_imag(points).reshape(theta_in.shape)
+                
+                # For negative theta points, we need to apply specific phase corrections
+                # to the field components
+                if np.any(negative_theta_input):
+                    # For points with negative theta, we need to negate both field components
+                    # This is the critical fix for the 180° phase shift issue
+                    e_theta_complex = theta_real + 1j * theta_imag
+                    e_phi_complex = phi_real + 1j * phi_imag
+                    
+                    # Apply 180° phase shift and reverse field component directions
+                    # for negative theta points
+                    e_theta_complex[negative_theta_input] = -e_theta_complex[negative_theta_input]
+                    e_phi_complex[negative_theta_input] = -e_phi_complex[negative_theta_input]
+                    
+                    # Update real and imaginary components
+                    theta_real = np.real(e_theta_complex)
+                    theta_imag = np.imag(e_theta_complex)
+                    phi_real = np.real(e_phi_complex)
+                    phi_imag = np.imag(e_phi_complex)
                 
                 # Special handling for points at or very near theta=0 and theta=180 (poles)
                 near_poles = (np.abs(theta_in) < 1e-5) | (np.abs(theta_in - 180) < 1e-5)

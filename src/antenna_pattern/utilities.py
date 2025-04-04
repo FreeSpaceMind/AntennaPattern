@@ -428,11 +428,6 @@ def transform_tp2uvw(theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np
     theta_rad = np.radians(theta)
     phi_rad = np.radians(phi)
     
-    # Calculate direction cosines
-    # In this coordinate system:
-    # u = sin(theta)*cos(phi)
-    # v = sin(theta)*sin(phi)
-    # w = cos(theta)
     sin_theta = np.sin(theta_rad)
     cos_theta = np.cos(theta_rad)
     
@@ -448,7 +443,7 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     Transforms from direction cosines to antenna pattern spherical coordinates.
     
     Coordinate system:
-    - w = 1 along z-axis (boresight), w > 0 is front hemisphere, w < 0 is back
+    - w = 1 along z-axis (boresight)
     - u = 1 along x-axis (theta=90, phi=0)
     - v = 1 along y-axis (theta=90, phi=90)
     
@@ -459,6 +454,7 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     
     Returns:
         Tuple[np.ndarray, np.ndarray]: Spherical coordinates (theta, phi) in degrees
+        theta is in range [-180, 180], preserving the sign
     """
     # Normalize direction cosines
     magnitude = np.sqrt(u**2 + v**2 + w**2)
@@ -469,32 +465,52 @@ def transform_uvw2tp(u: np.ndarray, v: np.ndarray, w: np.ndarray) -> Tuple[np.nd
     v_norm = v / safe_mag
     w_norm = w / safe_mag
     
-    # Calculate theta (0 to 180 degrees)
-    # theta = arccos(w)
-    theta = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
+    # Calculate theta angle from Z-axis (0 to 180 degrees)
+    theta_mag = np.degrees(np.arccos(np.clip(w_norm, -1.0, 1.0)))
+    
+    # Calculate sign of theta based on direction in u-v plane
+    # This is crucial for preserving negative theta correctly
+    if np.isscalar(u_norm):
+        theta_sign = np.sign(theta_mag * u_norm)
+        # If exactly at u=0, use v to determine sign
+        if u_norm == 0:
+            theta_sign = np.sign(v_norm)
+    else:
+        # Default positive
+        theta_sign = np.ones_like(theta_mag)
+        
+        # For points with non-zero u, use sign of u
+        nonzero_u = np.abs(u_norm) > 1e-10
+        theta_sign[nonzero_u] = np.sign(u_norm[nonzero_u])
+        
+        # For points with zero u but non-zero v, use sign of v
+        zero_u_nonzero_v = (np.abs(u_norm) <= 1e-10) & (np.abs(v_norm) > 1e-10)
+        if np.any(zero_u_nonzero_v):
+            theta_sign[zero_u_nonzero_v] = np.sign(v_norm[zero_u_nonzero_v])
+    
+    # Apply sign to theta magnitude to get final theta
+    theta = theta_sign * theta_mag
     
     # Calculate phi (0 to 360 degrees)
-    # Handle poles (where u and v are nearly zero) separately
+    phi = np.degrees(np.arctan2(v_norm, u_norm))
+    
+    # Convert phi to range [0, 360]
+    if np.isscalar(phi):
+        phi = phi if phi >= 0 else phi + 360
+    else:
+        phi = np.where(phi < 0, phi + 360, phi)
+    
+    # Handle poles (where u and v are nearly zero)
     pole_threshold = 1e-6
     rho = np.sqrt(u_norm**2 + v_norm**2)
     
-    # atan2 gives values in [-π, π], convert to [0, 2π]
-    phi_raw = np.degrees(np.arctan2(v_norm, u_norm))
-    
-    # Convert to range [0, 360]
-    if np.isscalar(phi_raw):
-        phi = phi_raw if phi_raw >= 0 else phi_raw + 360
-        # At poles, set phi to 0
+    if np.isscalar(rho):
         if rho < pole_threshold:
             phi = 0.0
     else:
-        # For array case, convert negative angles to [0, 360] range
-        phi = np.where(phi_raw < 0, phi_raw + 360, phi_raw)
-        # At poles, set phi to 0
         phi = np.where(rho < pole_threshold, 0.0, phi)
     
     return theta, phi
-
 
 def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray, 
                       az: float, el: float, roll: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -536,8 +552,8 @@ def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray,
     # Define rotation matrices
     # Roll (around z-axis)
     R_z = np.array([
-        [np.cos(roll_rad), -np.sin(roll_rad), 0],
-        [np.sin(roll_rad), np.cos(roll_rad), 0],
+        [np.cos(roll_rad), np.sin(roll_rad), 0],
+        [-np.sin(roll_rad), np.cos(roll_rad), 0],
         [0, 0, 1]
     ])
     
@@ -550,12 +566,12 @@ def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray,
     
     # Azimuth (around y-axis)
     R_y = np.array([
-        [np.cos(az_rad), 0, np.sin(az_rad)],
+        [np.cos(az_rad), 0, -np.sin(az_rad)],
         [0, 1, 0],
-        [-np.sin(az_rad), 0, np.cos(az_rad)]
+        [np.sin(az_rad), 0, np.cos(az_rad)]
     ])
     
-    # Apply rotations in the order: roll, then elevation, then azimuth
+    # Apply rotations in the order: azimuth, elevation, roll
     R = R_y @ R_x @ R_z
     
     # Apply rotation
