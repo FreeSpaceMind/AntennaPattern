@@ -603,3 +603,119 @@ class AntennaPattern:
             )
         
         raise ValueError("Invalid scale_db format. Must be scalar, 1D or 2D array.")
+    
+    def transform_coordinates(self, format: str = 'sided') -> 'AntennaPattern':
+        """
+        Transform pattern coordinates to conform to a specified theta/phi convention.
+        
+        This function rearranges the existing pattern data to match one of two standard
+        coordinate conventions without interpolation:
+        
+        - 'sided': theta 0:180, phi 0:360 (spherical convention)
+        - 'central': theta -180:180, phi 0:180 (more common for antenna patterns)
+        
+        Args:
+            format: Target coordinate format ('sided' or 'central')
+        
+        Returns:
+            AntennaPattern: New pattern with transformed coordinates
+            
+        Raises:
+            ValueError: If format is not 'sided' or 'central'
+        """
+        import numpy as np
+        import logging
+        
+        if format not in ['sided', 'central']:
+            raise ValueError("Format must be 'sided' or 'central'")
+        
+        # Get current coordinates
+        theta = self.theta_angles
+        phi = self.phi_angles
+        
+        # Get field components
+        e_theta = self.data.e_theta.values
+        e_phi = self.data.e_phi.values
+        frequencies = self.frequencies
+        
+        # Check current format
+        theta_min, theta_max = np.min(theta), np.max(theta)
+        phi_min, phi_max = np.min(phi), np.max(phi)
+        
+        is_sided = theta_min >= 0 and theta_max <= 180 and phi_min >= 0 and phi_max <= 360
+        is_central = theta_min >= -180 and theta_max <= 180 and phi_min >= 0 and phi_max <= 180
+        
+        # If already in the correct format, return a copy
+        if (format == 'sided' and is_sided) or (format == 'central' and is_central):
+            return self
+        
+        
+        # Apply transformation based on target format
+        if format == 'sided':
+            # Target: theta 0:180, phi 0:360
+            # Every cut will now get split into two cuts. 
+            # The negative theta values will become a new cut with postitive theta, phi +180 deg.
+
+            # ensure phi is within central range
+            if np.max(phi) >= 180:
+                raise ValueError("Input phi must be less than 180 when transforming to sided")
+            
+            # get theta 0 idx
+            theta0_idx = np.argmin(np.abs(theta))
+
+            # create new theta vector
+            new_theta = theta[theta0_idx:]
+
+            # create new phi vector
+            new_phi = np.concatenate((phi, phi+180))
+
+            # initilize new electric field vectors
+            new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+            new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+            new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+            new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+            
+            # Fill new electric field vectors
+            new_e_theta[:, :, :np.size(phi)] = e_theta[:, theta0_idx:, :]
+            new_e_theta[:, :, np.size(phi):] = np.flip(e_theta[:, :theta0_idx+1, :])
+            new_e_phi[:, :, :np.size(phi)] = e_phi[:, theta0_idx:, :]
+            new_e_phi[:, :, np.size(phi):] = np.flip(e_phi[:, :theta0_idx+1, :])
+                
+        elif format == 'central':
+            # Target: theta -180:180, phi 0:180
+
+            # ensure phi is within central range
+            if theta[0] != 0:
+                raise ValueError("Input theta must start at 0 when transforming to central")
+
+            # generate new theta array
+            new_theta = np.concatenate((-np.flip(theta[1:]), theta))
+
+            # get phi 180 crossing
+            phi180_idx = np.argmax(phi >= 180)
+
+            # generate new phi vector
+            new_phi = phi[:phi180_idx]
+
+            # initilize new electric field vectors
+            new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+            new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+            new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+            new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+
+            # Fill new electric field vectors
+            new_e_theta[:, :theta.size, :] = np.flip(e_theta[:, :, phi180_idx:], axis=1)
+            new_e_theta[:, theta.size-1:, :] = e_theta[:, :, :phi180_idx]
+            new_e_phi[:, :theta.size, :] = np.flip(e_phi[:, :, phi180_idx:], axis=1)
+            new_e_phi[:, theta.size-1:, :] = e_phi[:, :, :phi180_idx]
+    
+        
+        # Create a new AntennaPattern with the transformed data
+        return AntennaPattern(
+            theta=new_theta,
+            phi=new_phi,
+            frequency=frequencies,
+            e_theta=new_e_theta,
+            e_phi=new_e_phi,
+            polarization=self.polarization
+        )
