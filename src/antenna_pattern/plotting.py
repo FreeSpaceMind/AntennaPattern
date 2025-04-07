@@ -289,62 +289,116 @@ def plot_multiple_patterns(
             colors = colors * (len(patterns) // len(colors) + 1)
     elif len(colors) < len(patterns):
         raise ValueError(f"Not enough colors provided ({len(colors)}) for {len(patterns)} patterns")
-        
-    # Legend handles for custom legend
+    
+    # Custom legend items
     legend_handles = []
     
-    # Process each pattern separately
+    # Clear any existing legend
+    if ax.get_legend():
+        ax.get_legend().remove()
+    
+    # Process each pattern
     for i, (pattern, label, color, freq, phi) in enumerate(
             zip(patterns, labels, colors, frequencies, phi_angles)):
         
-        # Remove any auto-generated legends to prevent duplications
-        if ax.get_legend():
-            ax.get_legend().remove()
+        # Get data arrays based on value_type from pattern
+        theta_angles = pattern.theta_angles
         
-        # Plot the pattern with no legends
-        plot_pattern_cut(
-            pattern,
-            frequency=freq,
-            phi=phi,
-            show_cross_pol=show_cross_pol,
-            value_type=value_type,
-            unwrap_phase=unwrap_phase,
-            ax=ax,
-            title=title if i == 0 else None  # Only set title on first pattern
-        )
+        # Select frequency
+        if freq is None:
+            # Default to first frequency
+            freq_value = pattern.frequencies[0]
+            freq_idx = 0
+        else:
+            # Find nearest frequency
+            from .utilities import find_nearest
+            freq_value, freq_idx = find_nearest(pattern.frequencies, freq)
         
-        # Get the lines that were just added
-        all_lines = ax.get_lines()
+        # Select phi angles
+        phi_angles_to_plot = phi if phi is not None else pattern.phi_angles
         
-        # Find all lines with this color and modify them
-        for line in all_lines:
-            # We need to override line colors and styles
-            if line.get_color() == 'b' or line.get_color() == 'r':  # Default co-pol/cross-pol colors
-                # Check if this is a co-pol or cross-pol line
-                is_cross_pol = (line.get_color() == 'r' or line.get_linestyle() == ':')
+        # Get data for co-pol
+        if value_type == 'gain':
+            co_pol_data = pattern.get_gain_db('e_co').values[freq_idx]
+            if show_cross_pol:
+                cx_pol_data = pattern.get_gain_db('e_cx').values[freq_idx]
+        elif value_type == 'phase':
+            co_pol_data = pattern.get_phase('e_co', unwrapped=unwrap_phase).values[freq_idx]
+            if show_cross_pol:
+                cx_pol_data = pattern.get_phase('e_cx', unwrapped=unwrap_phase).values[freq_idx]
+        elif value_type == 'axial_ratio':
+            co_pol_data = pattern.get_axial_ratio().values[freq_idx]
+            show_cross_pol = False  # No cross-pol for axial ratio
+        else:
+            raise ValueError(f"Invalid value_type: {value_type}")
+        
+        # Plot co-pol for each phi angle
+        for phi_idx, phi_val in enumerate(phi_angles_to_plot):
+            if phi_val not in pattern.phi_angles:
+                # Find nearest phi angle
+                from .utilities import find_nearest
+                phi_val, phi_idx_actual = find_nearest(pattern.phi_angles, phi_val)
+            else:
+                phi_idx_actual = np.where(pattern.phi_angles == phi_val)[0][0]
+            
+            # Plot co-pol
+            phi_label = f"{phi_val:.1f}°" if len(phi_angles_to_plot) > 1 else ""
+            if phi_label:
+                line_label = f"{label} (φ={phi_label})"
+            else:
+                line_label = label
                 
-                # Set color based on pattern
-                line.set_color(color)
+            # Only first phi angle gets a label
+            if phi_idx > 0:
+                line_label = "_nolegend_"
                 
-                # Set line style based on co-pol/cross-pol
-                if is_cross_pol:
-                    line.set_linestyle('--')  # Dashed for cross-pol
-                    
-                # Remove from auto-legend by setting label to empty
-                line.set_label('_nolegend_')
-        
-        # Create custom legend entries
-        co_line = mlines.Line2D([], [], color=color, linestyle='-', label=label)
-        legend_handles.append(co_line)
-        
-        # Add cross-pol to legend if enabled
-        if show_cross_pol and value_type != 'axial_ratio':
-            cross_line = mlines.Line2D([], [], color=color, linestyle='--', 
-                                       label=f"{label} (cross-pol)")
-            legend_handles.append(cross_line)
+            co_line = ax.plot(
+                theta_angles, 
+                co_pol_data[:, phi_idx_actual],
+                '-',  # Solid line for co-pol
+                color=color,
+                label=line_label
+            )[0]
+            
+            # Add to legend handles for first phi angle
+            if phi_idx == 0:
+                # Add to custom legend
+                legend_handles.append(co_line)
+            
+            # Plot cross-pol if enabled
+            if show_cross_pol:
+                cx_line = ax.plot(
+                    theta_angles,
+                    cx_pol_data[:, phi_idx_actual],
+                    '--',  # Dashed line for cross-pol
+                    color=color,
+                    label=f"{label} (cross-pol)" if phi_idx == 0 else "_nolegend_"
+                )[0]
+                
+                # Add to legend handles for first phi angle
+                if phi_idx == 0:
+                    legend_handles.append(cx_line)
     
-    # Create custom legend
-    ax.legend(handles=legend_handles, loc='best')
+    # Set plot labels and grid
+    ax.set_xlabel('Theta (degrees)')
+    
+    if value_type == 'gain':
+        ax.set_ylabel('Gain (dBi)')
+    elif value_type == 'phase':
+        ax.set_ylabel('Phase (radians)')
+    elif value_type == 'axial_ratio':
+        ax.set_ylabel('Axial Ratio (linear)')
+        
+    # Set title if provided
+    if title:
+        ax.set_title(title)
+        
+    # Add grid
+    ax.grid(True)
+    
+    # Add legend
+    if legend_handles:
+        ax.legend(handles=legend_handles, loc='best')
     
     # Make layout tight
     fig.tight_layout()
