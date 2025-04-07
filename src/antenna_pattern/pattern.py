@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from contextlib import contextmanager
 
-from pattern_functions import(
+from .pattern_functions import(
     unwrap_phase, swap_polarization_axes, apply_mars, 
     normalize_phase, change_polarization, translate,
     scale_pattern, transform_coordinates
