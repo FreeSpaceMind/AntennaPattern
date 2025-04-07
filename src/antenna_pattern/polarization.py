@@ -7,7 +7,6 @@ polarization representations (spherical, Ludwig-3, circular).
 import numpy as np
 import logging
 from typing import Tuple, Union
-from .utilities import frequency_to_wavelength
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -138,70 +137,3 @@ def polarization_rl2tp(phi: RealArray, e_right: ComplexArray, e_left: ComplexArr
     e_theta, e_phi = polarization_xy2pt(phi, e_x, e_y)
     
     return e_theta, e_phi
-
-
-def phase_pattern_translate(frequency, theta, phi, translation, phase_pattern):
-    """
-    Shifts the antenna phase pattern to place the origin at the location defined by the shift.
-    
-    Args:
-        frequency: Frequency in Hz (scalar or array)
-        theta: Array of theta angles in radians
-        phi: Array of phi angles in radians
-        translation: [x, y, z] translation vector in meters
-        phase_pattern: Array of antenna phase pattern in radians
-        
-    Returns:
-        ndarray: Shifted phase pattern
-    """
-    
-    wavelength = frequency_to_wavelength(frequency)
-    wavenumber = 2 * np.pi / wavelength
-    
-    # Handle single frequency case - reshape arrays if needed
-    if np.isscalar(frequency) and phase_pattern.ndim == 2:
-        # This is a single frequency case - no frequency dimension
-        theta_grid, phi_grid = np.meshgrid(theta, phi, indexing='ij')
-
-        sin_theta = np.sin(theta_grid)
-        cos_theta = np.cos(theta_grid)
-        cos_phi = np.cos(phi_grid)
-        sin_phi = np.sin(phi_grid)
-        
-        # Calculate phase shift  
-        phase_shift = wavenumber * (
-            translation[0] * cos_phi * sin_theta +
-            translation[1] * sin_phi * sin_theta +
-            translation[2] * cos_theta
-        )
-        
-        # Apply the shift
-        shifted_pattern = phase_pattern - phase_shift
-        
-    else:
-        # Multi-frequency implementation
-        # Create a tiled array for matrix operations
-        theta_array = np.moveaxis(
-            np.tile(theta, (np.size(phi), np.size(frequency), 1)), -1, 0
-        )
-        phi_array = np.tile(phi, (np.size(theta), np.size(frequency), 1)).swapaxes(1, 2)
-        
-        # Handle per-frequency translation if needed
-        if np.ndim(translation) == 1:
-            translation = np.tile(translation, (np.size(frequency), 1))
-        
-        # Calculate phase shift
-        shifted_pattern = np.moveaxis(phase_pattern, 0, -1) - wavenumber * (
-            translation[:, 0] * np.cos(phi_array) * np.sin(theta_array) +
-            translation[:, 1] * np.sin(phi_array) * np.sin(theta_array) +
-            translation[:, 2] * np.cos(theta_array)
-        )
-        
-        # Move axes back to original order
-        shifted_pattern = np.moveaxis(shifted_pattern, -1, 0)
-    
-    # Normalize to -π to π range
-    shifted_pattern = shifted_pattern % (2 * np.pi)
-    shifted_pattern[shifted_pattern > np.pi] -= 2 * np.pi
-    
-    return shifted_pattern

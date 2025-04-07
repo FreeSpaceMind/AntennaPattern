@@ -7,18 +7,18 @@ from typing import Optional, Union, Tuple, Dict, Any, Set, Generator
 import logging
 from pathlib import Path
 from contextlib import contextmanager
-from scipy.interpolate import RegularGridInterpolator, interp1d
 
-from .utilities import (
-        find_nearest, unwrap_phase, scale_amplitude,
-        transform_tp2uvw, isometric_rotation, transform_uvw2tp
-        )
+from pattern_function import(
+    unwrap_phase, swap_polarization_axes, apply_mars, 
+    normalize_phase, change_polarization, translate,
+    scale_pattern, transform_coordinates
+)
+from .utilities import find_nearest
 from .polarization import (
-    polarization_tp2xy, polarization_xy2pt, polarization_tp2rl, 
-    polarization_rl2xy, polarization_rl2tp
+    polarization_tp2xy, polarization_tp2rl
 )
 from .analysis import (
-    translate_phase_pattern, find_phase_center, apply_mars, get_axial_ratio, normalize_phase
+    calculate_phase_center, get_axial_ratio,
     )
 
 # Configure logging
@@ -39,6 +39,7 @@ class AntennaPattern:
             - e_co: Co-polarized component (determined by polarization attribute)
             - e_cx: Cross-polarized component (determined by polarization attribute)
         polarization (str): The polarization type ('rhcp', 'lhcp', 'x', 'y', 'theta', 'phi')
+        metadata (Dict[str, Any]): Optional metadata for the pattern including operations history
     """
     
     VALID_POLARIZATIONS: Set[str] = {
@@ -56,7 +57,8 @@ class AntennaPattern:
                  frequency: np.ndarray,
                  e_theta: np.ndarray, 
                  e_phi: np.ndarray,
-                 polarization: Optional[str] = None):
+                 polarization: Optional[str] = None,
+                 metadata: Optional[Dict[str, Any]] = None):
         """
         Initialize an AntennaPattern with the given parameters.
         
@@ -67,6 +69,7 @@ class AntennaPattern:
             e_theta: Complex array of e_theta values [freq, theta, phi]
             e_phi: Complex array of e_phi values [freq, theta, phi]
             polarization: Optional polarization type. If None, determined automatically.
+            metadata: Optional metadata dictionary
             
         Raises:
             ValueError: If arrays have incompatible dimensions
@@ -96,6 +99,9 @@ class AntennaPattern:
             }
         )
         
+        # Initialize metadata if provided
+        self.metadata = metadata.copy() if metadata is not None else {'operations': []}
+
         # Assign polarization and compute derived components
         self.assign_polarization(polarization)
         
@@ -150,7 +156,8 @@ class AntennaPattern:
             frequency=np.array([freq_value]),
             e_theta=np.expand_dims(single_freq_data.e_theta.values, axis=0),
             e_phi=np.expand_dims(single_freq_data.e_phi.values, axis=0),
-            polarization=self.polarization
+            polarization=self.polarization,
+            metadata={'parent_pattern': 'Single frequency view'}
         )
         
         yield single_freq_pattern
@@ -223,32 +230,25 @@ class AntennaPattern:
         self.data['e_co'] = (('frequency', 'theta', 'phi'), e_co)
         self.data['e_cx'] = (('frequency', 'theta', 'phi'), e_cx)
         self.polarization = standard_pol
+
+        # Update metadata
+        if self.metadata is not None:
+            self.metadata['polarization'] = standard_pol
     
-    def change_polarization(self, new_polarization: str) -> 'AntennaPattern':
+    def change_polarization(self, new_polarization: str) -> None:
         """
-        Create a new pattern with a different polarization assignment.
+        Change the polarization of the antenna pattern.
         
         Args:
             new_polarization: New polarization type to use
-        
-        Returns:
-            AntennaPattern: New pattern with the specified polarization
             
         Raises:
             ValueError: If the new polarization is invalid
         """
-
-        # Create a new pattern with the same data but different polarization
-        return AntennaPattern(
-            theta=self.theta_angles,
-            phi=self.phi_angles,
-            frequency=self.frequencies,
-            e_theta=self.data.e_theta.values,
-            e_phi=self.data.e_phi.values,
-            polarization=new_polarization
-        )
+        # Delegate to the pattern_functions implementation
+        change_polarization(self, new_polarization)
     
-    def translate(self, translation: np.ndarray) -> 'AntennaPattern':
+    def translate(self, translation: np.ndarray, normalize: bool = True) -> None:
         """
         Shifts the antenna phase pattern to place the origin of the coordinate 
         system at the location defined by the translation.
@@ -256,33 +256,30 @@ class AntennaPattern:
         Args:
             translation: [x, y, z] translation vector in meters. Can be 1D (applied to
                 all frequencies) or 2D with shape (num_frequencies, 3).
-        
-        Returns:
-            AntennaPattern: A new AntennaPattern with translated phase
+            normalize: if true, normalize the translated phase pattern to zero degrees
             
         Raises:
             ValueError: If translation has incorrect shape
         """
-        # Delegate to the analysis module
-        return translate_phase_pattern(self, translation)
+        # Delegate to the pattern_functions implementation
+        translate(self, translation, normalize)
     
     def find_phase_center(self, theta_angle: float, frequency: Optional[float] = None) -> np.ndarray:
         """
-        Finds the optimum phase center given a theta angle and frequency.
-        
-        The optimum phase center is the point that, when used as the origin,
-        minimizes the phase variation across the beam from -theta_angle to +theta_angle.
+        Finds the optimum phase center given a theta angle and frequency and
+        modifies the pattern by shifting to the found phase center.
         
         Args:
             theta_angle: Angle in degrees to optimize phase center for
             frequency: Optional specific frequency to use, or None to use all frequencies
-        
+            
         Returns:
             np.ndarray: [x, y, z] coordinates of the optimum phase center
         """
-        return find_phase_center(self, theta_angle, frequency)
+        # Delegate to the pattern_functions implementation
+        return calculate_phase_center(self, theta_angle, frequency)
     
-    def shift_to_phase_center(self, theta_angle: float, frequency: Optional[float] = None) -> Tuple['AntennaPattern', np.ndarray]:
+    def shift_to_phase_center(self, theta_angle: float, frequency: Optional[float] = None) -> np.ndarray:
         """
         Find the phase center and shift the pattern to it.
         
@@ -291,14 +288,31 @@ class AntennaPattern:
             frequency: Optional specific frequency to use, or None to use all frequencies
             
         Returns:
-            Tuple[AntennaPattern, np.ndarray]: Shifted pattern and the translation vector
-        """
-        translation = self.find_phase_center(theta_angle, frequency)
-        return self.translate(translation), translation
+            np.ndarray: The translation vector used
+        """  
+        
+        # Calculate phase center without modifying the pattern
+        translation = calculate_phase_center(self, theta_angle, frequency)
+        
+        # Then apply the translation
+        self.translate(translation)
+        
+        # Update metadata if needed
+        if hasattr(self, 'metadata') and self.metadata is not None:
+            if 'operations' not in self.metadata:
+                self.metadata['operations'] = []
+            self.metadata['operations'].append({
+                'type': 'shift_to_phase_center',
+                'theta_angle': theta_angle,
+                'frequency': frequency,
+                'translation': translation.tolist() if hasattr(translation, 'tolist') else translation
+            })
+        
+        return translation
     
-    def normalize_phase(self, reference_theta=0, reference_phi=0):
+    def normalize_phase(self, reference_theta=0, reference_phi=0) -> None:
         """
-        Normalize the phase of an antenna pattern based on its polarization type.
+        Normalize the phase of the antenna pattern based on its polarization type.
         
         This function sets the phase of the co-polarized component at the reference
         point (closest to reference_theta, reference_phi) to zero, while preserving
@@ -307,13 +321,11 @@ class AntennaPattern:
         Args:
             reference_theta: Reference theta angle in degrees (default: 0)
             reference_phi: Reference phi angle in degrees (default: 0)
-            
-        Returns:
-            AntennaPattern: New pattern with normalized phase
         """
-        return normalize_phase(self, reference_theta, reference_phi)
+        # Delegate to the pattern_functions implementation
+        normalize_phase(self, reference_theta, reference_phi)
 
-    def apply_mars(self, maximum_radial_extent: float) -> 'AntennaPattern':
+    def apply_mars(self, maximum_radial_extent: float) -> None:
         """
         Apply Mathematical Absorber Reflection Suppression technique.
         
@@ -323,36 +335,16 @@ class AntennaPattern:
         
         Args:
             maximum_radial_extent: Maximum radial extent of the antenna in meters
-            
-        Returns:
-            AntennaPattern: New pattern with MARS algorithm applied
         """
-
-        return apply_mars(self, maximum_radial_extent)
+        # Delegate to the pattern_functions implementation
+        apply_mars(self, maximum_radial_extent)
     
-    def swap_polarization_axes(self) -> 'AntennaPattern':
+    def swap_polarization_axes(self) -> None:
         """
         Swap vertical and horizontal polarization ports.
-        
-        Returns:
-            AntennaPattern: New pattern with swapped polarization
         """
-        phi = self.data.phi.values
-        e_theta = self.data.e_theta.values 
-        e_phi = self.data.e_phi.values
-        
-        # Convert to x/y and back to swap the axes
-        e_x, e_y = polarization_tp2xy(phi, e_theta, e_phi)
-        e_theta_new, e_phi_new = polarization_xy2pt(phi, e_y, e_x)  # Note: x and y are swapped
-        
-        return AntennaPattern(
-            theta=self.theta_angles,
-            phi=phi,
-            frequency=self.frequencies,
-            e_theta=e_theta_new,
-            e_phi=e_phi_new,
-            polarization=self.polarization
-        )
+        # Delegate to the pattern_functions implementation
+        swap_polarization_axes(self)
     
     def get_gain_db(self, component: str = 'e_co') -> xr.DataArray:
         """
@@ -433,8 +425,8 @@ class AntennaPattern:
         return get_axial_ratio(self)
     
     def scale_pattern(self, scale_db: Union[float, np.ndarray], 
-                    freq_scale: Optional[np.ndarray] = None,
-                    phi_scale: Optional[np.ndarray] = None) -> 'AntennaPattern':
+                      freq_scale: Optional[np.ndarray] = None,
+                      phi_scale: Optional[np.ndarray] = None) -> None:
         """
         Scale the amplitude of the antenna pattern by the input value in dB.
         
@@ -455,141 +447,13 @@ class AntennaPattern:
             phi_scale: Optional phi angle vector in degrees when scale_db is 2D and 
                 doesn't match pattern phi points.
                 
-        Returns:
-            AntennaPattern: New pattern with scaled amplitude
-            
         Raises:
             ValueError: If input arrays have incompatible dimensions
         """
-        # Get pattern dimensions
-        pattern_freq = self.frequencies
-        pattern_phi = self.phi_angles
-        pattern_theta = self.theta_angles
-        n_freq = len(pattern_freq)
-        n_phi = len(pattern_phi)
-        n_theta = len(pattern_theta)
-        
-        # Case 1: Single scalar value - apply uniformly
-        if np.isscalar(scale_db):
-            # Create a new pattern with scaled field components
-            return AntennaPattern(
-                theta=pattern_theta,
-                phi=pattern_phi,
-                frequency=pattern_freq,
-                e_theta=scale_amplitude(self.data.e_theta.values, scale_db),
-                e_phi=scale_amplitude(self.data.e_phi.values, scale_db),
-                polarization=self.polarization
-            )
-        
-        # Convert to numpy array if not already
-        scale_db = np.asarray(scale_db)
-        
-        # Case 2: 1D array matching frequency length
-        if scale_db.ndim == 1 and len(scale_db) == n_freq and freq_scale is None:
-            # Reshape for broadcasting - add axes for theta and phi dimensions
-            scale_factor = scale_db.reshape(-1, 1, 1)
-            
-            return AntennaPattern(
-                theta=pattern_theta,
-                phi=pattern_phi,
-                frequency=pattern_freq,
-                e_theta=scale_amplitude(self.data.e_theta.values, scale_factor),
-                e_phi=scale_amplitude(self.data.e_phi.values, scale_factor),
-                polarization=self.polarization
-            )
-        
-        # Case 3: 1D array with custom frequencies - need interpolation
-        if scale_db.ndim == 1 and freq_scale is not None:
-            if len(scale_db) != len(freq_scale):
-                raise ValueError(f"scale_db length ({len(scale_db)}) must match freq_scale length ({len(freq_scale)})")
-            
-            # Interpolate to match pattern frequencies
-            interp_func = interp1d(freq_scale, scale_db, bounds_error=False, fill_value="extrapolate")
-            interp_scale = interp_func(pattern_freq)
-            
-            # Set reasonable limits to prevent overflow
-            interp_scale = np.clip(interp_scale, -50.0, 50.0)
-            
-            # Reshape for broadcasting
-            scale_factor = interp_scale.reshape(-1, 1, 1)
-            
-            return AntennaPattern(
-                theta=pattern_theta,
-                phi=pattern_phi,
-                frequency=pattern_freq,
-                e_theta=scale_amplitude(self.data.e_theta.values, scale_factor),
-                e_phi=scale_amplitude(self.data.e_phi.values, scale_factor),
-                polarization=self.polarization
-            )
-        
-        # Case 4: 2D array - need interpolation for both frequency and phi
-        if scale_db.ndim == 2:
-            if freq_scale is None:
-                raise ValueError("freq_scale must be provided when scale_db is 2D")
-            
-            # Handle phi_scale
-            if phi_scale is None:
-                if scale_db.shape[1] != n_phi:
-                    raise ValueError(f"scale_db phi dimension ({scale_db.shape[1]}) "
-                                    f"must match pattern phi count ({n_phi})")
-                phi_scale = pattern_phi
-            
-            if len(freq_scale) != scale_db.shape[0] or len(phi_scale) != scale_db.shape[1]:
-                raise ValueError(f"scale_db shape ({scale_db.shape}) must match "
-                                f"(freq_scale length, phi_scale length) = ({len(freq_scale)}, {len(phi_scale)})")
-            
-            # Set reasonable limits for dB values to prevent overflow
-            max_db_value = 50.0
-            min_db_value = -50.0
-            
-            # Create a 3D array to store scaling factors for each point in the pattern
-            scale_factors = np.zeros((n_freq, n_theta, n_phi))
-            
-            # Use a simple nearest-neighbor approach for each (frequency, phi) point
-            # This avoids any complex interpolation that could distort your pattern
-            for f_idx, freq in enumerate(pattern_freq):
-                # Find nearest frequency in freq_scale
-                f_nearest_idx = np.abs(freq_scale - freq).argmin()
-                
-                for p_idx, phi in enumerate(pattern_phi):
-                    # Find nearest phi in phi_scale, accounting for periodicity
-                    # Calculate the angular distance considering wrap-around
-                    phi_dists = np.abs(np.mod(phi_scale - phi + 180, 360) - 180)
-                    p_nearest_idx = np.argmin(phi_dists)
-                    
-                    # Get scaling value from the nearest point
-                    scale_val = scale_db[f_nearest_idx, p_nearest_idx]
-                    
-                    # Clip to reasonable range
-                    scale_val = np.clip(scale_val, min_db_value, max_db_value)
-                    
-                    # Assign to all theta values for this phi angle and frequency
-                    scale_factors[f_idx, :, p_idx] = scale_val
-            
-            # Log warning if extreme values were detected
-            if np.any(scale_factors >= max_db_value) or np.any(scale_factors <= min_db_value):
-                logger.warning("Extreme scaling values detected and clipped to range [%f, %f] dB", 
-                            min_db_value, max_db_value)
-            
-            # Convert dB to linear scale factors
-            linear_scale_factors = 10**(scale_factors / 20.0)
-            
-            # Apply scaling using numpy broadcasting
-            e_theta_scaled = self.data.e_theta.values * linear_scale_factors
-            e_phi_scaled = self.data.e_phi.values * linear_scale_factors
-            
-            return AntennaPattern(
-                theta=pattern_theta,
-                phi=pattern_phi,
-                frequency=pattern_freq,
-                e_theta=e_theta_scaled,
-                e_phi=e_phi_scaled,
-                polarization=self.polarization
-            )
-        
-        raise ValueError("Invalid scale_db format. Must be scalar, 1D or 2D array.")
+        # Delegate to the pattern_functions implementation
+        scale_pattern(self, scale_db, freq_scale, phi_scale)
     
-    def transform_coordinates(self, format: str = 'sided') -> 'AntennaPattern':
+    def transform_coordinates(self, format: str = 'sided') -> None:
         """
         Transform pattern coordinates to conform to a specified theta/phi convention.
         
@@ -601,109 +465,12 @@ class AntennaPattern:
         
         Args:
             format: Target coordinate format ('sided' or 'central')
-        
-        Returns:
-            AntennaPattern: New pattern with transformed coordinates
             
         Raises:
             ValueError: If format is not 'sided' or 'central'
         """
-        import numpy as np
-        import logging
-        
-        if format not in ['sided', 'central']:
-            raise ValueError("Format must be 'sided' or 'central'")
-        
-        # Get current coordinates
-        theta = self.theta_angles
-        phi = self.phi_angles
-        
-        # Get field components
-        e_theta = self.data.e_theta.values
-        e_phi = self.data.e_phi.values
-        frequencies = self.frequencies
-        
-        # Check current format
-        theta_min, theta_max = np.min(theta), np.max(theta)
-        phi_min, phi_max = np.min(phi), np.max(phi)
-        
-        is_sided = theta_min >= 0 and theta_max <= 180 and phi_min >= 0 and phi_max <= 360
-        is_central = theta_min >= -180 and theta_max <= 180 and phi_min >= 0 and phi_max <= 180
-        
-        # If already in the correct format, return a copy
-        if (format == 'sided' and is_sided) or (format == 'central' and is_central):
-            return self
-        
-        
-        # Apply transformation based on target format
-        if format == 'sided':
-            # Target: theta 0:180, phi 0:360
-            # Every cut will now get split into two cuts. 
-            # The negative theta values will become a new cut with postitive theta, phi +180 deg.
-
-            # ensure phi is within central range
-            if np.max(phi) >= 180:
-                raise ValueError("Input phi must be less than 180 when transforming to sided")
-            
-            # get theta 0 idx
-            theta0_idx = np.argmin(np.abs(theta))
-
-            # create new theta vector
-            new_theta = theta[theta0_idx:]
-
-            # create new phi vector
-            new_phi = np.concatenate((phi, phi+180))
-
-            # initilize new electric field vectors
-            new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-            new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-            new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-            new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-            
-            # Fill new electric field vectors
-            new_e_theta[:, :, :np.size(phi)] = e_theta[:, theta0_idx:, :]
-            new_e_theta[:, :, np.size(phi):] = np.flip(e_theta[:, :theta0_idx+1, :])
-            new_e_phi[:, :, :np.size(phi)] = e_phi[:, theta0_idx:, :]
-            new_e_phi[:, :, np.size(phi):] = np.flip(e_phi[:, :theta0_idx+1, :])
-                
-        elif format == 'central':
-            # Target: theta -180:180, phi 0:180
-
-            # ensure phi is within central range
-            if theta[0] != 0:
-                raise ValueError("Input theta must start at 0 when transforming to central")
-
-            # generate new theta array
-            new_theta = np.concatenate((-np.flip(theta[1:]), theta))
-
-            # get phi 180 crossing
-            phi180_idx = np.argmax(phi >= 180)
-
-            # generate new phi vector
-            new_phi = phi[:phi180_idx]
-
-            # initilize new electric field vectors
-            new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-            new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-            new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-            new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-
-            # Fill new electric field vectors
-            new_e_theta[:, :theta.size, :] = np.flip(e_theta[:, :, phi180_idx:], axis=1)
-            new_e_theta[:, theta.size-1:, :] = e_theta[:, :, :phi180_idx]
-            new_e_phi[:, :theta.size, :] = np.flip(e_phi[:, :, phi180_idx:], axis=1)
-            new_e_phi[:, theta.size-1:, :] = e_phi[:, :, :phi180_idx]
-    
-        
-        # Create a new AntennaPattern with the transformed data
-        return AntennaPattern(
-            theta=new_theta,
-            phi=new_phi,
-            frequency=frequencies,
-            e_theta=new_e_theta,
-            e_phi=new_e_phi,
-            polarization=self.polarization
-        )
+        # Delegate to the pattern_functions implementation
+        transform_coordinates(self, format)
     
     def split_patterns(self) -> Tuple['AntennaPattern', 'AntennaPattern']:
         """
@@ -784,7 +551,11 @@ class AntennaPattern:
             frequency=frequency,
             e_theta=e_theta1,
             e_phi=e_phi1,
-            polarization=self.polarization
+            polarization=self.polarization,
+            metadata={
+                'parent_pattern': 'Split pattern 1',
+                'original_phi_indices': first_indices.tolist()
+            } if self.metadata else None
         )
         
         pattern2 = AntennaPattern(
@@ -793,7 +564,11 @@ class AntennaPattern:
             frequency=frequency,
             e_theta=e_theta2,
             e_phi=e_phi2,
-            polarization=self.polarization
+            polarization=self.polarization,
+            metadata={
+                'parent_pattern': 'Split pattern 2',
+                'original_phi_indices': second_indices.tolist()
+            } if self.metadata else None
         )
         
         return pattern1, pattern2
