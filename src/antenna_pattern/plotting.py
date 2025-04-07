@@ -511,9 +511,6 @@ def plot_pattern_difference(
                 phi2_indices.append(phi2_idx)
                 selected_phi.append(phi1_val)
     
-    # Set up color cycling for multiple phi values
-    color_cycle = plt.cm.tab10(np.linspace(0, 1, len(selected_phi)))
-    
     # Determine y-label based on value_type
     if value_type == 'co_gain':
         y_label = 'Co-pol Gain Difference (dB)'
@@ -534,7 +531,6 @@ def plot_pattern_difference(
     # Plot for each phi angle
     for i, (phi1_idx, phi2_idx) in enumerate(zip(phi1_indices, phi2_indices)):
         phi_val = selected_phi[i]
-        phi_str = f"φ={phi_val:.1f}°"
         
         # Get data for this phi angle
         if value_type == 'co_gain':
@@ -559,11 +555,8 @@ def plot_pattern_difference(
         else:
             difference = data1 - data2
         
-        # Plot difference
-        ax.plot(theta_angles, difference, 
-               color=color_cycle[i], 
-               linewidth=2,
-               label=f"{phi_str}")
+        # Plot difference - no labels for legend
+        ax.plot(theta_angles, difference)
     
     # Set plot labels and grid
     ax.set_xlabel('Theta (degrees)')
@@ -582,10 +575,6 @@ def plot_pattern_difference(
     
     ax.set_title(title)
     ax.grid(True)
-    
-    # Add legend if there are multiple phi cuts
-    if len(selected_phi) > 1:
-        ax.legend(loc='best', fontsize='small')
     
     # Make layout tight
     fig.tight_layout()

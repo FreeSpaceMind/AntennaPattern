@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from .pattern_functions import(
     unwrap_phase, swap_polarization_axes, apply_mars, 
     normalize_phase, change_polarization, translate,
-    scale_pattern, transform_coordinates
+    scale_pattern, transform_coordinates, mirror_pattern
 )
 from .utilities import find_nearest
 from .polarization import (
@@ -573,7 +573,7 @@ class AntennaPattern:
         
         return pattern1, pattern2
     
-    def mirror_pattern(self) -> None:
+    def mirror(self) -> None:
         """
         Mirror the antenna pattern about theta=0.
         
@@ -586,5 +586,4 @@ class AntennaPattern:
             The pattern should have theta values in [-180, 180] range.
         """
         # Delegate to the pattern_functions implementation
-        from .pattern_functions import mirror_pattern as mirror_pattern_impl
-        mirror_pattern_impl(self)
+        mirror_pattern(self)
