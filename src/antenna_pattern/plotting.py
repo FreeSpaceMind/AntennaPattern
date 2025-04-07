@@ -319,15 +319,15 @@ def plot_multiple_patterns(
         
         # Get data for co-pol
         if value_type == 'gain':
-            co_pol_data = pattern.get_gain_db('e_co').values[freq_idx]
+            co_pol_data = pattern.get_gain_db('e_co')[freq_idx]
             if show_cross_pol:
-                cx_pol_data = pattern.get_gain_db('e_cx').values[freq_idx]
+                cx_pol_data = pattern.get_gain_db('e_cx')[freq_idx]
         elif value_type == 'phase':
-            co_pol_data = pattern.get_phase('e_co', unwrapped=unwrap_phase).values[freq_idx]
+            co_pol_data = pattern.get_phase('e_co', unwrapped=unwrap_phase)[freq_idx]
             if show_cross_pol:
-                cx_pol_data = pattern.get_phase('e_cx', unwrapped=unwrap_phase).values[freq_idx]
+                cx_pol_data = pattern.get_phase('e_cx', unwrapped=unwrap_phase)[freq_idx]
         elif value_type == 'axial_ratio':
-            co_pol_data = pattern.get_axial_ratio().values[freq_idx]
+            co_pol_data = pattern.get_axial_ratio()[freq_idx]
             show_cross_pol = False  # No cross-pol for axial ratio
         else:
             raise ValueError(f"Invalid value_type: {value_type}")
