@@ -43,6 +43,9 @@ from .utilities import (
     transform_uvw2tp,
     isometric_rotation,
 )
+from .plotting import (
+    plot_pattern_cut,
+)
 
 # Define what gets imported with "from antenna_pattern import *"
 __all__ = [
@@ -74,5 +77,6 @@ __all__ = [
     'create_synthetic_pattern',
     'transform_tp2uvw',
     'transform_uvw2tp',
-    'isometric_rotation'
+    'isometric_rotation',
+    'plot_pattern_cut',
 ]
