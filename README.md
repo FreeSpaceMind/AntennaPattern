@@ -8,6 +8,7 @@ A comprehensive toolkit for antenna radiation pattern analysis including:
 - Pattern analysis tools (beamwidths, axial ratio, etc.)
 - MARS (Mathematical Absorber Reflection Suppression) algorithm
 - Synthetic pattern generation
+- Coordinate transformations and visualization tools
 
 ## Installation
 
@@ -19,21 +20,22 @@ pip install antenna_pattern
 
 ### Option 2: Install from source
 
-#### Basic installation
 ```bash
 git clone https://github.com/freespacemind/antenna_pattern.git
 cd antenna_pattern
 pip install -e .
 ```
 
-#### Using the installation script
+### Option 3: Using the installation script
+
 ```bash
 git clone https://github.com/freespacemind/antenna_pattern.git
 cd antenna_pattern
 python install.py
 ```
 
-### Option 3: Direct installation from GitHub
+### Option 4: Direct installation from GitHub
+
 ```bash
 pip install git+https://github.com/freespacemind/antenna_pattern.git
 ```
@@ -47,7 +49,7 @@ To set up a development environment:
 git clone https://github.com/freespacemind/antenna_pattern.git
 cd antenna_pattern
 
-# Create and activate virtual environment (optional but recommended)
+# Create and activate virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
@@ -58,42 +60,21 @@ pip install -e ".[dev]"
 pytest
 ```
 
-## Basic Usage
+## Package Structure
 
-### Creating a Synthetic Pattern
-The synthetic pattern creating function is included mostly for the purpose of testing the package. In most cases, you should be importing a pattern from elsewhere.
-
-```python
-from antenna_pattern import AntennaPattern, create_synthetic_pattern
-import numpy as np
-
-# Define pattern parameters
-frequencies = np.array([10e9])  # 10 GHz
-theta = np.linspace(-90, 90, 181)  # 1-degree steps
-phi = np.array([0, 90])  # Principal planes
-
-# Create synthetic pattern with specified parameters
-e_theta, e_phi = create_synthetic_pattern(
-    frequencies=frequencies,
-    theta_angles=theta,
-    phi_angles=phi,
-    peak_gain_dbi=15.0,           # Peak gain in dBi
-    polarization='rhcp',          # Circular polarization
-    beamwidth_deg=30.0,           # 3dB beamwidth
-    axial_ratio_db=1.0,           # Axial ratio in dB
-    front_to_back_db=25.0,        # Front-to-back ratio
-    sidelobe_level_db=-20.0       # Sidelobe level
-)
-
-# Create AntennaPattern object
-pattern = AntennaPattern(
-    theta=theta,
-    phi=phi,
-    frequency=frequencies,
-    e_theta=e_theta,
-    e_phi=e_phi
-)
 ```
+antenna_pattern/
+├── __init__.py       # Package exports
+├── pattern.py        # AntennaPattern class
+├── ant_io.py         # File I/O functions
+├── polarization.py   # Polarization conversions
+├── pattern_functions.py # Core pattern operations
+├── analysis.py       # Analysis functions
+├── utilities.py      # Common utilities
+└── plotting.py       # Visualization tools
+```
+
+## Basic Usage
 
 ### Loading a Pattern from a File
 
@@ -108,6 +89,27 @@ pattern_cut = read_cut("my_pattern.cut", 8e9, 12e9)
 
 # Load from .npz format (fastest)
 pattern_npz, metadata = load_pattern_npz("my_pattern.npz")
+```
+
+### Working with Pattern Data
+
+```python
+# Get basic information
+print(f"Frequencies: {pattern.frequencies / 1e9} GHz")
+print(f"Theta range: {min(pattern.theta_angles)}° to {max(pattern.theta_angles)}°")
+print(f"Phi range: {min(pattern.phi_angles)}° to {max(pattern.phi_angles)}°")
+print(f"Polarization: {pattern.polarization}")
+
+# Access pattern data using xarray interface
+e_theta_data = pattern.data.e_theta
+e_phi_data = pattern.data.e_phi
+e_co_data = pattern.data.e_co
+e_cx_data = pattern.data.e_cx
+
+# Extract single-frequency pattern
+with pattern.at_frequency(10e9) as single_freq_pattern:
+    # Work with single_freq_pattern
+    gain_db = single_freq_pattern.get_gain_db('e_co')
 ```
 
 ### Changing Polarization
@@ -152,79 +154,74 @@ phase_center = pattern.find_phase_center(theta_angle=30.0, frequency=10e9)
 print(f"Phase center: {phase_center} meters")
 
 # Shift pattern to phase center
-corrected_pattern, translation = pattern.shift_to_phase_center(theta_angle=30.0)
+pattern.shift_to_phase_center(theta_angle=30.0)
 ```
 
-### Scaling Pattern Gain
+### Coordinate Transformations
 
 ```python
-# Uniform scaling (apply same scale to all frequencies)
-scaled_pattern = pattern.scale_pattern(4.0)  # Add 4 dB to all angles
+# Convert between spherical coordinates and direction cosines
+from antenna_pattern import transform_tp2uvw, transform_uvw2tp
 
-# Frequency-dependent scaling
-freq_scale = np.array([2.0, 4.0, 6.0])  # Different scaling for each frequency
-freq_scaled_pattern = pattern.scale_pattern(freq_scale)
+# Convert theta/phi to direction cosines
+u, v, w = transform_tp2uvw(theta, phi)
+
+# Convert direction cosines back to theta/phi
+theta, phi = transform_uvw2tp(u, v, w)
+
+# Apply a rotation to the pattern
+from antenna_pattern import isometric_rotation
+
+# Rotate direction cosines by specified angles (azimuth, elevation, roll)
+u_rot, v_rot, w_rot = isometric_rotation(u, v, w, azimuth=45.0, elevation=10.0, roll=0.0)
 ```
 
-### Saving Patterns
+### Plotting Patterns
 
 ```python
-from antenna_pattern.ant_io import save_pattern_npz
+from antenna_pattern import plot_pattern_cut
+import matplotlib.pyplot as plt
 
-# Save to NPZ format with metadata
-metadata = {"description": "My pattern", "created_by": "me"}
-save_pattern_npz(pattern, "my_pattern.npz", metadata)
+# Plot standard gain pattern
+fig = plot_pattern_cut(
+    pattern,
+    frequency=10e9,
+    phi=[0, 90],
+    show_cross_pol=True,
+    value_type='gain'
+)
 
-# Save to GRASP CUT format with different polarization formats:
-# 1: theta/phi, 2: RHCP/LHCP, 3: Ludwig-3 (x/y)
-pattern.write_cut("my_pattern_tp.cut", polarization_format=1)
-pattern.write_cut("my_pattern_rl.cut", polarization_format=2)
-pattern.write_cut("my_pattern_xy.cut", polarization_format=3)
+# Plot phase pattern
+phase_fig = plot_pattern_cut(
+    pattern,
+    frequency=10e9,
+    phi=0,
+    value_type='phase',
+    unwrap_phase=True
+)
+
+# Plot axial ratio
+ar_fig = plot_pattern_cut(
+    pattern,
+    frequency=10e9,
+    phi=[0, 90],
+    value_type='axial_ratio'
+)
+
+plt.show()
 ```
 
-## Features
-
-### Importing, Converting, Exporting Far-Field Patterns
-The library allows importing, conversion between, and exporting of common antenna files:
-- **.ffd** : HFSS far field data format
-- **.cut** : GRASP cut file format. .cut files do not natively include frequency, so that must be provided as well
-- **.npz** : numpy zip file used for saving and loading patterns within this library. Faster than reading .ffd or .cut repeatedly
-
-### Polarization Conversions
-
-The library supports conversions between:
-- Spherical (θ, φ)
-- Ludwig-3 (x, y)
-- Circular (RHCP, LHCP)
-
-### Phase Center Analysis
-
-This library allows manipulation of the phase origin reference so that phase center analysis can be done. The library includes an optimizer to find the optimum phase center within a beamwidth.
+### Creating Synthetic Patterns
 
 ```python
-phase_center = pattern.find_phase_center(theta_angle=30.0)
-shifted_pattern = pattern.translate(phase_center)
-```
+from antenna_pattern import AntennaPattern, create_synthetic_pattern
+import numpy as np
 
-### MARS Algorithm
+# Define pattern parameters
+frequencies = np.array([10e9])  # 10 GHz
+theta = np.linspace(-90, 90, 181)  # 1-degree steps
+phi = np.array([0, 90])  # Principal planes
 
-Apply the Mathematical Absorber Reflection Suppression (MARS) algorithm to mitigate chamber reflections, see ["Application of Mathematical Absorber Reflection Suppression
-to Direct Far-Field Antenna Range Measurements](https://www.nsi-mi.com/-/media/project/oneweb/oneweb/nsi/files/technical-papers/2011/application-of-mathematical-absorber-reflection-suppression-to-direct-far-field-antenna-range-measurements.pdf?la=en&revision=0a4b7b72-f427-4e4f-992c-40c0377fff2a&hash=6CBFD6C61EFAB9AA82ED1443A6C2F89C). Note that effective use of MARS requires that the antenna was displaced from the center of rotation during measurement. The antenna must be shifted back to the center of rotation, and then MARS can be applied.
-
-```python
-# Find the antenna phase center and move the phase pattern to that location
-phase_center = pattern.find_phase_center(theta_angle=30.0)
-shifted_pattern = pattern.translate(phase_center)
-
-# Apply MARS with a maximum radial extent of 0.5 meters
-clean_pattern = shifted_pattern.apply_mars(maximum_radial_extent=0.5)
-```
-
-### Synthetic Pattern Generation
-
-Create antenna patterns from high-level parameters without requiring detailed electromagnetic modeling:
-
-```python
 # Create synthetic pattern with specified parameters
 e_theta, e_phi = create_synthetic_pattern(
     frequencies=frequencies,
@@ -237,20 +234,71 @@ e_theta, e_phi = create_synthetic_pattern(
     front_to_back_db=25.0,        # Front-to-back ratio
     sidelobe_level_db=-20.0       # Sidelobe level
 )
+
+# Create AntennaPattern object
+pattern = AntennaPattern(
+    theta=theta,
+    phi=phi,
+    frequency=frequencies,
+    e_theta=e_theta,
+    e_phi=e_phi
+)
 ```
 
-## Example Files
+### Saving Patterns
 
-See the `example_tests` directory for detailed examples of using the library, including:
+```python
+from antenna_pattern import save_pattern_npz
 
-- Creating synthetic patterns
-- Saving and loading patterns
-- Converting between polarization types
-- Phase center analysis and MARS algorithm
-- Pattern gain scaling
+# Save to NPZ format with metadata
+metadata = {"description": "My pattern", "created_by": "me"}
+save_pattern_npz(pattern, "my_pattern.npz", metadata)
 
-## Usage with AI
-The AntennaPattern_reference.md file is intended to be a minimal instruction set to provide to AI models so that they can successfully use the AntennaPattern package.
+# Save to GRASP CUT format with different polarization formats:
+# 1: theta/phi, 2: RHCP/LHCP, 3: Ludwig-3 (x/y)
+pattern.write_cut("my_pattern_tp.cut", polarization_format=1)
+pattern.write_cut("my_pattern_rl.cut", polarization_format=2)
+pattern.write_cut("my_pattern_xy.cut", polarization_format=3)
+```
+
+### MARS (Mathematical Absorber Reflection Suppression)
+
+```python
+# Apply the MARS algorithm to mitigate chamber reflections
+# Note: effective use of MARS requires that the antenna was displaced from
+# the center of rotation during measurement
+
+# Find the antenna phase center and move the phase pattern to that location
+phase_center = pattern.find_phase_center(theta_angle=30.0)
+pattern.translate(phase_center)
+
+# Apply MARS with a maximum radial extent of 0.5 meters
+pattern.apply_mars(maximum_radial_extent=0.5)
+```
+
+### Pattern Scaling
+
+```python
+# Uniform scaling (apply same scale to all frequencies)
+pattern.scale_pattern(4.0)  # Add 4 dB to all angles
+
+# Frequency-dependent scaling
+freq_scale = np.array([2.0, 4.0, 6.0])  # Different scaling for each frequency
+pattern.scale_pattern(freq_scale)
+
+# 2D scaling grid (frequency and phi-dependent)
+freq_scale = np.array([8e9, 10e9, 12e9])
+phi_scale = np.array([0, 45, 90, 135])
+scale_2d = np.zeros((len(freq_scale), len(phi_scale)))
+
+# Fill in scaling values
+scale_2d[0, :] = [1.0, 2.0, 3.0, 4.0]  # 8 GHz scaling vs phi
+scale_2d[1, :] = [2.0, 3.0, 4.0, 5.0]  # 10 GHz scaling vs phi
+scale_2d[2, :] = [3.0, 4.0, 5.0, 6.0]  # 12 GHz scaling vs phi
+
+# Apply 2D scaling grid
+pattern.scale_pattern(scale_2d, freq_scale=freq_scale, phi_scale=phi_scale)
+```
 
 ## License
 

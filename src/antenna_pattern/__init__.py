@@ -20,29 +20,35 @@ from .polarization import (
     polarization_rl2xy,
     polarization_rl2tp
 )
-from .analysis import (
-    find_phase_center,
+from .pattern_functions import (
+    unwrap_phase,
+    normalize_phase,
     translate_phase_pattern,
-    apply_mars,
-    get_axial_ratio,
-    normalize_phase
+    phase_pattern_translate,
+    scale_amplitude,
+    transform_tp2uvw,
+    transform_uvw2tp,
+    isometric_rotation
+)
+from .analysis import (
+    calculate_phase_center,
+    principal_plane_phase_center,
+    get_axial_ratio
 )
 from .utilities import (
     find_nearest,
     frequency_to_wavelength,
+    wavelength_to_frequency,
     lightspeed,
     freespace_permittivity,
     freespace_impedance,
     db_to_linear,
     linear_to_db,
-    scale_amplitude,
-    create_synthetic_pattern,
-    transform_tp2uvw,
-    transform_uvw2tp,
-    isometric_rotation,
+    interpolate_crossing,
+    create_synthetic_pattern
 )
 from .plotting import (
-    plot_pattern_cut,
+    plot_pattern_cut
 )
 
 # Define what gets imported with "from antenna_pattern import *"
@@ -57,22 +63,26 @@ __all__ = [
     'polarization_tp2rl',
     'polarization_rl2xy',
     'polarization_rl2tp',
-    'find_phase_center',
-    'translate_phase_pattern',
-    'apply_mars',
-    'get_axial_ratio',
+    'unwrap_phase',
     'normalize_phase',
+    'translate_phase_pattern',
+    'phase_pattern_translate',
+    'scale_amplitude',
+    'transform_tp2uvw',
+    'transform_uvw2tp',
+    'isometric_rotation',
+    'calculate_phase_center',
+    'principal_plane_phase_center',
+    'get_axial_ratio',
     'find_nearest',
     'frequency_to_wavelength',
+    'wavelength_to_frequency',
     'lightspeed',
     'freespace_permittivity',
     'freespace_impedance',
     'db_to_linear',
     'linear_to_db',
-    'scale_amplitude',
+    'interpolate_crossing',
     'create_synthetic_pattern',
-    'transform_tp2uvw',
-    'transform_uvw2tp',
-    'isometric_rotation',
-    'plot_pattern_cut',
+    'plot_pattern_cut'
 ]
