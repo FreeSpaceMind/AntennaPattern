@@ -987,7 +987,7 @@ def mirror_pattern(pattern_obj) -> None:
     
     # Flip e_theta and e_phi along the theta axis
     # For e_theta, we need to negate the values when flipping
-    new_e_theta = -np.flip(e_theta, axis=1)
+    new_e_theta = np.flip(e_theta, axis=1)
     # For e_phi, we just flip without negation
     new_e_phi = np.flip(e_phi, axis=1)
     
