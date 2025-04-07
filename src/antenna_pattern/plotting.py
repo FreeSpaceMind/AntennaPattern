@@ -534,20 +534,20 @@ def plot_pattern_difference(
         
         # Get data for this phi angle
         if value_type == 'co_gain':
-            data1 = pattern1.get_gain_db('e_co').values[freq1_idx, :, phi1_idx]
-            data2 = pattern2.get_gain_db('e_co').values[freq2_idx, :, phi2_idx]
+            data1 = pattern1.get_gain_db('e_co')[freq1_idx, :, phi1_idx]
+            data2 = pattern2.get_gain_db('e_co')[freq2_idx, :, phi2_idx]
         elif value_type == 'cx_gain':
-            data1 = pattern1.get_gain_db('e_cx').values[freq1_idx, :, phi1_idx]
-            data2 = pattern2.get_gain_db('e_cx').values[freq2_idx, :, phi2_idx]
+            data1 = pattern1.get_gain_db('e_cx')[freq1_idx, :, phi1_idx]
+            data2 = pattern2.get_gain_db('e_cx')[freq2_idx, :, phi2_idx]
         elif value_type == 'axial_ratio':
-            data1 = pattern1.get_axial_ratio().values[freq1_idx, :, phi1_idx]
-            data2 = pattern2.get_axial_ratio().values[freq2_idx, :, phi2_idx]
+            data1 = pattern1.get_axial_ratio()[freq1_idx, :, phi1_idx]
+            data2 = pattern2.get_axial_ratio()[freq2_idx, :, phi2_idx]
         elif value_type == 'co_phase':
-            data1 = pattern1.get_phase('e_co', unwrapped=unwrap_phase).values[freq1_idx, :, phi1_idx]
-            data2 = pattern2.get_phase('e_co', unwrapped=unwrap_phase).values[freq2_idx, :, phi2_idx]
+            data1 = pattern1.get_phase('e_co', unwrapped=unwrap_phase)[freq1_idx, :, phi1_idx]
+            data2 = pattern2.get_phase('e_co', unwrapped=unwrap_phase)[freq2_idx, :, phi2_idx]
         elif value_type == 'cx_phase':
-            data1 = pattern1.get_phase('e_cx', unwrapped=unwrap_phase).values[freq1_idx, :, phi1_idx]
-            data2 = pattern2.get_phase('e_cx', unwrapped=unwrap_phase).values[freq2_idx, :, phi2_idx]
+            data1 = pattern1.get_phase('e_cx', unwrapped=unwrap_phase)[freq1_idx, :, phi1_idx]
+            data2 = pattern2.get_phase('e_cx', unwrapped=unwrap_phase)[freq2_idx, :, phi2_idx]
         
         # Calculate difference
         if absolute_diff:
