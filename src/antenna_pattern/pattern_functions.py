@@ -5,8 +5,10 @@ These functions contained here to shorten the AntennaPattern definition file (pa
 
 import numpy as np
 from typing import Tuple, Union, Optional, List, Any, Callable
+from scipy.interpolate import interp1d
 
 from .utilities import lightspeed, frequency_to_wavelength
+from .polarization import polarization_tp2xy, polarization_tp2rl, polarization_xy2pt
 
 def change_polarization(pattern_obj, new_polarization: str) -> None:
     """
@@ -45,7 +47,6 @@ def translate(pattern_obj, translation: np.ndarray, normalize: bool = True) -> N
             all frequencies) or 2D with shape (num_frequencies, 3)
         normalize: if true, normalize the translated phase pattern to zero degrees
     """
-    from .polarization import phase_pattern_translate
     
     # Get underlying numpy arrays
     frequency = pattern_obj.data.frequency.values
@@ -113,11 +114,6 @@ def normalize_phase(pattern_obj, reference_theta=0, reference_phi=0) -> None:
         reference_theta: Reference theta angle in degrees (default: 0)
         reference_phi: Reference phi angle in degrees (default: 0)
     """
-    # Import here to avoid circular import
-    import logging
-    from .polarization import polarization_tp2xy, polarization_tp2rl
-    
-    logger = logging.getLogger(__name__)
     
     # Get underlying numpy arrays
     frequency = pattern_obj.data.frequency.values
@@ -173,7 +169,6 @@ def normalize_phase(pattern_obj, reference_theta=0, reference_phi=0) -> None:
         
         else:
             # Fallback to e_theta for unknown polarization
-            logger.warning(f"Unknown polarization '{pol}', using e_theta as reference")
             ref_phase = np.angle(e_theta[f_idx, theta_ref_idx, phi_ref_idx])
         
         # Apply phase normalization by subtracting reference phase
@@ -191,8 +186,6 @@ def normalize_phase(pattern_obj, reference_theta=0, reference_phi=0) -> None:
     
     # Clear cache
     pattern_obj.clear_cache()
-    
-    logger.debug(f"Phase pattern normalized to {pol} polarization at θ≈{theta_ref_actual}°, φ≈{phi_ref_actual}°")
     
     # Update metadata if needed
     if hasattr(pattern_obj, 'metadata') and pattern_obj.metadata is not None:
@@ -215,10 +208,6 @@ def apply_mars(pattern_obj, maximum_radial_extent: float) -> None:
         pattern_obj: AntennaPattern object to modify
         maximum_radial_extent: Maximum radial extent of the antenna in meters
     """
-    import logging
-    from .utilities import lightspeed
-    
-    logger = logging.getLogger(__name__)
     
     if maximum_radial_extent <= 0:
         raise ValueError("Maximum radial extent must be positive")
@@ -313,7 +302,6 @@ def swap_polarization_axes(pattern_obj) -> None:
     Args:
         pattern_obj: AntennaPattern object to modify
     """
-    from .polarization import polarization_tp2xy, polarization_xy2pt
     
     # Get data
     phi = pattern_obj.data.phi.values
@@ -369,11 +357,6 @@ def scale_pattern(pattern_obj, scale_db: Union[float, np.ndarray],
     Raises:
         ValueError: If input arrays have incompatible dimensions
     """
-    import logging
-    from scipy.interpolate import interp1d
-    from .utilities import scale_amplitude
-    
-    logger = logging.getLogger(__name__)
     
     # Get pattern dimensions
     pattern_freq = pattern_obj.frequencies
@@ -511,11 +494,6 @@ def scale_pattern(pattern_obj, scale_db: Union[float, np.ndarray],
                 
                 # Assign to all theta values for this phi angle and frequency
                 scale_factors[f_idx, :, p_idx] = scale_val
-        
-        # Log warning if extreme values were detected
-        if np.any(scale_factors >= max_db_value) or np.any(scale_factors <= min_db_value):
-            logger.warning("Extreme scaling values detected and clipped to range [%f, %f] dB", 
-                        min_db_value, max_db_value)
         
         # Convert dB to linear scale factors
         linear_scale_factors = 10**(scale_factors / 20.0)
