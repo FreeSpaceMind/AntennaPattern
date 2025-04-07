@@ -18,8 +18,7 @@ from .polarization import (
     polarization_rl2xy, polarization_rl2tp
 )
 from .analysis import (
-    translate_phase_pattern, find_phase_center, apply_mars, get_axial_ratio, 
-    calculate_beamwidth, normalize_phase
+    translate_phase_pattern, find_phase_center, apply_mars, get_axial_ratio, normalize_phase
     )
 
 # Configure logging
@@ -433,20 +432,6 @@ class AntennaPattern:
 
         return get_axial_ratio(self)
     
-    def calculate_beamwidth(self, frequency: Optional[float] = None, level_db: float = -3.0) -> Dict[str, float]:
-        """
-        Calculate the beamwidth at specified level for principal planes.
-        
-        Args:
-            frequency: Optional frequency to calculate beamwidth for, or None for all
-            level_db: Level relative to maximum at which to measure beamwidth (default: -3 dB)
-            
-        Returns:
-            Dict[str, float]: Beamwidths in degrees for E and H planes
-        """
-
-        return calculate_beamwidth(self, frequency, level_db)
-    
     def scale_pattern(self, scale_db: Union[float, np.ndarray], 
                     freq_scale: Optional[np.ndarray] = None,
                     phi_scale: Optional[np.ndarray] = None) -> 'AntennaPattern':
@@ -719,3 +704,96 @@ class AntennaPattern:
             e_phi=new_e_phi,
             polarization=self.polarization
         )
+    
+    def split_patterns(self) -> Tuple['AntennaPattern', 'AntennaPattern']:
+        """
+        Split antenna pattern into two separate patterns if both conditions are met:
+        1. Pattern has both negative and positive theta values
+        2. Phi range is greater than 180 degrees
+        
+        The function splits the pattern along the phi axis, creating two patterns
+        with phi ranges of 0:180 degrees. The theta values remain unchanged.
+        
+        Returns:
+            Tuple[AntennaPattern, AntennaPattern]: Tuple containing two separated patterns
+            
+        Raises:
+            ValueError: If pattern does not meet the conditions for splitting
+        """
+        # Check condition 1: Pattern has both negative and positive theta values
+        theta = self.theta_angles
+        has_negative_theta = np.any(theta < 0)
+        has_positive_theta = np.any(theta > 0)
+        
+        if not (has_negative_theta and has_positive_theta):
+            raise ValueError("Pattern does not have both negative and positive theta values")
+        
+        # Check condition 2: Phi range is greater than 180 degrees
+        phi = self.phi_angles
+        phi_range = np.max(phi) - np.min(phi)
+        
+        if phi_range <= 180:
+            raise ValueError("Pattern phi range is not greater than 180 degrees")
+        
+        # Extract data
+        e_theta = self.data.e_theta.values
+        e_phi = self.data.e_phi.values
+        frequency = self.frequencies
+        
+        # Determine how to split the phi range
+        # First find which indices are in range 0-180
+        first_range_mask = (phi >= 0) & (phi <= 180)
+        
+        # If no indices fall in this range, we need to shift the phi values
+        if not np.any(first_range_mask):
+            # Shift phi values to be in range 0-360
+            phi_shifted = np.mod(phi, 360)
+            first_range_mask = (phi_shifted >= 0) & (phi_shifted <= 180)
+        
+        # Second range includes everything outside first range, but shifted to 0-180
+        second_range_mask = ~first_range_mask
+        
+        # Get indices for each range
+        first_indices = np.where(first_range_mask)[0]
+        second_indices = np.where(second_range_mask)[0]
+        
+        if len(first_indices) == 0 or len(second_indices) == 0:
+            raise ValueError("Could not properly separate phi values into two ranges")
+        
+        # Create phi arrays for the two new patterns
+        phi1 = phi[first_indices]
+        
+        # For phi2, we need to normalize values to 0-180 range
+        phi2_original = phi[second_indices]
+        phi2 = np.mod(phi2_original, 360)
+        phi2 = np.where(phi2 > 180, phi2 - 360, phi2)
+        phi2 = np.where(phi2 < 0, phi2 + 180, phi2)
+        phi2 = np.sort(phi2)  # Sort to ensure ascending order
+        
+        # Create field component arrays for the two patterns
+        e_theta1 = e_theta[:, :, first_indices]
+        e_phi1 = e_phi[:, :, first_indices]
+        
+        e_theta2 = e_theta[:, :, second_indices]
+        e_phi2 = e_phi[:, :, second_indices]
+        
+        # Create new AntennaPattern objects
+        pattern1 = AntennaPattern(
+            theta=theta,
+            phi=phi1,
+            frequency=frequency,
+            e_theta=e_theta1,
+            e_phi=e_phi1,
+            polarization=self.polarization
+        )
+        
+        pattern2 = AntennaPattern(
+            theta=theta,
+            phi=phi2,
+            frequency=frequency,
+            e_theta=e_theta2,
+            e_phi=e_phi2,
+            polarization=self.polarization
+        )
+        
+        return pattern1, pattern2
