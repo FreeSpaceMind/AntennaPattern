@@ -341,12 +341,7 @@ def plot_multiple_patterns(
             else:
                 phi_idx_actual = np.where(pattern.phi_angles == phi_val)[0][0]
             
-            # Plot co-pol
-            phi_label = f"{phi_val:.1f}°" if len(phi_angles_to_plot) > 1 else ""
-            if phi_label:
-                line_label = f"{label} (φ={phi_label})"
-            else:
-                line_label = label
+            line_label = label
                 
             # Only first phi angle gets a label
             if phi_idx > 0:
