@@ -397,7 +397,7 @@ class AntennaPattern:
                 vectorize=True
             )
         
-        return phase
+        return np.degrees(phase)
     
     def get_polarization_ratio(self) -> xr.DataArray:
         """

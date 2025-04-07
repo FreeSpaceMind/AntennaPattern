@@ -221,5 +221,5 @@ def get_axial_ratio(pattern):
     el_mag = xr.where(el_mag < min_val, min_val, el_mag)
     
     # Calculate axial ratio
-    return (er_mag + el_mag) / np.maximum(np.abs(er_mag - el_mag), min_val)
+    return 20 * np.log10((er_mag + el_mag) / np.maximum(np.abs(er_mag - el_mag), min_val))
 

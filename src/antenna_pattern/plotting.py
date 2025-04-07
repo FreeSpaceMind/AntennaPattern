@@ -89,12 +89,12 @@ def plot_pattern_cut(
         show_cross_pol = False
         data_co = pattern.get_axial_ratio()
         data_cx = None
-        y_label = 'Axial Ratio (linear)'
+        y_label = 'Axial Ratio (dB)'
         plot_prefix = 'AR'
     elif value_type == 'phase':
         data_co = pattern.get_phase('e_co', unwrapped=unwrap_phase)
         data_cx = pattern.get_phase('e_cx', unwrapped=unwrap_phase) if show_cross_pol else None
-        y_label = 'Phase (radians)'
+        y_label = 'Phase (degrees)'
         plot_prefix = 'Phase'
     else:  # Default to gain
         data_co = pattern.get_gain_db('e_co')
@@ -385,9 +385,9 @@ def plot_multiple_patterns(
     if value_type == 'gain':
         ax.set_ylabel('Gain (dBi)')
     elif value_type == 'phase':
-        ax.set_ylabel('Phase (radians)')
+        ax.set_ylabel('Phase (degrees)')
     elif value_type == 'axial_ratio':
-        ax.set_ylabel('Axial Ratio (linear)')
+        ax.set_ylabel('Axial Ratio (dB)')
         
     # Set title if provided
     if title:
@@ -428,9 +428,9 @@ def plot_pattern_difference(
         value_type: Type of value to plot difference for:
             - 'co_gain': Co-polarized gain (dB)
             - 'cx_gain': Cross-polarized gain (dB)
-            - 'axial_ratio': Axial ratio (linear)
-            - 'co_phase': Co-polarized phase (radians)
-            - 'cx_phase': Cross-polarized phase (radians)
+            - 'axial_ratio': Axial ratio (dB)
+            - 'co_phase': Co-polarized phase (degrees)
+            - 'cx_phase': Cross-polarized phase (degrees)
         unwrap_phase: If True and value_type is phase, unwrap phase to avoid 2π discontinuities
         ax: Optional matplotlib axes to plot on
         fig_size: Figure size as (width, height) in inches
@@ -517,11 +517,11 @@ def plot_pattern_difference(
     elif value_type == 'cx_gain':
         y_label = 'Cross-pol Gain Difference (dB)'
     elif value_type == 'axial_ratio':
-        y_label = 'Axial Ratio Difference'
+        y_label = 'Axial Ratio Difference (dB)'
     elif value_type == 'co_phase':
-        y_label = 'Co-pol Phase Difference (rad)'
+        y_label = 'Co-pol Phase Difference (deg)'
     elif value_type == 'cx_phase':
-        y_label = 'Cross-pol Phase Difference (rad)'
+        y_label = 'Cross-pol Phase Difference (deg)'
     
     diff_label = 'Absolute Difference' if absolute_diff else 'Difference'
     
