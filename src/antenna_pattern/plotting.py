@@ -404,3 +404,180 @@ def plot_multiple_patterns(
     fig.tight_layout()
     
     return fig, ax
+
+def plot_pattern_difference(
+    pattern1, 
+    pattern2, 
+    frequency: Optional[float] = None,
+    phi: Optional[Union[float, List[float]]] = None,
+    value_type: Literal['co_gain', 'cx_gain', 'axial_ratio', 'co_phase', 'cx_phase'] = 'co_gain',
+    unwrap_phase: bool = True,
+    ax: Optional[plt.Axes] = None,
+    fig_size: Tuple[float, float] = (10, 6),
+    label1: str = "Pattern 1",
+    label2: str = "Pattern 2",
+    title: Optional[str] = None,
+    absolute_diff: bool = True,
+    show_individual: bool = True,
+    colors: Optional[List[str]] = None
+) -> plt.Figure:
+    """
+    Plot the difference between two antenna patterns along with the original patterns.
+    
+    Args:
+        pattern1: First AntennaPattern object
+        pattern2: Second AntennaPattern object
+        frequency: Specific frequency to plot in Hz, or None to use first frequency
+        phi: Specific phi angle(s) to plot in degrees, or None to use first phi angle
+        value_type: Type of value to plot difference for:
+            - 'co_gain': Co-polarized gain (dB)
+            - 'cx_gain': Cross-polarized gain (dB)
+            - 'axial_ratio': Axial ratio (linear)
+            - 'co_phase': Co-polarized phase (radians)
+            - 'cx_phase': Cross-polarized phase (radians)
+        unwrap_phase: If True and value_type is phase, unwrap phase to avoid 2π discontinuities
+        ax: Optional matplotlib axes to plot on
+        fig_size: Figure size as (width, height) in inches
+        label1: Label for the first pattern
+        label2: Label for the second pattern
+        title: Optional title for the plot
+        absolute_diff: If True, plot absolute difference |p1-p2|, else plot signed difference (p1-p2)
+        show_individual: If True, show the individual patterns alongside the difference
+        colors: Optional list of colors for [pattern1, pattern2, difference]
+        
+    Returns:
+        matplotlib.Figure: The created figure object
+        
+    Raises:
+        ValueError: If patterns have incompatible dimensions
+        ValueError: If value_type is invalid
+    """
+    import matplotlib.pyplot as plt
+    
+    # Create new figure and axes if not provided
+    if ax is None:
+        fig, ax = plt.subplots(figsize=fig_size)
+    else:
+        fig = ax.figure
+    
+    # Validate value_type
+    valid_types = ['co_gain', 'cx_gain', 'axial_ratio', 'co_phase', 'cx_phase']
+    if value_type not in valid_types:
+        raise ValueError(f"Invalid value_type: {value_type}. Must be one of {valid_types}")
+    
+    # Check if patterns have compatible dimensions
+    if not np.array_equal(pattern1.theta_angles, pattern2.theta_angles):
+        raise ValueError("Patterns have different theta angles. Cannot compute difference.")
+    
+    # Handle frequency selection
+    if frequency is None:
+        # Use first frequency from each pattern
+        freq1_idx = 0
+        freq2_idx = 0
+        selected_freq1 = pattern1.frequencies[freq1_idx]
+        selected_freq2 = pattern2.frequencies[freq2_idx]
+    else:
+        # Find nearest frequency in each pattern
+        from .utilities import find_nearest
+        selected_freq1, freq1_idx = find_nearest(pattern1.frequencies, frequency)
+        selected_freq2, freq2_idx = find_nearest(pattern2.frequencies, frequency)
+    
+    # Handle phi selection
+    if phi is None:
+        # Use first phi angle available in both patterns
+        common_phis = set(pattern1.phi_angles).intersection(set(pattern2.phi_angles))
+        if not common_phis:
+            raise ValueError("Patterns have no common phi angles")
+        phi_value = min(common_phis)
+        phi1_idx = np.where(pattern1.phi_angles == phi_value)[0][0]
+        phi2_idx = np.where(pattern2.phi_angles == phi_value)[0][0]
+        selected_phi = [phi_value]
+    elif np.isscalar(phi):
+        # Find nearest phi in each pattern
+        from .utilities import find_nearest
+        phi1_val, phi1_idx = find_nearest(pattern1.phi_angles, phi)
+        phi2_val, phi2_idx = find_nearest(pattern2.phi_angles, phi)
+        selected_phi = [phi1_val]  # Use phi from pattern1 for display
+    else:
+        # Multiple phi angles
+        # For simplicity, we'll just use the first phi angle for now
+        from .utilities import find_nearest
+        phi1_val, phi1_idx = find_nearest(pattern1.phi_angles, phi[0])
+        phi2_val, phi2_idx = find_nearest(pattern2.phi_angles, phi[0])
+        selected_phi = [phi1_val]
+        
+        if len(phi) > 1:
+            import logging
+            logging.warning("Multiple phi angles specified. Using only the first one.")
+    
+    # Set default colors if not provided
+    if colors is None:
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c']  # Default matplotlib colors
+    
+    # Get data based on value_type from each pattern
+    theta_angles = pattern1.theta_angles
+    
+    if value_type == 'co_gain':
+        data1 = pattern1.get_gain_db('e_co').values[freq1_idx, :, phi1_idx]
+        data2 = pattern2.get_gain_db('e_co').values[freq2_idx, :, phi2_idx]
+        y_label = 'Co-pol Gain (dBi)'
+        diff_label = 'Abs. Difference' if absolute_diff else 'Difference'
+    elif value_type == 'cx_gain':
+        data1 = pattern1.get_gain_db('e_cx').values[freq1_idx, :, phi1_idx]
+        data2 = pattern2.get_gain_db('e_cx').values[freq2_idx, :, phi2_idx]
+        y_label = 'Cross-pol Gain (dBi)'
+        diff_label = 'Abs. Difference' if absolute_diff else 'Difference'
+    elif value_type == 'axial_ratio':
+        data1 = pattern1.get_axial_ratio().values[freq1_idx, :, phi1_idx]
+        data2 = pattern2.get_axial_ratio().values[freq2_idx, :, phi2_idx]
+        y_label = 'Axial Ratio (linear)'
+        diff_label = 'Abs. Difference' if absolute_diff else 'Difference'
+    elif value_type == 'co_phase':
+        data1 = pattern1.get_phase('e_co', unwrapped=unwrap_phase).values[freq1_idx, :, phi1_idx]
+        data2 = pattern2.get_phase('e_co', unwrapped=unwrap_phase).values[freq2_idx, :, phi2_idx]
+        y_label = 'Co-pol Phase (radians)'
+        diff_label = 'Abs. Difference' if absolute_diff else 'Difference'
+    elif value_type == 'cx_phase':
+        data1 = pattern1.get_phase('e_cx', unwrapped=unwrap_phase).values[freq1_idx, :, phi1_idx]
+        data2 = pattern2.get_phase('e_cx', unwrapped=unwrap_phase).values[freq2_idx, :, phi2_idx]
+        y_label = 'Cross-pol Phase (radians)'
+        diff_label = 'Abs. Difference' if absolute_diff else 'Difference'
+    
+    # Calculate difference
+    if absolute_diff:
+        difference = np.abs(data1 - data2)
+    else:
+        difference = data1 - data2
+    
+    # Plot
+    if show_individual:
+        line1 = ax.plot(theta_angles, data1, '-', color=colors[0], label=label1)[0]
+        line2 = ax.plot(theta_angles, data2, '-', color=colors[1], label=label2)[0]
+    
+    diff_line = ax.plot(theta_angles, difference, '-', color=colors[2], 
+                       linewidth=2, label=diff_label)[0]
+    
+    # Set plot labels and grid
+    ax.set_xlabel('Theta (degrees)')
+    ax.set_ylabel(y_label)
+    
+    # Create title if not provided
+    if title is None:
+        freq_str = f"{selected_freq1/1e6:.1f} MHz"
+        phi_str = f"φ={selected_phi[0]:.1f}°"
+        
+        title = f"Pattern Difference: {freq_str}, {phi_str}"
+    
+    ax.set_title(title)
+    ax.grid(True)
+    
+    # Add legend
+    if show_individual:
+        ax.legend(loc='best')
+    else:
+        ax.legend([diff_line], [diff_label], loc='best')
+    
+    # Make layout tight
+    fig.tight_layout()
+    
+    return fig

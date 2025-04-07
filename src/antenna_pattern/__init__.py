@@ -28,7 +28,8 @@ from .pattern_functions import (
     scale_amplitude,
     transform_tp2uvw,
     transform_uvw2tp,
-    isometric_rotation
+    isometric_rotation,
+    mirror_pattern
 )
 from .analysis import (
     calculate_phase_center,
@@ -49,8 +50,12 @@ from .utilities import (
 )
 from .plotting import (
     plot_pattern_cut,
-    plot_multiple_patterns
+    plot_multiple_patterns,
+    plot_pattern_difference
 )
+
+# New functions
+from .package_functions import average_patterns
 
 # Define what gets imported with "from antenna_pattern import *"
 __all__ = [
@@ -72,6 +77,7 @@ __all__ = [
     'transform_tp2uvw',
     'transform_uvw2tp',
     'isometric_rotation',
+    'mirror_pattern',
     'calculate_phase_center',
     'principal_plane_phase_center',
     'get_axial_ratio',
@@ -86,5 +92,7 @@ __all__ = [
     'interpolate_crossing',
     'create_synthetic_pattern',
     'plot_pattern_cut',
-    'plot_multiple_patterns'
+    'plot_multiple_patterns',
+    'plot_pattern_difference',
+    'average_patterns'
 ]

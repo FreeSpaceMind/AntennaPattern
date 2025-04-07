@@ -572,3 +572,19 @@ class AntennaPattern:
         )
         
         return pattern1, pattern2
+    
+    def mirror_pattern(self) -> None:
+        """
+        Mirror the antenna pattern about theta=0.
+        
+        This function reflects the pattern data across the theta=0 plane,
+        effectively mirroring the pattern. It's useful for creating symmetric patterns
+        or for fixing incomplete measurement data.
+        
+        Notes:
+            If the pattern does not include theta=0, the function will raise a ValueError.
+            The pattern should have theta values in [-180, 180] range.
+        """
+        # Delegate to the pattern_functions implementation
+        from .pattern_functions import mirror_pattern as mirror_pattern_impl
+        mirror_pattern_impl(self)

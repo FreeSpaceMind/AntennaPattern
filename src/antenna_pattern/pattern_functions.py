@@ -966,3 +966,128 @@ def transform_coordinates(pattern_obj, format: str = 'sided') -> None:
             'new_theta_range': [float(np.min(new_theta)), float(np.max(new_theta))],
             'new_phi_range': [float(np.min(new_phi)), float(np.max(new_phi))]
         })
+
+def mirror_pattern(pattern_obj) -> None:
+    """
+    Mirror the antenna pattern about theta=0.
+    
+    This function reflects the pattern data across the theta=0 plane,
+    effectively mirroring the pattern. It's useful for creating symmetric patterns
+    or for fixing incomplete measurement data.
+    
+    Args:
+        pattern_obj: AntennaPattern object to modify
+        
+    Notes:
+        If the pattern does not include theta=0, the function will raise a ValueError.
+        The pattern should have theta values in [-180, 180] range.
+    """
+    # Get pattern data
+    theta = pattern_obj.data.theta.values
+    phi = pattern_obj.data.phi.values
+    e_theta = pattern_obj.data.e_theta.values
+    e_phi = pattern_obj.data.e_phi.values
+    
+    # Check if theta=0 exists in the array
+    if not np.any(np.isclose(theta, 0, atol=1e-6)):
+        raise ValueError("Pattern must include theta=0 to perform mirroring")
+    
+    # Find the index of theta=0
+    theta0_idx = np.argmin(np.abs(theta))
+    
+    # If pattern theta doesn't include negative values, we can't mirror
+    if np.all(theta >= 0):
+        raise ValueError("Pattern must have theta values < 0 to perform mirroring")
+        
+    # If pattern theta doesn't include positive values, we can't mirror
+    if np.all(theta <= 0):
+        raise ValueError("Pattern must have theta values > 0 to perform mirroring")
+    
+    # Get the theta values for the negative and positive sides
+    neg_theta = theta[theta < 0]
+    pos_theta = theta[theta > 0]
+    
+    # Ensure we have equal number of steps on both sides
+    # Otherwise, we need to create a new theta grid
+    if len(neg_theta) != len(pos_theta) or not np.allclose(neg_theta, -np.flip(pos_theta), atol=1e-6):
+        # Create a new symmetric theta grid
+        new_theta = np.concatenate([
+            -np.flip(pos_theta),  # Negative values (mirrored from positive)
+            [0],                 # Keep theta=0
+            pos_theta            # Positive values
+        ])
+        
+        # Check if we need to interpolate the data
+        if not np.array_equal(new_theta, theta):
+            from scipy.interpolate import interp1d
+            
+            # Create empty arrays for new field values
+            new_e_theta = np.zeros((e_theta.shape[0], len(new_theta), e_theta.shape[2]), dtype=complex)
+            new_e_phi = np.zeros((e_phi.shape[0], len(new_theta), e_phi.shape[2]), dtype=complex)
+            
+            # Interpolate for each frequency and phi angle
+            for freq_idx in range(e_theta.shape[0]):
+                for phi_idx in range(e_theta.shape[2]):
+                    # Interpolate e_theta
+                    real_interp = interp1d(theta, e_theta[freq_idx, :, phi_idx].real, 
+                                          bounds_error=False, fill_value="extrapolate")
+                    imag_interp = interp1d(theta, e_theta[freq_idx, :, phi_idx].imag, 
+                                          bounds_error=False, fill_value="extrapolate")
+                    
+                    new_e_theta[freq_idx, :, phi_idx] = real_interp(new_theta) + 1j * imag_interp(new_theta)
+                    
+                    # Interpolate e_phi
+                    real_interp = interp1d(theta, e_phi[freq_idx, :, phi_idx].real, 
+                                          bounds_error=False, fill_value="extrapolate")
+                    imag_interp = interp1d(theta, e_phi[freq_idx, :, phi_idx].imag, 
+                                          bounds_error=False, fill_value="extrapolate")
+                    
+                    new_e_phi[freq_idx, :, phi_idx] = real_interp(new_theta) + 1j * imag_interp(new_theta)
+            
+            # Update pattern with interpolated data
+            e_theta = new_e_theta
+            e_phi = new_e_phi
+            theta = new_theta
+    
+    # Find the index of theta=0 in the (potentially new) theta array
+    theta0_idx = np.argmin(np.abs(theta))
+    
+    # Implement the mirroring
+    # 1. For each frequency and phi, mirror the field components
+    for freq_idx in range(e_theta.shape[0]):
+        for phi_idx in range(e_theta.shape[2]):
+            # For points with theta < 0, replace with mirrored value from theta > 0
+            for idx, val in enumerate(theta[:theta0_idx]):
+                # Find the corresponding positive theta index
+                pos_idx = 2 * theta0_idx - idx
+                
+                if pos_idx < len(theta):  # Ensure index is valid
+                    # Mirror values with appropriate phase changes
+                    # For e_theta, mirror with sign change
+                    e_theta[freq_idx, idx, phi_idx] = -e_theta[freq_idx, pos_idx, phi_idx]
+                    # For e_phi, mirror without sign change
+                    e_phi[freq_idx, idx, phi_idx] = e_phi[freq_idx, pos_idx, phi_idx]
+    
+    # Update pattern data with the mirrored values
+    pattern_obj.data['e_theta'].values = e_theta
+    pattern_obj.data['e_phi'].values = e_phi
+    
+    # If the theta array was changed, update coordinates
+    if not np.array_equal(pattern_obj.data.theta.values, theta):
+        pattern_obj.data = pattern_obj.data.assign_coords({
+            'theta': theta
+        })
+    
+    # Recalculate co-pol and cross-pol components
+    pattern_obj.assign_polarization(pattern_obj.polarization)
+    
+    # Clear cache
+    pattern_obj.clear_cache()
+    
+    # Update metadata if needed
+    if hasattr(pattern_obj, 'metadata') and pattern_obj.metadata is not None:
+        if 'operations' not in pattern_obj.metadata:
+            pattern_obj.metadata['operations'] = []
+        pattern_obj.metadata['operations'].append({
+            'type': 'mirror_pattern'
+        })
