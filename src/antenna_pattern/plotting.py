@@ -218,3 +218,152 @@ def plot_pattern_cut(
     fig.tight_layout()
     
     return fig
+
+def plot_multiple_patterns(
+    patterns: list,
+    labels: list = None,
+    colors: list = None,
+    frequencies: list = None,
+    phi_angles: list = None, 
+    show_cross_pol: bool = False,
+    value_type: str = 'gain',
+    unwrap_phase: bool = True,
+    title: str = None,
+    ax = None,
+    fig_size: tuple = (10, 6)
+) -> tuple:
+    """
+    Plot multiple antenna patterns on the same axes with custom colors and labels.
+    
+    Args:
+        patterns: List of AntennaPattern objects
+        labels: List of legend labels for each pattern (defaults to Pattern 1, Pattern 2, etc.)
+        colors: List of colors for each pattern (defaults to matplotlib default color cycle)
+        frequencies: List of frequencies to plot for each pattern (or None to use first frequency of each)
+        phi_angles: List of phi angles to plot for each pattern (or None to use first phi angle of each)
+        show_cross_pol: If True, also plot cross-polarization components
+        value_type: Type of value to plot ('gain', 'phase', or 'axial_ratio')
+        unwrap_phase: If True and value_type is 'phase', unwrap phase to avoid 2π discontinuities
+        title: Plot title
+        ax: Optional matplotlib axes to plot on (created if None)
+        fig_size: Figure size as (width, height) in inches
+        
+    Returns:
+        tuple: (fig, ax) The figure and axes objects
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    # Create new figure and axes if not provided
+    if ax is None:
+        fig, ax = plt.subplots(figsize=fig_size)
+    else:
+        fig = ax.figure
+    
+    # Set default labels if not provided
+    if labels is None:
+        labels = [f"Pattern {i+1}" for i in range(len(patterns))]
+    
+    # Normalize frequencies and phi_angles
+    if frequencies is None:
+        frequencies = [None] * len(patterns)
+    elif len(frequencies) == 1:
+        frequencies = frequencies * len(patterns)
+        
+    if phi_angles is None:
+        phi_angles = [None] * len(patterns)
+    elif len(phi_angles) == 1:
+        phi_angles = phi_angles * len(patterns)
+    
+    # Make sure all input lists have the same length
+    if not (len(patterns) == len(labels) == len(frequencies) == len(phi_angles)):
+        raise ValueError("Input lists (patterns, labels, frequencies, phi_angles) must have compatible lengths")
+    
+    # Get default colors from matplotlib if not provided
+    if colors is None:
+        prop_cycle = plt.rcParams['axes.prop_cycle']
+        colors = prop_cycle.by_key()['color']
+        # Repeat colors if necessary
+        if len(colors) < len(patterns):
+            colors = colors * (len(patterns) // len(colors) + 1)
+    elif len(colors) < len(patterns):
+        raise ValueError(f"Not enough colors provided ({len(colors)}) for {len(patterns)} patterns")
+    
+    # Store original lines to track new additions
+    original_lines = ax.get_lines()
+    original_line_count = len(original_lines)
+    
+    # Track all legend entries to rebuild legend later
+    legend_handles = []
+    legend_labels = []
+    
+    # Plot each pattern
+    for i, (pattern, label, color, freq, phi) in enumerate(
+            zip(patterns, labels, colors, frequencies, phi_angles)):
+        
+        # Clear automatically added legend if it exists to prevent duplication
+        if ax.get_legend():
+            ax.get_legend().remove()
+        
+        # Extract line count before adding new pattern
+        lines_before = len(ax.get_lines())
+        
+        # Plot the pattern
+        plot_pattern_cut(
+            pattern,
+            frequency=freq,
+            phi=phi,
+            show_cross_pol=show_cross_pol,
+            value_type=value_type,
+            unwrap_phase=unwrap_phase,
+            ax=ax,
+            # Only set title on first pattern or if explicitly given
+            title=title if (i == 0 or title is not None) else None
+        )
+        
+        # Get the new lines added by this pattern
+        all_lines = ax.get_lines()
+        new_lines = all_lines[lines_before:]
+        
+        # Determine if we have co-pol only or co-pol and cross-pol lines
+        has_cross_pol = show_cross_pol and value_type != 'axial_ratio'
+        lines_per_phi = 2 if has_cross_pol else 1
+        
+        # Process each new line
+        for j, line in enumerate(new_lines):
+            # Set the color for all lines from this pattern
+            line.set_color(color)
+            
+            # Create appropriate label based on line type
+            if j % lines_per_phi == 0:  # Co-pol line
+                # For multiple phi cuts, add the phi angle to the label
+                if phi is not None and len(phi) > 1:
+                    phi_idx = j // lines_per_phi
+                    if phi_idx < len(phi):
+                        line_label = f"{label}, φ={phi[phi_idx]}°"
+                    else:
+                        line_label = f"{label}"
+                else:
+                    line_label = label
+                
+                # Add to legend
+                legend_handles.append(line)
+                legend_labels.append(line_label)
+            elif j % lines_per_phi == 1:  # Cross-pol line
+                # Add cross-pol to legend only for the first phi angle
+                if j == 1:
+                    line_label = f"{label} (cross-pol)"
+                    legend_handles.append(line)
+                    legend_labels.append(line_label)
+                # Make cross-pol lines dashed
+                line.set_linestyle('--')
+    
+    # Create a custom legend with our collected handles and labels
+    if legend_handles:
+        ax.legend(legend_handles, legend_labels, loc='best')
+    
+    # Make layout tight if we created the figure
+    if ax is None:
+        fig.tight_layout()
+    
+    return fig, ax

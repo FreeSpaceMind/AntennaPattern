@@ -48,7 +48,8 @@ from .utilities import (
     create_synthetic_pattern
 )
 from .plotting import (
-    plot_pattern_cut
+    plot_pattern_cut,
+    plot_multiple_patterns
 )
 
 # Define what gets imported with "from antenna_pattern import *"
@@ -84,5 +85,6 @@ __all__ = [
     'linear_to_db',
     'interpolate_crossing',
     'create_synthetic_pattern',
-    'plot_pattern_cut'
+    'plot_pattern_cut',
+    'plot_multiple_patterns'
 ]
