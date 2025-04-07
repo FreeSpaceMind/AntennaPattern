@@ -864,3 +864,127 @@ def isometric_rotation(u: np.ndarray, v: np.ndarray, w: np.ndarray,
         return u_rot.item(), v_rot.item(), w_rot.item()
     
     return u_rot, v_rot, w_rot
+
+def transform_coordinates(pattern_obj, format: str = 'sided') -> None:
+    """
+    Transform pattern coordinates to conform to a specified theta/phi convention.
+    
+    This function rearranges the existing pattern data to match one of two standard
+    coordinate conventions without interpolation:
+    
+    - 'sided': theta 0:180, phi 0:360 (spherical convention)
+    - 'central': theta -180:180, phi 0:180 (more common for antenna patterns)
+    
+    Args:
+        pattern_obj: AntennaPattern object to modify
+        format: Target coordinate format ('sided' or 'central')
+            
+    Raises:
+        ValueError: If format is not 'sided' or 'central'
+    """
+    
+    if format not in ['sided', 'central']:
+        raise ValueError("Format must be 'sided' or 'central'")
+    
+    # Get current coordinates
+    theta = pattern_obj.theta_angles
+    phi = pattern_obj.phi_angles
+    
+    # Get field components
+    e_theta = pattern_obj.data.e_theta.values
+    e_phi = pattern_obj.data.e_phi.values
+    frequencies = pattern_obj.frequencies
+    
+    # Check current format
+    theta_min, theta_max = np.min(theta), np.max(theta)
+    phi_min, phi_max = np.min(phi), np.max(phi)
+    
+    is_sided = theta_min >= 0 and theta_max <= 180 and phi_min >= 0 and phi_max <= 360
+    is_central = theta_min >= -180 and theta_max <= 180 and phi_min >= 0 and phi_max <= 180
+    
+    # If already in the correct format, return
+    if (format == 'sided' and is_sided) or (format == 'central' and is_central):
+        return
+    
+    # Apply transformation based on target format
+    if format == 'sided':
+        # Target: theta 0:180, phi 0:360
+        # Every cut will now get split into two cuts. 
+        # The negative theta values will become a new cut with postitive theta, phi +180 deg.
+
+        # ensure phi is within central range
+        if np.max(phi) >= 180:
+            raise ValueError("Input phi must be less than 180 when transforming to sided")
+        
+        # get theta 0 idx
+        theta0_idx = np.argmin(np.abs(theta))
+
+        # create new theta vector
+        new_theta = theta[theta0_idx:]
+
+        # create new phi vector
+        new_phi = np.concatenate((phi, phi+180))
+
+        # initilize new electric field vectors
+        new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+        new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+        
+        # Fill new electric field vectors
+        new_e_theta[:, :, :np.size(phi)] = e_theta[:, theta0_idx:, :]
+        new_e_theta[:, :, np.size(phi):] = np.flip(e_theta[:, :theta0_idx+1, :], axis=1)
+        new_e_phi[:, :, :np.size(phi)] = e_phi[:, theta0_idx:, :]
+        new_e_phi[:, :, np.size(phi):] = np.flip(e_phi[:, :theta0_idx+1, :], axis=1)
+    
+    elif format == 'central':
+        # Target: theta -180:180, phi 0:180
+
+        # ensure theta starts at 0
+        if theta[0] != 0:
+            raise ValueError("Input theta must start at 0 when transforming to central")
+
+        # generate new theta array
+        new_theta = np.concatenate((-np.flip(theta[1:]), theta))
+
+        # get phi 180 crossing
+        phi180_idx = np.argmax(phi >= 180)
+
+        # generate new phi vector
+        new_phi = phi[:phi180_idx]
+
+        # initilize new electric field vectors
+        new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+        new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
+
+        # Fill new electric field vectors
+        new_e_theta[:, :theta.size, :] = np.flip(e_theta[:, :, phi180_idx:], axis=2)
+        new_e_theta[:, theta.size-1:, :] = e_theta[:, :, :phi180_idx]
+        new_e_phi[:, :theta.size, :] = np.flip(e_phi[:, :, phi180_idx:], axis=2)
+        new_e_phi[:, theta.size-1:, :] = e_phi[:, :, :phi180_idx]
+    
+    # Update pattern data with new coordinates and field components
+    pattern_obj.data = pattern_obj.data.assign_coords({
+        'theta': new_theta,
+        'phi': new_phi
+    })
+    
+    pattern_obj.data['e_theta'] = (['frequency', 'theta', 'phi'], new_e_theta)
+    pattern_obj.data['e_phi'] = (['frequency', 'theta', 'phi'], new_e_phi)
+    
+    # Recalculate derived components e_co and e_cx
+    pattern_obj.assign_polarization(pattern_obj.polarization)
+    
+    # Clear cache
+    pattern_obj.clear_cache()
+    
+    # Update metadata if needed
+    if hasattr(pattern_obj, 'metadata') and pattern_obj.metadata is not None:
+        if 'operations' not in pattern_obj.metadata:
+            pattern_obj.metadata['operations'] = []
+        pattern_obj.metadata['operations'].append({
+            'type': 'transform_coordinates',
+            'format': format,
+            'old_theta_range': [float(theta_min), float(theta_max)],
+            'old_phi_range': [float(phi_min), float(phi_max)],
+            'new_theta_range': [float(np.min(new_theta)), float(np.max(new_theta))],
+            'new_phi_range': [float(np.min(new_phi)), float(np.max(new_phi))]
+        })
