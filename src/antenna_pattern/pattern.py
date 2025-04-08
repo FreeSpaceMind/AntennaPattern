@@ -509,7 +509,7 @@ class AntennaPattern:
         
         # Determine how to split the phi range
         # First find which indices are in range 0-180
-        first_range_mask = (phi >= 0) & (phi <= 180)
+        first_range_mask = (phi >= 0) & (phi < 180)
         
         # If no indices fall in this range, we need to shift the phi values
         if not np.any(first_range_mask):
@@ -533,16 +533,16 @@ class AntennaPattern:
         # For phi2, we need to normalize values to 0-180 range
         phi2_original = phi[second_indices]
         phi2 = np.mod(phi2_original, 360)
-        phi2 = np.where(phi2 > 180, phi2 - 360, phi2)
-        phi2 = np.where(phi2 < 0, phi2 + 180, phi2)
+        phi2 = np.where(phi2 >= 180, phi2 - 360, phi2)
+        phi2 = np.where(phi2 <= 0, phi2 + 180, phi2)
         phi2 = np.sort(phi2)  # Sort to ensure ascending order
         
         # Create field component arrays for the two patterns
         e_theta1 = e_theta[:, :, first_indices]
         e_phi1 = e_phi[:, :, first_indices]
         
-        e_theta2 = e_theta[:, :, second_indices]
-        e_phi2 = e_phi[:, :, second_indices]
+        e_theta2 = np.flip(e_theta[:, :, second_indices], axis=1)
+        e_phi2 = np.flip(e_phi[:, :, second_indices], axis=1)
         
         # Create new AntennaPattern objects
         pattern1 = AntennaPattern(
