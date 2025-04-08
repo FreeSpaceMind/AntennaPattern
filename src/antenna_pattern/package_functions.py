@@ -64,13 +64,6 @@ def average_patterns(patterns: List[AntennaPattern], weights: Optional[List[floa
     
     # Create combined polarization string and metadata
     polarizations = [pattern.polarization for pattern in patterns]
-    if all(pol == polarizations[0] for pol in polarizations):
-        # All patterns have the same polarization
-        polarization = polarizations[0]
-    else:
-        # Mixed polarizations - use the polarization of the pattern with highest weight
-        max_weight_idx = np.argmax(weights)
-        polarization = patterns[max_weight_idx].polarization
     
     # Create metadata for the averaged pattern
     metadata = {
@@ -92,6 +85,5 @@ def average_patterns(patterns: List[AntennaPattern], weights: Optional[List[floa
         frequency=freq,
         e_theta=e_theta_avg,
         e_phi=e_phi_avg,
-        polarization=polarization,
         metadata=metadata
     )

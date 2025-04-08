@@ -130,7 +130,7 @@ def plot_pattern_cut(
                 
                 ax.plot(
                     theta_angles,
-                    data_co.values[freq_idx, :, phi_idx],
+                    data_co[freq_idx, :, phi_idx],
                     co_pol_style,
                     color=color,
                     alpha=0.8,
@@ -141,7 +141,7 @@ def plot_pattern_cut(
                 if show_cross_pol and data_cx is not None:
                     ax.plot(
                         theta_angles,
-                        data_cx.values[freq_idx, :, phi_idx],
+                        data_cx[freq_idx, :, phi_idx],
                         cx_pol_style,
                         color=color,
                         alpha=0.8,
