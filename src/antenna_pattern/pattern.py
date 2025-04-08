@@ -265,8 +265,8 @@ class AntennaPattern:
         translate(self, translation, normalize)
     
     def find_phase_center(self, theta_angle: float, frequency: Optional[float] = None, 
-                        method: str = 'flatness', outlier_threshold: float = 3.0,
-                        n_iter: int = 10) -> np.ndarray:
+                        method: str = 'combined', outlier_threshold: float = 3.0,
+                        n_iter: int = 10, spread_weight: float = 0.5) -> np.ndarray:
         """
         Finds the optimum phase center given a theta angle and frequency.
         
@@ -277,32 +277,38 @@ class AntennaPattern:
         Args:
             theta_angle: Angle in degrees to optimize phase center for
             frequency: Optional specific frequency to use, or None to use first frequency
-            method: Optimization method ('spread' or 'flatness')
+            method: Optimization method ('spread', 'flatness', or 'combined')
                 - 'spread': Minimize max-min phase difference at each theta angle across phi cuts
                 - 'flatness': Minimize max-min phase difference across the entire theta-phi region
+                - 'combined': Weighted combination of both spread and flatness metrics (default)
             outlier_threshold: Standard deviation threshold for outlier removal
             n_iter: Number of iterations for basinhopping
+            spread_weight: Weight for spread component in combined metric (0.0-1.0)
+                - 0.0: Pure flatness optimization
+                - 1.0: Pure spread optimization
+                - Default 0.5: Equal weighting of both metrics
             
         Returns:
             np.ndarray: [x, y, z] coordinates of the optimum phase center
         """
         # Delegate to the analysis.py implementation
         return calculate_phase_center(
-            self, theta_angle, frequency, method, outlier_threshold, n_iter
+            self, theta_angle, frequency, method, outlier_threshold, n_iter, spread_weight
         )
 
     def shift_to_phase_center(self, theta_angle: float, frequency: Optional[float] = None,
-                            method: str = 'flatness', outlier_threshold: float = 3.0,
-                            n_iter: int = 10) -> np.ndarray:
+                            method: str = 'combined', outlier_threshold: float = 3.0,
+                            n_iter: int = 10, spread_weight: float = 0.5) -> np.ndarray:
         """
         Find the phase center and shift the pattern to it.
         
         Args:
             theta_angle: Angle in degrees to optimize phase center for
             frequency: Optional specific frequency to use, or None to use first frequency
-            method: Optimization method ('spread' or 'flatness')
+            method: Optimization method ('spread', 'flatness', or 'combined')
             outlier_threshold: Standard deviation threshold for outlier removal
             n_iter: Number of iterations for basinhopping
+            spread_weight: Weight for spread component when method='combined' (0.0-1.0)
             
         Returns:
             np.ndarray: The translation vector used
@@ -310,7 +316,7 @@ class AntennaPattern:
         
         # Calculate phase center without modifying the pattern
         translation = calculate_phase_center(
-            self, theta_angle, frequency, method, outlier_threshold, n_iter
+            self, theta_angle, frequency, method, outlier_threshold, n_iter, spread_weight
         )
         
         # Then apply the translation
@@ -327,7 +333,8 @@ class AntennaPattern:
                 'translation': translation.tolist() if hasattr(translation, 'tolist') else translation,
                 'method': method,
                 'outlier_threshold': outlier_threshold,
-                'n_iter': n_iter
+                'n_iter': n_iter,
+                'spread_weight': spread_weight
             })
         
         return translation
