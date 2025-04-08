@@ -541,8 +541,8 @@ class AntennaPattern:
         e_theta1 = e_theta[:, :, first_indices]
         e_phi1 = e_phi[:, :, first_indices]
         
-        e_theta2 = np.flip(e_theta[:, :, second_indices], axis=1)
-        e_phi2 = np.flip(e_phi[:, :, second_indices], axis=1)
+        e_theta2 = -np.flip(e_theta[:, :, second_indices], axis=1)
+        e_phi2 = -np.flip(e_phi[:, :, second_indices], axis=1)
         
         # Create new AntennaPattern objects
         pattern1 = AntennaPattern(
