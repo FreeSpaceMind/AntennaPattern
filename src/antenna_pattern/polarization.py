@@ -2,7 +2,7 @@
 Polarization conversion functions for antenna radiation patterns.
 
 This module provides mathematical functions for converting between different
-polarization representations (spherical, Ludwig-3, circular).
+polarization representations (spherical polarization basis, Ludwig-3 X and Y, Ludwig-3 circular).
 """
 import numpy as np
 import logging
@@ -18,7 +18,7 @@ RealArray = Union[np.ndarray]
 
 def polarization_tp2xy(phi: RealArray, e_theta: ComplexArray, e_phi: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
     """
-    Convert spherical field components to Ludwig's III field components.
+    Convert spherical field components to Ludwig's III X and Y field components.
     
     Args:
         phi: Spherical angle phi in degrees
@@ -49,7 +49,7 @@ def polarization_tp2xy(phi: RealArray, e_theta: ComplexArray, e_phi: ComplexArra
 
 def polarization_xy2pt(phi: RealArray, e_x: ComplexArray, e_y: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
     """
-    Convert Ludwig's III field components to spherical field components.
+    Convert Ludwig's III X and Y field components to spherical field components.
     
     Args:
         phi: Spherical angle phi in degrees
@@ -79,7 +79,7 @@ def polarization_xy2pt(phi: RealArray, e_x: ComplexArray, e_y: ComplexArray) -> 
 
 def polarization_tp2rl(phi: RealArray, e_theta: ComplexArray, e_phi: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
     """
-    Convert spherical field components to circularly polarized components.
+    Convert spherical polarization basis field components to Ludwig's III circularly polarized components. 
     
     Args:
         phi: Spherical angle phi in degrees
@@ -102,7 +102,7 @@ def polarization_tp2rl(phi: RealArray, e_theta: ComplexArray, e_phi: ComplexArra
 
 def polarization_rl2xy(e_right: ComplexArray, e_left: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
     """
-    Convert circularly polarized components to Ludwig's III field components.
+    Convert Ludwig's III circularly polarized components to Ludwig's III X and Y field components.
     
     Args:
         e_right: Right hand circular field component
@@ -120,7 +120,7 @@ def polarization_rl2xy(e_right: ComplexArray, e_left: ComplexArray) -> Tuple[Com
 
 def polarization_rl2tp(phi: RealArray, e_right: ComplexArray, e_left: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
     """
-    Convert circularly polarized components to spherical field components.
+    Convert Ludwig's III circularly polarized components to spherical polarization basis field components.
     
     Args:
         phi: Spherical angle phi in degrees
