@@ -168,7 +168,7 @@ def plot_pattern_cut(
                 # Plot co-pol
                 ax.plot(
                     theta_angles,
-                    data_co.values[freq_idx, :, phi_idx],
+                    data_co[freq_idx, :, phi_idx],
                     co_pol_style,
                     color=color,
                     label=label
@@ -183,7 +183,7 @@ def plot_pattern_cut(
                     
                     ax.plot(
                         theta_angles,
-                        data_cx.values[freq_idx, :, phi_idx],
+                        data_cx[freq_idx, :, phi_idx],
                         cx_pol_style,
                         color=color,
                         label=cx_label
