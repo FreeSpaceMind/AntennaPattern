@@ -138,10 +138,10 @@ def calculate_phase_center(pattern, theta_angle: float, frequency: Optional[floa
             phase_spreads[theta_idx] = np.max(phase_values) - np.min(phase_values)
         spread_metric = np.sum(phase_spreads)
         
-        # Calculate flatness metric (overall max-min across whole region)
+        # Calculate flatness metric (overall deviation from zero across whole region)
         phase_max = np.max(unwrapped_phases)
         phase_min = np.min(unwrapped_phases)
-        flatness_metric = phase_max - phase_min
+        flatness_metric = max(abs(phase_max), abs(phase_min))
         
         # Return appropriate metric based on method
         if method == 'spread':
