@@ -265,8 +265,7 @@ class AntennaPattern:
         translate(self, translation, normalize)
     
     def find_phase_center(self, theta_angle: float, frequency: Optional[float] = None, 
-                        method: str = 'combined', outlier_threshold: float = 3.0,
-                        n_iter: int = 10, spread_weight: float = 0.5) -> np.ndarray:
+                        n_iter: int = 10) -> np.ndarray:
         """
         Finds the optimum phase center given a theta angle and frequency.
         
@@ -293,7 +292,7 @@ class AntennaPattern:
         """
         # Delegate to the analysis.py implementation
         return calculate_phase_center(
-            self, theta_angle, frequency, method, outlier_threshold, n_iter, spread_weight
+            self, theta_angle, frequency, n_iter
         )
 
     def shift_to_phase_center(self, theta_angle: float, frequency: Optional[float] = None,
