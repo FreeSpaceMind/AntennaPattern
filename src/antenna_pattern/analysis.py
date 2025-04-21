@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_phase_center(pattern, theta_angle: float, frequency: Optional[float] = None, 
-                       method: str = 'combined', outlier_threshold: float = 3.0,
-                       n_iter: int = 10, spread_weight: float = 0.5) -> np.ndarray:
+                       n_iter: int = 10) -> np.ndarray:
     """
     Finds the optimum phase center given a theta angle and frequency.
     
@@ -29,34 +28,11 @@ def calculate_phase_center(pattern, theta_angle: float, frequency: Optional[floa
         pattern: AntennaPattern object
         theta_angle: Angle in degrees to optimize phase center for
         frequency: Optional specific frequency to use, or None to use first frequency
-        method: Optimization method ('spread', 'flatness', or 'combined')
-            - 'spread': Minimize max-min phase difference at each theta angle across phi cuts
-            - 'flatness': Minimize max-min phase difference across the entire theta-phi region
-            - 'combined': Weighted combination of both spread and flatness metrics
-        outlier_threshold: Standard deviation threshold for outlier removal
         n_iter: Number of iterations for basinhopping
-        spread_weight: Weight for spread component in combined metric (0.0-1.0)
-            - 0.0: Pure flatness optimization
-            - 1.0: Pure spread optimization
-            - Value between 0-1: Weighted combination of both
         
     Returns:
         np.ndarray: [x, y, z] coordinates of the optimum phase center
     """
-    # Validate theta_angle
-    if (theta_angle < 0 or theta_angle > np.max(pattern.theta_angles)):
-        logger.warning(f"Theta angle {theta_angle} is outside the available range [0, {np.max(pattern.theta_angles)}]")
-        theta_angle = min(max(0, theta_angle), np.max(pattern.theta_angles))
-    
-    # Validate method
-    if method not in ['spread', 'flatness', 'combined']:
-        logger.warning(f"Invalid method: {method}. Using default 'combined'")
-        method = 'combined'
-    
-    # Validate spread_weight
-    if not 0.0 <= spread_weight <= 1.0:
-        logger.warning(f"Invalid spread_weight: {spread_weight}. Must be between 0.0 and 1.0. Using 0.5.")
-        spread_weight = 0.5
         
     # Get data arrays
     freq_array = pattern.data.frequency.values
@@ -118,49 +94,14 @@ def calculate_phase_center(pattern, theta_angle: float, frequency: Optional[floa
             # Store the result
             unwrapped_phases[:, phi_idx] = unwrapped_phi_cut
         
-        # Detect and handle outliers
-        if outlier_threshold > 0:
-            # Calculate mean and standard deviation for each theta point across phi cuts
-            theta_means = np.mean(unwrapped_phases, axis=1)
-            theta_stds = np.std(unwrapped_phases, axis=1)
-            
-            # Create a mask for values within threshold
-            for theta_idx in range(unwrapped_phases.shape[0]):
-                mean_val = theta_means[theta_idx]
-                std_val = max(theta_stds[theta_idx], 0.1)  # Avoid very small std
-                
-                # Mark as outlier if more than threshold standard deviations from mean
-                outlier_mask = np.abs(unwrapped_phases[theta_idx, :] - mean_val) > (outlier_threshold * std_val)
-                
-                # Replace outliers with the mean value for that theta
-                if np.any(outlier_mask):
-                    unwrapped_phases[theta_idx, outlier_mask] = mean_val
-        
-        # Calculate spread metric (per-theta spread across phi cuts)
-        phase_spreads = np.zeros(unwrapped_phases.shape[0])
-        for theta_idx in range(unwrapped_phases.shape[0]):
-            phase_values = unwrapped_phases[theta_idx, :]
-            phase_spreads[theta_idx] = np.max(phase_values) - np.min(phase_values)
-        spread_metric = np.sum(phase_spreads)
-        
         # Calculate flatness metric (overall deviation from zero across whole region)
-        phase_max = np.max(unwrapped_phases)
-        phase_min = np.min(unwrapped_phases)
-        flatness_metric = np.max([np.abs(phase_max), np.abs(phase_min)])
+        mean_phase = np.mean(unwrapped_phases)
+        normalized_phases = unwrapped_phases - mean_phase  # Center around mean
+        max_abs_deviation = np.max(np.abs(normalized_phases))
+        flatness_metric = max_abs_deviation
         
         # Return appropriate metric based on method
-        if method == 'spread':
-            return spread_metric
-        elif method == 'flatness':
-            return flatness_metric
-        else:  # method == 'combined'
-            # Normalize the metrics to make them comparable
-            # If we have historical data on typical values, we could use better normalization factors
-            norm_spread = spread_metric / unwrapped_phases.shape[0]  # Divide by number of theta points
-            norm_flatness = flatness_metric
-            
-            # Weighted combination
-            return spread_weight * norm_spread + (1.0 - spread_weight) * norm_flatness
+        return flatness_metric
     
     # Calculate wavelength for scaled step sizes
     wavelength = 3e8 / freq  # Speed of light / frequency
@@ -199,7 +140,6 @@ def calculate_phase_center(pattern, theta_angle: float, frequency: Optional[floa
     )
     
     translation = result.x
-    logger.info(f"Basinhopping completed. Method: {method}, Best cost: {result.fun}, iterations: {n_iter}")
     
     # Check for reasonable results
     if np.any(np.isnan(translation)) or np.any(np.isinf(translation)):
