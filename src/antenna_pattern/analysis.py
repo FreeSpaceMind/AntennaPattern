@@ -95,10 +95,11 @@ def calculate_phase_center(pattern, theta_angle: float, frequency: Optional[floa
             unwrapped_phases[:, phi_idx] = unwrapped_phi_cut
         
         # Calculate flatness metric (overall deviation from zero across whole region)
-        mean_phase = np.mean(unwrapped_phases)
-        normalized_phases = unwrapped_phases - mean_phase  # Center around mean
-        max_abs_deviation = np.max(np.abs(normalized_phases))
-        flatness_metric = max_abs_deviation
+        theta_indices = np.arange(unwrapped_phases.shape[0])
+        boresight_idx = np.argmin(np.abs(theta_indices - (len(theta_indices) // 2)))
+        boresight_phase = np.mean(unwrapped_phases[boresight_idx, :])
+        normalized_phases = unwrapped_phases - boresight_phase
+        flatness_metric = np.std(normalized_phases)
         
         # Return appropriate metric based on method
         return flatness_metric
