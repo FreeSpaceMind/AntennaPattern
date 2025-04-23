@@ -12,7 +12,7 @@ from .pattern_functions import(
     unwrap_phase, swap_polarization_axes, apply_mars, 
     normalize_phase, change_polarization, translate,
     scale_pattern, transform_coordinates, mirror_pattern,
-    normalize_phase_at_boresight
+    normalize_at_boresight
 )
 from .utilities import find_nearest
 from .polarization import (
@@ -354,17 +354,21 @@ class AntennaPattern:
         # Delegate to the pattern_functions implementation
         normalize_phase(self, reference_theta, reference_phi)
 
-    def normalize_phase_at_boresight(self) -> None:
+    def normalize_at_boresight(self) -> None:
         """
-        Normalize the phase of the antenna pattern so that e_theta components for all 
-        phi cuts have the same phase at boresight (theta=0).
+        Normalize the phase and magnitude of the antenna pattern so that both e_theta 
+        and e_phi components for all phi cuts have the same phase and magnitude at 
+        boresight (theta=0).
         
-        This ensures that the phase profiles for all phi cuts intersect at a common 
-        phase value at boresight, which is useful for phase center calculations and 
-        visualizations.
+        This ensures that the pattern cuts for all phi angles intersect at a common 
+        point at boresight, which is useful for:
+        - Visualizing pattern cuts
+        - Phase center calculations
+        - Pattern comparison
+        - Reference point establishment
         
-        The same phase shift is applied to both e_theta and e_phi components for 
-        each phi cut, preserving their relative phase relationship.
+        Each polarization component (e_theta and e_phi) is normalized independently,
+        preserving their relative relationship.
         
         Raises:
             ValueError: If the pattern doesn't have a theta=0 point
@@ -374,8 +378,15 @@ class AntennaPattern:
             # Load a pattern
             pattern = read_ffd("my_pattern.ffd")
             
-            # Normalize phases at boresight
-            pattern.normalize_phase_at_boresight()
+            # Normalize at boresight
+            pattern.normalize_at_boresight()
+            
+            # Plot gain cuts to verify
+            fig = plot_pattern_cut(
+                pattern, 
+                phi=[0, 45, 90, 135], 
+                value_type='gain'
+            )
             
             # Plot phase cuts to verify
             fig = plot_pattern_cut(
@@ -387,7 +398,7 @@ class AntennaPattern:
             ```
         """
         # Delegate to the pattern_functions implementation
-        normalize_phase_at_boresight(self)
+        normalize_at_boresight(self)
 
     def apply_mars(self, maximum_radial_extent: float) -> None:
         """
