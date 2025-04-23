@@ -1016,18 +1016,21 @@ def mirror_pattern(pattern_obj) -> None:
 
 def normalize_at_boresight(pattern_obj) -> None:
     """
-    Normalize the magnitude of an antenna pattern at boresight (theta=0) while 
-    ensuring phase progression with phi angle.
+    Normalize the phase and magnitude of an antenna pattern so that both e_theta 
+    and e_phi components for all phi cuts have the same phase and magnitude at 
+    boresight (theta=0).
     
     This function:
-    1. Normalizes the magnitude at boresight to be the same for all phi cuts
-    2. Sets the phase at boresight to follow the phi angle progression:
-       - At phi=0, phase will be 0
-       - At phi=10, phase will be 10 degrees
-       - And so on for both e_theta and e_phi components
+    1. Finds the boresight (theta=0) point for each phi angle
+    2. For e_theta:
+       - Calculates average magnitude at boresight across all phi cuts
+       - Sets a reference phase (from the first phi cut)
+       - Normalizes all phi cuts to have the same magnitude and phase at boresight
+    3. For e_phi:
+       - Follows the same process independently
     
-    This ensures consistent magnitude at boresight while maintaining the expected
-    phase progression that follows the phi angle.
+    This ensures that all cuts cross at a common point at boresight for visualization
+    and analysis purposes.
     
     Args:
         pattern_obj: AntennaPattern object to modify
@@ -1053,7 +1056,7 @@ def normalize_at_boresight(pattern_obj) -> None:
     
     # Process each frequency separately
     for f_idx in range(len(frequency)):
-        # Get e_theta and e_phi values at boresight for each phi cut
+        # Get e_theta values at boresight for each phi cut
         e_theta_boresight = e_theta[f_idx, theta0_idx, :]
         e_phi_boresight = e_phi[f_idx, theta0_idx, :]
         
@@ -1065,39 +1068,35 @@ def normalize_at_boresight(pattern_obj) -> None:
         e_theta_avg_magnitude = np.mean(e_theta_magnitude)
         e_phi_avg_magnitude = np.mean(e_phi_magnitude)
         
+        # Instead of averaging phases (which can lead to errors due to wrapping),
+        # choose the first phi cut's phase as reference for each component
+        e_theta_ref_phase = np.angle(e_theta_boresight[0])
+        e_phi_ref_phase = np.angle(e_phi_boresight[0])
+        
+        # Calculate reference complex values at boresight (target values)
+        e_theta_ref = e_theta_avg_magnitude * np.exp(1j * e_theta_ref_phase)
+        e_phi_ref = e_phi_avg_magnitude * np.exp(1j * e_phi_ref_phase)
+        
         # Apply normalization to each phi cut
         for p_idx in range(len(phi)):
-            current_phi = phi[p_idx]
-            
-            # Calculate target phase: equal to the phi angle (in radians)
-            target_phase = np.radians(current_phi)
-            
-            # Calculate current complex values at boresight
+            # Calculate complex correction factors as direct ratio between
+            # reference value and current value at boresight
             e_theta_current = e_theta[f_idx, theta0_idx, p_idx]
             e_phi_current = e_phi[f_idx, theta0_idx, p_idx]
             
-            # Calculate current magnitude and phase
-            e_theta_current_mag = np.abs(e_theta_current)
-            e_phi_current_mag = np.abs(e_phi_current)
-            e_theta_current_phase = np.angle(e_theta_current)
-            e_phi_current_phase = np.angle(e_phi_current)
+            # Avoid division by zero
+            if abs(e_theta_current) < 1e-15:
+                e_theta_current = 1e-15 * (np.cos(e_theta_ref_phase) + 1j * np.sin(e_theta_ref_phase))
+            if abs(e_phi_current) < 1e-15:
+                e_phi_current = 1e-15 * (np.cos(e_phi_ref_phase) + 1j * np.sin(e_phi_ref_phase))
             
-            # Calculate magnitude correction factors
-            e_theta_mag_correction = e_theta_avg_magnitude / np.maximum(e_theta_current_mag, 1e-15)
-            e_phi_mag_correction = e_phi_avg_magnitude / np.maximum(e_phi_current_mag, 1e-15)
+            # Calculate correction as simple ratio of complex numbers
+            theta_correction = e_theta_ref / e_theta_current
+            phi_correction = e_phi_ref / e_phi_current
             
-            # Calculate phase correction (difference between target and current)
-            e_theta_phase_correction = target_phase - e_theta_current_phase
-            e_phi_phase_correction = target_phase - e_phi_current_phase
-            
-            # Apply corrections to this phi cut
-            # First apply magnitude correction
-            e_theta[f_idx, :, p_idx] *= e_theta_mag_correction
-            e_phi[f_idx, :, p_idx] *= e_phi_mag_correction
-            
-            # Then apply phase correction
-            e_theta[f_idx, :, p_idx] *= np.exp(1j * e_theta_phase_correction)
-            e_phi[f_idx, :, p_idx] *= np.exp(1j * e_phi_phase_correction)
+            # Apply corrections to all theta values for this phi cut
+            e_theta[f_idx, :, p_idx] *= theta_correction
+            e_phi[f_idx, :, p_idx] *= phi_correction
     
     # Update the pattern data directly
     pattern_obj.data['e_theta'].values = e_theta
@@ -1117,5 +1116,5 @@ def normalize_at_boresight(pattern_obj) -> None:
             'type': 'normalize_at_boresight',
             'boresight_theta': float(theta[theta0_idx]),
             'normalized_components': ['e_theta', 'e_phi'],
-            'phase_progression': 'follows phi angle'
+            'normalized_attributes': ['magnitude', 'phase']
         })
