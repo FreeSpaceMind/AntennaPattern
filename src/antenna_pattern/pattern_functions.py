@@ -1068,14 +1068,10 @@ def normalize_at_boresight(pattern_obj) -> None:
         e_theta_avg_magnitude = np.mean(e_theta_magnitude)
         e_phi_avg_magnitude = np.mean(e_phi_magnitude)
         
-        # Instead of averaging phases (which can lead to errors due to wrapping),
+        # Instead of averaging phases,
         # choose the first phi cut's phase as reference for each component
         e_theta_ref_phase = np.angle(e_theta_boresight[0])
         e_phi_ref_phase = np.angle(e_phi_boresight[0])
-        
-        # Calculate reference complex values at boresight (target values)
-        e_theta_ref = e_theta_avg_magnitude * np.exp(1j * e_theta_ref_phase)
-        e_phi_ref = e_phi_avg_magnitude * np.exp(1j * e_phi_ref_phase)
         
         # Apply normalization to each phi cut
         for p_idx in range(len(phi)):
@@ -1083,7 +1079,11 @@ def normalize_at_boresight(pattern_obj) -> None:
             # reference value and current value at boresight
             e_theta_current = e_theta[f_idx, theta0_idx, p_idx]
             e_phi_current = e_phi[f_idx, theta0_idx, p_idx]
-            
+
+            # Calculate reference complex values at boresight (target values)
+            e_theta_ref = e_theta_avg_magnitude * np.exp(1j * (e_theta_ref_phase+np.radians(phi[p_idx])))
+            e_phi_ref = e_phi_avg_magnitude * np.exp(1j * (e_phi_ref_phase+np.radians(phi[p_idx])))
+                
             # Avoid division by zero
             if abs(e_theta_current) < 1e-15:
                 e_theta_current = 1e-15 * (np.cos(e_theta_ref_phase) + 1j * np.sin(e_theta_ref_phase))
