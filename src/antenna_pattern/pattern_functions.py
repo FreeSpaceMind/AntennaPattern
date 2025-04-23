@@ -1013,3 +1013,78 @@ def mirror_pattern(pattern_obj) -> None:
         pattern_obj.metadata['operations'].append({
             'type': 'mirror_pattern'
         })
+
+def normalize_phase_at_boresight(pattern_obj) -> None:
+    """
+    Normalize the phase of an antenna pattern so that e_theta components for all 
+    phi cuts have the same phase at boresight (theta=0).
+    
+    This function:
+    1. Finds the boresight (theta=0) point for each phi angle
+    2. Calculates the phase of e_theta at each boresight point
+    3. Computes the average phase across all phi cuts at boresight
+    4. Applies phase correction to both e_theta and e_phi components to make 
+       all e_theta components have the same phase at boresight
+    
+    Args:
+        pattern_obj: AntennaPattern object to modify
+    
+    Raises:
+        ValueError: If the pattern doesn't have a theta=0 point
+    """
+    
+    # Get underlying numpy arrays
+    frequency = pattern_obj.data.frequency.values
+    theta = pattern_obj.data.theta.values
+    phi = pattern_obj.data.phi.values
+    e_theta = pattern_obj.data.e_theta.values
+    e_phi = pattern_obj.data.e_phi.values
+    
+    # Find the index for theta=0 (boresight)
+    theta0_idx = np.argmin(np.abs(theta))
+    
+    # Check if we have a point close enough to boresight
+    if abs(theta[theta0_idx]) > 1.0:  # Allow for small grid spacing differences
+        raise ValueError(f"Pattern doesn't have a point sufficiently close to boresight. "
+                         f"Closest point is at theta={theta[theta0_idx]} degrees.")
+    
+    # Process each frequency separately
+    for f_idx in range(len(frequency)):
+        # Get e_theta phase at boresight for each phi cut
+        boresight_phases = np.angle(e_theta[f_idx, theta0_idx, :])
+        
+        # Calculate the mean phase at boresight
+        mean_phase = np.mean(boresight_phases)
+        
+        # For each phi cut, calculate phase correction to align with mean phase
+        for p_idx in range(len(phi)):
+            # Calculate phase correction (negative to shift to mean)
+            phase_correction = mean_phase - boresight_phases[p_idx]
+            
+            # Apply the same phase correction to all theta values for this phi cut
+            # This preserves the relative phase profile along theta while making
+            # all phi cuts have the same phase at boresight
+            correction_factor = np.exp(1j * phase_correction)
+            
+            # Apply to both e_theta and e_phi to maintain their relationship
+            e_theta[f_idx, :, p_idx] *= correction_factor
+            e_phi[f_idx, :, p_idx] *= correction_factor
+    
+    # Update the pattern data directly
+    pattern_obj.data['e_theta'].values = e_theta
+    pattern_obj.data['e_phi'].values = e_phi
+    
+    # Recalculate derived components e_co and e_cx
+    pattern_obj.assign_polarization(pattern_obj.polarization)
+    
+    # Clear cache
+    pattern_obj.clear_cache()
+    
+    # Update metadata if needed
+    if hasattr(pattern_obj, 'metadata') and pattern_obj.metadata is not None:
+        if 'operations' not in pattern_obj.metadata:
+            pattern_obj.metadata['operations'] = []
+        pattern_obj.metadata['operations'].append({
+            'type': 'normalize_phase_at_boresight',
+            'boresight_theta': float(theta[theta0_idx])
+        })

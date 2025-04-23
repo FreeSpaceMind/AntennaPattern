@@ -11,7 +11,8 @@ from contextlib import contextmanager
 from .pattern_functions import(
     unwrap_phase, swap_polarization_axes, apply_mars, 
     normalize_phase, change_polarization, translate,
-    scale_pattern, transform_coordinates, mirror_pattern
+    scale_pattern, transform_coordinates, mirror_pattern,
+    normalize_phase_at_boresight
 )
 from .utilities import find_nearest
 from .polarization import (
@@ -352,6 +353,41 @@ class AntennaPattern:
         """
         # Delegate to the pattern_functions implementation
         normalize_phase(self, reference_theta, reference_phi)
+
+    def normalize_phase_at_boresight(self) -> None:
+        """
+        Normalize the phase of the antenna pattern so that e_theta components for all 
+        phi cuts have the same phase at boresight (theta=0).
+        
+        This ensures that the phase profiles for all phi cuts intersect at a common 
+        phase value at boresight, which is useful for phase center calculations and 
+        visualizations.
+        
+        The same phase shift is applied to both e_theta and e_phi components for 
+        each phi cut, preserving their relative phase relationship.
+        
+        Raises:
+            ValueError: If the pattern doesn't have a theta=0 point
+            
+        Example:
+            ```python
+            # Load a pattern
+            pattern = read_ffd("my_pattern.ffd")
+            
+            # Normalize phases at boresight
+            pattern.normalize_phase_at_boresight()
+            
+            # Plot phase cuts to verify
+            fig = plot_pattern_cut(
+                pattern, 
+                phi=[0, 45, 90, 135], 
+                value_type='phase', 
+                unwrap_phase=True
+            )
+            ```
+        """
+        # Delegate to the pattern_functions implementation
+        normalize_phase_at_boresight(self)
 
     def apply_mars(self, maximum_radial_extent: float) -> None:
         """
