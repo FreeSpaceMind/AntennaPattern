@@ -1070,7 +1070,7 @@ def normalize_at_boresight(pattern_obj) -> None:
             current_phi = phi[p_idx]
             
             # Calculate target phase: equal to the phi angle (in radians)
-            target_phase = -np.radians(current_phi)
+            target_phase = np.radians(current_phi)
             
             # Calculate current complex values at boresight
             e_theta_current = e_theta[f_idx, theta0_idx, p_idx]
