@@ -358,44 +358,10 @@ class AntennaPattern:
         """
         Normalize the phase and magnitude of the antenna pattern so that both e_theta 
         and e_phi components for all phi cuts have the same phase and magnitude at 
-        boresight (theta=0).
-        
-        This ensures that the pattern cuts for all phi angles intersect at a common 
-        point at boresight, which is useful for:
-        - Visualizing pattern cuts
-        - Phase center calculations
-        - Pattern comparison
-        - Reference point establishment
-        
-        Each polarization component (e_theta and e_phi) is normalized independently,
-        preserving their relative relationship.
+        boresight (theta=0). Normalized to the first phi cut (typically phi =0).
         
         Raises:
             ValueError: If the pattern doesn't have a theta=0 point
-            
-        Example:
-            ```python
-            # Load a pattern
-            pattern = read_ffd("my_pattern.ffd")
-            
-            # Normalize at boresight
-            pattern.normalize_at_boresight()
-            
-            # Plot gain cuts to verify
-            fig = plot_pattern_cut(
-                pattern, 
-                phi=[0, 45, 90, 135], 
-                value_type='gain'
-            )
-            
-            # Plot phase cuts to verify
-            fig = plot_pattern_cut(
-                pattern, 
-                phi=[0, 45, 90, 135], 
-                value_type='phase', 
-                unwrap_phase=True
-            )
-            ```
         """
         # Delegate to the pattern_functions implementation
         normalize_at_boresight(self)

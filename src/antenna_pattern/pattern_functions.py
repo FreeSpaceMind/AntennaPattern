@@ -1024,8 +1024,8 @@ def normalize_at_boresight(pattern_obj) -> None:
     1. Finds the boresight (theta=0) point for each phi angle
     2. For e_theta:
        - Calculates average magnitude at boresight across all phi cuts
-       - Calculates average phase at boresight across all phi cuts
-       - Normalizes all phi cuts to have this average magnitude and phase at boresight
+       - Sets a reference phase (from the first phi cut)
+       - Normalizes all phi cuts to have the same magnitude and phase at boresight
     3. For e_phi:
        - Follows the same process independently
     
@@ -1043,8 +1043,8 @@ def normalize_at_boresight(pattern_obj) -> None:
     frequency = pattern_obj.data.frequency.values
     theta = pattern_obj.data.theta.values
     phi = pattern_obj.data.phi.values
-    e_theta = pattern_obj.data.e_theta.values
-    e_phi = pattern_obj.data.e_phi.values
+    e_theta = pattern_obj.data.e_theta.values.copy()
+    e_phi = pattern_obj.data.e_phi.values.copy()
     
     # Find the index for theta=0 (boresight)
     theta0_idx = np.argmin(np.abs(theta))
@@ -1060,29 +1060,39 @@ def normalize_at_boresight(pattern_obj) -> None:
         e_theta_boresight = e_theta[f_idx, theta0_idx, :]
         e_phi_boresight = e_phi[f_idx, theta0_idx, :]
         
-        # Calculate magnitude and phase at boresight
+        # Calculate magnitude at boresight
         e_theta_magnitude = np.abs(e_theta_boresight)
-        e_theta_phase = np.angle(e_theta_boresight)
         e_phi_magnitude = np.abs(e_phi_boresight)
-        e_phi_phase = np.angle(e_phi_boresight)
         
-        # Calculate the average magnitude and phase at boresight
+        # Calculate the average magnitude at boresight
         e_theta_avg_magnitude = np.mean(e_theta_magnitude)
-        e_theta_avg_phase = np.mean(e_theta_phase)
         e_phi_avg_magnitude = np.mean(e_phi_magnitude)
-        e_phi_avg_phase = np.mean(e_phi_phase)
+        
+        # Instead of averaging phases (which can lead to errors due to wrapping),
+        # choose the first phi cut's phase as reference for each component
+        e_theta_ref_phase = np.angle(e_theta_boresight[0])
+        e_phi_ref_phase = np.angle(e_phi_boresight[0])
+        
+        # Calculate reference complex values at boresight (target values)
+        e_theta_ref = e_theta_avg_magnitude * np.exp(1j * e_theta_ref_phase)
+        e_phi_ref = e_phi_avg_magnitude * np.exp(1j * e_phi_ref_phase)
         
         # Apply normalization to each phi cut
         for p_idx in range(len(phi)):
-            # Calculate correction factors for e_theta
-            theta_magnitude_correction = e_theta_avg_magnitude / np.maximum(e_theta_magnitude[p_idx], 1e-15)
-            theta_phase_correction = e_theta_avg_phase - e_theta_phase[p_idx]
-            theta_correction = theta_magnitude_correction * np.exp(1j * theta_phase_correction)
+            # Calculate complex correction factors as direct ratio between
+            # reference value and current value at boresight
+            e_theta_current = e_theta[f_idx, theta0_idx, p_idx]
+            e_phi_current = e_phi[f_idx, theta0_idx, p_idx]
             
-            # Calculate correction factors for e_phi
-            phi_magnitude_correction = e_phi_avg_magnitude / np.maximum(e_phi_magnitude[p_idx], 1e-15)
-            phi_phase_correction = e_phi_avg_phase - e_phi_phase[p_idx]
-            phi_correction = phi_magnitude_correction * np.exp(1j * phi_phase_correction)
+            # Avoid division by zero
+            if abs(e_theta_current) < 1e-15:
+                e_theta_current = 1e-15 * (np.cos(e_theta_ref_phase) + 1j * np.sin(e_theta_ref_phase))
+            if abs(e_phi_current) < 1e-15:
+                e_phi_current = 1e-15 * (np.cos(e_phi_ref_phase) + 1j * np.sin(e_phi_ref_phase))
+            
+            # Calculate correction as simple ratio of complex numbers
+            theta_correction = e_theta_ref / e_theta_current
+            phi_correction = e_phi_ref / e_phi_current
             
             # Apply corrections to all theta values for this phi cut
             e_theta[f_idx, :, p_idx] *= theta_correction
