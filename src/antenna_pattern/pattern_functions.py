@@ -1123,93 +1123,192 @@ def rotate_phi(pattern_obj, phi_offset: float) -> None:
     """
     Rotate the antenna pattern around the z-axis by the specified phi angle offset.
     
-    This function shifts all pattern data along the phi dimension while preserving
-    the original phi vector. The rotation is achieved through interpolation.
-    
     Args:
         pattern_obj: AntennaPattern object to modify
         phi_offset: Angle in degrees to rotate the pattern
-        
-    Note:
-        Positive phi_offset corresponds to counter-clockwise rotation when 
-        looking down the z-axis.
     """
+    from scipy.interpolate import interp1d
     
     # Get pattern data
     frequencies = pattern_obj.frequencies
     theta = pattern_obj.theta_angles
     phi = pattern_obj.phi_angles
-    
-    # Check for central coordinates
-    is_central = np.min(theta) < 0
-    orig_format = 'central' if is_central else 'sided'
-    
-    # If central coordinates, transform to sided first
-    if is_central:
-        transform_coordinates(pattern_obj, 'sided')
-        
-    # After potential transformation, get the updated data
     e_theta = pattern_obj.data.e_theta.values.copy()
     e_phi = pattern_obj.data.e_phi.values.copy()
-    phi = pattern_obj.phi_angles  # Get potentially updated phi values
+    
+    # Determine coordinate system type based on theta range
+    is_central = np.min(theta) < 0
     
     # Check if phi covers a full circle
-    phi_step = np.median(np.diff(phi))  # Get the typical step size
-    expected_last_phi = phi[0] + 360 - phi_step  # Expected value of the last phi point
-    actual_last_phi = phi[-1]  # Actual last phi value
-    
-    # Allow for small floating point errors
-    is_full_coverage = np.isclose(actual_last_phi, expected_last_phi, rtol=1e-5, atol=phi_step/10)
+    phi_step = np.median(np.diff(phi)) if len(phi) > 1 else 0
+    if phi_step > 0:
+        expected_last_phi = phi[0] + np.floor((360 - 1e-5) / phi_step) * phi_step
+        actual_last_phi = phi[-1]
+        is_full_coverage = np.isclose(actual_last_phi % 360, expected_last_phi % 360, rtol=1e-5, atol=phi_step/10)
+    else:
+        is_full_coverage = False
     
     # Create new arrays for rotated data
     e_theta_rotated = np.zeros_like(e_theta)
     e_phi_rotated = np.zeros_like(e_phi)
     
-    # Process each frequency and theta angle
-    for f_idx in range(len(frequencies)):
-        for t_idx in range(len(theta)):
-            # Extract data for the current frequency and theta angle
-            e_theta_slice = e_theta[f_idx, t_idx, :]
-            e_phi_slice = e_phi[f_idx, t_idx, :]
-            
-            # Calculate new phi coordinates (shifted by phi_offset)
-            phi_new = (phi - phi_offset) % 360
-            
-            if is_full_coverage:
-                # For full coverage, we can use periodic interpolation
-                # We extend the data for proper periodic handling
-                phi_ext = np.concatenate([phi - 360, phi, phi + 360])
-                e_theta_ext = np.tile(e_theta_slice, 3)
-                e_phi_ext = np.tile(e_phi_slice, 3)
+    # Special handling for central vs. sided coordinates
+    if is_central:
+        # For central coordinates: handle phi rotation differently
+        
+        # Process each frequency and theta angle
+        for f_idx in range(len(frequencies)):
+            for t_idx in range(len(theta)):
+                t_val = theta[t_idx]
                 
-                # Create interpolation functions - using cubic for smoother results
-                theta_real_interp = interp1d(phi_ext, np.real(e_theta_ext), kind='cubic')
-                theta_imag_interp = interp1d(phi_ext, np.imag(e_theta_ext), kind='cubic')
-                phi_real_interp = interp1d(phi_ext, np.real(e_phi_ext), kind='cubic')
-                phi_imag_interp = interp1d(phi_ext, np.imag(e_phi_ext), kind='cubic')
-            else:
-                # For partial coverage, use best effort interpolation
-                # with extrapolation for out-of-range values
-                theta_real_interp = interp1d(phi, np.real(e_theta_slice), 
-                                          bounds_error=False, fill_value='extrapolate',
-                                          kind='cubic' if len(phi) > 3 else 'linear')
-                theta_imag_interp = interp1d(phi, np.imag(e_theta_slice),
-                                          bounds_error=False, fill_value='extrapolate',
-                                          kind='cubic' if len(phi) > 3 else 'linear')
-                phi_real_interp = interp1d(phi, np.real(e_phi_slice),
-                                        bounds_error=False, fill_value='extrapolate',
-                                        kind='cubic' if len(phi) > 3 else 'linear')
-                phi_imag_interp = interp1d(phi, np.imag(e_phi_slice),
-                                        bounds_error=False, fill_value='extrapolate',
-                                        kind='cubic' if len(phi) > 3 else 'linear')
-            
-            # Interpolate at the new coordinates
-            e_theta_rotated[f_idx, t_idx, :] = (
-                theta_real_interp(phi_new) + 1j * theta_imag_interp(phi_new)
-            )
-            e_phi_rotated[f_idx, t_idx, :] = (
-                phi_real_interp(phi_new) + 1j * phi_imag_interp(phi_new)
-            )
+                # Calculate new phi coordinates (shifted by phi_offset)
+                phi_new = (phi - phi_offset) % 360
+                
+                # For central coordinates, we need to:
+                # 1. Determine which phi values will remain in the valid range (0-180)
+                # 2. For values outside this range, we need to use negative theta
+                
+                # Find values that will be in the 0-180 range vs. outside
+                in_range_mask = (phi_new <= 180)
+                out_range_mask = ~in_range_mask
+                
+                # For in-range values, use direct interpolation
+                if np.any(in_range_mask):
+                    phi_in_range = phi_new[in_range_mask]
+                    
+                    # Create interpolation for this theta value
+                    theta_real_interp = interp1d(phi, np.real(e_theta[f_idx, t_idx, :]), 
+                                               bounds_error=False, fill_value='extrapolate',
+                                               kind='cubic' if len(phi) > 3 else 'linear')
+                    theta_imag_interp = interp1d(phi, np.imag(e_theta[f_idx, t_idx, :]),
+                                               bounds_error=False, fill_value='extrapolate',
+                                               kind='cubic' if len(phi) > 3 else 'linear')
+                    phi_real_interp = interp1d(phi, np.real(e_phi[f_idx, t_idx, :]),
+                                             bounds_error=False, fill_value='extrapolate',
+                                             kind='cubic' if len(phi) > 3 else 'linear')
+                    phi_imag_interp = interp1d(phi, np.imag(e_phi[f_idx, t_idx, :]),
+                                             bounds_error=False, fill_value='extrapolate',
+                                             kind='cubic' if len(phi) > 3 else 'linear')
+                    
+                    # Apply interpolation
+                    e_theta_rotated[f_idx, t_idx, in_range_mask] = (
+                        theta_real_interp(phi_in_range) + 1j * theta_imag_interp(phi_in_range)
+                    )
+                    e_phi_rotated[f_idx, t_idx, in_range_mask] = (
+                        phi_real_interp(phi_in_range) + 1j * phi_imag_interp(phi_in_range)
+                    )
+                
+                # For out-of-range values, need to use negative theta with adjusted phi
+                if np.any(out_range_mask):
+                    # Find the corresponding negative theta index
+                    neg_t_idx = np.where(np.isclose(theta, -t_val))[0]
+                    
+                    if len(neg_t_idx) > 0:
+                        neg_t_idx = neg_t_idx[0]
+                        phi_out_range = phi_new[out_range_mask]
+                        phi_adjusted = phi_out_range - 180  # Bring back to 0-180 range
+                        
+                        # Create interpolation using the negative theta
+                        neg_theta_real_interp = interp1d(phi, np.real(e_theta[f_idx, neg_t_idx, :]), 
+                                                      bounds_error=False, fill_value='extrapolate',
+                                                      kind='cubic' if len(phi) > 3 else 'linear')
+                        neg_theta_imag_interp = interp1d(phi, np.imag(e_theta[f_idx, neg_t_idx, :]),
+                                                      bounds_error=False, fill_value='extrapolate',
+                                                      kind='cubic' if len(phi) > 3 else 'linear')
+                        neg_phi_real_interp = interp1d(phi, np.real(e_phi[f_idx, neg_t_idx, :]),
+                                                    bounds_error=False, fill_value='extrapolate',
+                                                    kind='cubic' if len(phi) > 3 else 'linear')
+                        neg_phi_imag_interp = interp1d(phi, np.imag(e_phi[f_idx, neg_t_idx, :]),
+                                                    bounds_error=False, fill_value='extrapolate',
+                                                    kind='cubic' if len(phi) > 3 else 'linear')
+                        
+                        # Apply interpolation with appropriate sign changes for negative theta
+                        e_theta_rotated[f_idx, t_idx, out_range_mask] = (
+                            -(neg_theta_real_interp(phi_adjusted) + 1j * neg_theta_imag_interp(phi_adjusted))
+                        )
+                        e_phi_rotated[f_idx, t_idx, out_range_mask] = (
+                            -(neg_phi_real_interp(phi_adjusted) + 1j * neg_phi_imag_interp(phi_adjusted))
+                        )
+                    else:
+                        # Attempt best-effort extrapolation
+                        # Use the existing interpolation functions but extend phi range
+                        phi_out_range = phi_new[out_range_mask]
+                        phi_adjusted = phi_out_range - 180  # Bring back to 0-180 range
+                        
+                        # Use the existing interpolation from in-range calculation
+                        if 'theta_real_interp' in locals():
+                            e_theta_rotated[f_idx, t_idx, out_range_mask] = (
+                                -(theta_real_interp(phi_adjusted) + 1j * theta_imag_interp(phi_adjusted))
+                            )
+                            e_phi_rotated[f_idx, t_idx, out_range_mask] = (
+                                -(phi_real_interp(phi_adjusted) + 1j * phi_imag_interp(phi_adjusted))
+                            )
+                        else:
+                            # Create interpolation if it doesn't exist
+                            theta_real_interp = interp1d(phi, np.real(e_theta[f_idx, t_idx, :]), 
+                                                      bounds_error=False, fill_value='extrapolate',
+                                                      kind='cubic' if len(phi) > 3 else 'linear')
+                            theta_imag_interp = interp1d(phi, np.imag(e_theta[f_idx, t_idx, :]),
+                                                      bounds_error=False, fill_value='extrapolate',
+                                                      kind='cubic' if len(phi) > 3 else 'linear')
+                            phi_real_interp = interp1d(phi, np.real(e_phi[f_idx, t_idx, :]),
+                                                    bounds_error=False, fill_value='extrapolate',
+                                                    kind='cubic' if len(phi) > 3 else 'linear')
+                            phi_imag_interp = interp1d(phi, np.imag(e_phi[f_idx, t_idx, :]),
+                                                    bounds_error=False, fill_value='extrapolate',
+                                                    kind='cubic' if len(phi) > 3 else 'linear')
+                            
+                            e_theta_rotated[f_idx, t_idx, out_range_mask] = (
+                                -(theta_real_interp(phi_adjusted) + 1j * theta_imag_interp(phi_adjusted))
+                            )
+                            e_phi_rotated[f_idx, t_idx, out_range_mask] = (
+                                -(phi_real_interp(phi_adjusted) + 1j * phi_imag_interp(phi_adjusted))
+                            )
+                            
+    else:
+        # Standard (sided) coordinates - simpler handling
+        for f_idx in range(len(frequencies)):
+            for t_idx in range(len(theta)):
+                # Calculate new phi coordinates (shifted by phi_offset)
+                phi_new = (phi - phi_offset) % 360
+                
+                if is_full_coverage:
+                    # For full coverage, use periodic interpolation
+                    phi_ext = np.concatenate([phi - 360, phi, phi + 360])
+                    e_theta_ext = np.tile(e_theta[f_idx, t_idx, :], 3)
+                    e_phi_ext = np.tile(e_phi[f_idx, t_idx, :], 3)
+                    
+                    # Create interpolation functions
+                    theta_real_interp = interp1d(phi_ext, np.real(e_theta_ext), 
+                                               kind='cubic' if len(phi) > 3 else 'linear')
+                    theta_imag_interp = interp1d(phi_ext, np.imag(e_theta_ext), 
+                                               kind='cubic' if len(phi) > 3 else 'linear')
+                    phi_real_interp = interp1d(phi_ext, np.real(e_phi_ext), 
+                                             kind='cubic' if len(phi) > 3 else 'linear')
+                    phi_imag_interp = interp1d(phi_ext, np.imag(e_phi_ext), 
+                                             kind='cubic' if len(phi) > 3 else 'linear')
+                else:
+                    # For partial coverage, use extrapolation
+                    theta_real_interp = interp1d(phi, np.real(e_theta[f_idx, t_idx, :]), 
+                                               bounds_error=False, fill_value='extrapolate',
+                                               kind='cubic' if len(phi) > 3 else 'linear')
+                    theta_imag_interp = interp1d(phi, np.imag(e_theta[f_idx, t_idx, :]),
+                                               bounds_error=False, fill_value='extrapolate',
+                                               kind='cubic' if len(phi) > 3 else 'linear')
+                    phi_real_interp = interp1d(phi, np.real(e_phi[f_idx, t_idx, :]),
+                                             bounds_error=False, fill_value='extrapolate',
+                                             kind='cubic' if len(phi) > 3 else 'linear')
+                    phi_imag_interp = interp1d(phi, np.imag(e_phi[f_idx, t_idx, :]),
+                                             bounds_error=False, fill_value='extrapolate',
+                                             kind='cubic' if len(phi) > 3 else 'linear')
+                
+                # Interpolate at the new coordinates
+                e_theta_rotated[f_idx, t_idx, :] = (
+                    theta_real_interp(phi_new) + 1j * theta_imag_interp(phi_new)
+                )
+                e_phi_rotated[f_idx, t_idx, :] = (
+                    phi_real_interp(phi_new) + 1j * phi_imag_interp(phi_new)
+                )
     
     # Update the pattern data
     pattern_obj.data['e_theta'].values = e_theta_rotated
@@ -1217,10 +1316,6 @@ def rotate_phi(pattern_obj, phi_offset: float) -> None:
     
     # Recalculate derived components e_co and e_cx
     pattern_obj.assign_polarization(pattern_obj.polarization)
-    
-    # Convert back to original coordinate format if needed
-    if is_central:
-        transform_coordinates(pattern_obj, 'central')
     
     # Clear cache
     pattern_obj.clear_cache()
@@ -1232,5 +1327,5 @@ def rotate_phi(pattern_obj, phi_offset: float) -> None:
         pattern_obj.metadata['operations'].append({
             'type': 'rotate_phi',
             'phi_offset': float(phi_offset),
-            'coordinate_transform': True if is_central else False
+            'coordinate_system': 'central' if is_central else 'sided'
         })
