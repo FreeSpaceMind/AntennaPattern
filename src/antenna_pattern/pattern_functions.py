@@ -1283,11 +1283,11 @@ def rotate_phi(pattern_obj, phi_offset: float) -> None:
                     
                     # Interpolate and apply sign change for central symmetry
                     e_x_rotated[beyond_180] = (
-                        -x_mag_interp(phi_equiv) * 
+                        x_mag_interp(phi_equiv) * 
                         np.exp(1j * x_phase_interp(phi_equiv))
                     )
                     e_y_rotated[beyond_180] = (
-                        y_mag_interp(phi_equiv) * 
+                        -y_mag_interp(phi_equiv) * 
                         np.exp(1j * y_phase_interp(phi_equiv))
                     )
             else:
