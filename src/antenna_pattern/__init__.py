@@ -30,7 +30,8 @@ from .pattern_functions import (
     transform_uvw2tp,
     isometric_rotation,
     mirror_pattern,
-    normalize_at_boresight
+    normalize_at_boresight,
+    rotate_coordinate_system
 )
 from .analysis import (
     calculate_phase_center,
@@ -80,6 +81,7 @@ __all__ = [
     'isometric_rotation',
     'mirror_pattern',
     'normalize_at_boresight',
+    'rotate_coordinate_system'
     'calculate_phase_center',
     'principal_plane_phase_center',
     'get_axial_ratio',

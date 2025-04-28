@@ -12,7 +12,7 @@ from .pattern_functions import(
     unwrap_phase, swap_polarization_axes, apply_mars, 
     normalize_phase, change_polarization, translate,
     scale_pattern, transform_coordinates, mirror_pattern,
-    normalize_at_boresight
+    normalize_at_boresight, rotate_coordinate_system
 )
 from .utilities import find_nearest
 from .polarization import (
@@ -387,6 +387,24 @@ class AntennaPattern:
         # Delegate to the pattern_functions implementation
         swap_polarization_axes(self)
     
+    def rotate_coordinate_system(self, target_theta: float, target_phi: float, 
+                                interp_method: str = 'cubic') -> None:
+        """
+        Rotate the coordinate system so that the direction (target_theta, target_phi) becomes (0, 0).
+        
+        This function transforms the antenna pattern by rotating the coordinate system.
+        It preserves the original theta and phi grid structure by interpolating the 
+        rotated pattern back onto the original grid.
+        
+        Args:
+            target_theta: Theta angle in degrees that will become the new zenith (0°)
+            target_phi: Phi angle in degrees that will become the new reference (0°)
+            interp_method: Interpolation method ('linear', 'cubic', 'quintic')
+                Default is 'cubic' for a good balance of accuracy and performance
+        """
+        # Delegate to the pattern_functions implementation
+        rotate_coordinate_system(self, target_theta, target_phi, interp_method)
+
     def get_gain_db(self, component: str = 'e_co') -> xr.DataArray:
         """
         Get gain in dB for a specific field component.

@@ -5,7 +5,7 @@ These functions contained here to shorten the AntennaPattern definition file (pa
 
 import numpy as np
 from typing import Tuple, Union, Optional, List, Any, Callable
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d, RegularGridInterpolator
 
 from .utilities import lightspeed, frequency_to_wavelength
 from .polarization import polarization_tp2xy, polarization_tp2rl, polarization_xy2pt
@@ -1117,4 +1117,182 @@ def normalize_at_boresight(pattern_obj) -> None:
             'boresight_theta': float(theta[theta0_idx]),
             'normalized_components': ['e_theta', 'e_phi'],
             'normalized_attributes': ['magnitude', 'phase']
+        })
+
+def rotate_coordinate_system(self, target_theta: float, target_phi: float, 
+                            interp_method: str = 'cubic') -> None:
+    """
+    Rotate the coordinate system so that the direction (target_theta, target_phi) becomes (0, 0).
+    
+    This function transforms the antenna pattern by rotating the coordinate system.
+    It preserves the original theta and phi grid structure by interpolating the 
+    rotated pattern back onto the original grid.
+    
+    Args:
+        target_theta: Theta angle in degrees that will become the new zenith (0°)
+        target_phi: Phi angle in degrees that will become the new reference (0°)
+        interp_method: Interpolation method ('linear', 'cubic', 'quintic')
+            Default is 'cubic' for a good balance of accuracy and performance
+            
+    Raises:
+        ValueError: If interpolation method is invalid
+        ValueError: If target angles are outside the pattern's angular range
+    """
+    
+    # Validate interpolation method
+    valid_methods = ['linear', 'cubic', 'quintic']
+    if interp_method not in valid_methods:
+        raise ValueError(f"Invalid interpolation method. Must be one of {valid_methods}")
+    
+    # Get pattern data
+    theta = self.data.theta.values
+    phi = self.data.phi.values
+    frequency = self.data.frequency.values
+    
+    # Ensure target angles are within pattern range
+    theta_min, theta_max = np.min(theta), np.max(theta)
+    if target_theta < theta_min or target_theta > theta_max:
+        raise ValueError(f"Target theta ({target_theta}°) outside pattern range [{theta_min}°, {theta_max}°]")
+    
+    # Adjust target_phi to be within [0, 360) range for comparison
+    target_phi = target_phi % 360
+    
+    # Convert the target angles to Cartesian (direction of new Z-axis)
+    target_theta_rad = np.radians(target_theta)
+    target_phi_rad = np.radians(target_phi)
+    
+    # Direction of new Z-axis
+    z_new_x = np.sin(target_theta_rad) * np.cos(target_phi_rad)
+    z_new_y = np.sin(target_theta_rad) * np.sin(target_phi_rad)
+    z_new_z = np.cos(target_theta_rad)
+    
+    # Process each frequency separately
+    e_theta_new = np.zeros_like(self.data.e_theta.values)
+    e_phi_new = np.zeros_like(self.data.e_phi.values)
+    
+    for freq_idx, _ in enumerate(frequency):
+        # Get original field data for this frequency
+        e_theta_freq = self.data.e_theta.values[freq_idx]
+        e_phi_freq = self.data.e_phi.values[freq_idx]
+        
+        # Calculate magnitude and phase
+        e_theta_mag = np.abs(e_theta_freq)
+        e_phi_mag = np.abs(e_phi_freq)
+        
+        e_theta_phase = np.angle(e_theta_freq)
+        e_phi_phase = np.angle(e_phi_freq)
+        
+        # Unwrap phases along theta for better interpolation
+        for p_idx in range(len(phi)):
+            e_theta_phase[:, p_idx] = np.unwrap(e_theta_phase[:, p_idx])
+            e_phi_phase[:, p_idx] = np.unwrap(e_phi_phase[:, p_idx])
+        
+        # Create magnitude interpolators
+        theta_rad = np.radians(theta)
+        phi_rad = np.radians(phi)
+        
+        e_theta_mag_interp = RegularGridInterpolator(
+            (theta_rad, phi_rad), e_theta_mag, 
+            method=interp_method, bounds_error=False, fill_value=None
+        )
+        
+        e_phi_mag_interp = RegularGridInterpolator(
+            (theta_rad, phi_rad), e_phi_mag, 
+            method=interp_method, bounds_error=False, fill_value=None
+        )
+        
+        # Create phase interpolators
+        e_theta_phase_interp = RegularGridInterpolator(
+            (theta_rad, phi_rad), e_theta_phase, 
+            method=interp_method, bounds_error=False, fill_value=None
+        )
+        
+        e_phi_phase_interp = RegularGridInterpolator(
+            (theta_rad, phi_rad), e_phi_phase, 
+            method=interp_method, bounds_error=False, fill_value=None
+        )
+        
+        # Create meshgrid for original grid
+        THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
+        
+        # Create Cartesian coordinates for original grid
+        X = np.sin(THETA) * np.cos(PHI)
+        Y = np.sin(THETA) * np.sin(PHI)
+        Z = np.cos(THETA)
+        
+        # Rotation matrix for the transformation
+        # We're essentially finding the rotation from the z-axis to the target direction
+        # Then applying the inverse of this rotation to all points
+        
+        # First, find a perpendicular direction to form a basis
+        # We need a vector perpendicular to the new z-axis for our rotation
+        x_new_x = -z_new_y
+        x_new_y = z_new_x
+        x_new_z = 0
+            
+        # Normalize this vector
+        norm = np.sqrt(x_new_x**2 + x_new_y**2 + x_new_z**2)
+        x_new_x /= norm
+        x_new_y /= norm
+        x_new_z /= norm
+        
+        # The third basis vector is the cross product of these two
+        y_new_x = z_new_y * x_new_z - z_new_z * x_new_y
+        y_new_y = z_new_z * x_new_x - z_new_x * x_new_z
+        y_new_z = z_new_x * x_new_y - z_new_y * x_new_x
+        
+        # Build rotation matrix
+        rotation_matrix = np.array([
+            [x_new_x, y_new_x, z_new_x],
+            [x_new_y, y_new_y, z_new_y],
+            [x_new_z, y_new_z, z_new_z]
+        ])
+        
+        # Apply rotation (transpose matrix for inverse rotation)
+        rotated_coords = np.tensordot(
+            rotation_matrix.T, 
+            np.stack([X.ravel(), Y.ravel(), Z.ravel()]), 
+            axes=1
+        )
+        
+        # Convert back to spherical coordinates
+        r = np.sqrt(rotated_coords[0]**2 + rotated_coords[1]**2 + rotated_coords[2]**2)
+        theta_rot = np.arccos(rotated_coords[2] / r)
+        phi_rot = np.arctan2(rotated_coords[1], rotated_coords[0])
+        
+        # Ensure phi in [0, 2π) range
+        phi_rot = np.mod(phi_rot, 2 * np.pi)
+        
+        # Interpolate at these rotated points
+        theta_phi_rot = np.column_stack([theta_rot, phi_rot])
+        
+        e_theta_mag_rot = e_theta_mag_interp(theta_phi_rot).reshape(THETA.shape)
+        e_phi_mag_rot = e_phi_mag_interp(theta_phi_rot).reshape(THETA.shape)
+        
+        e_theta_phase_rot = e_theta_phase_interp(theta_phi_rot).reshape(THETA.shape)
+        e_phi_phase_rot = e_phi_phase_interp(theta_phi_rot).reshape(THETA.shape)
+        
+        # Reconstruct complex fields
+        e_theta_new[freq_idx] = e_theta_mag_rot * np.exp(1j * e_theta_phase_rot)
+        e_phi_new[freq_idx] = e_phi_mag_rot * np.exp(1j * e_phi_phase_rot)
+    
+    # Update the pattern data
+    self.data['e_theta'].values = e_theta_new
+    self.data['e_phi'].values = e_phi_new
+    
+    # Recalculate derived components (e_co, e_cx)
+    self.assign_polarization(self.polarization)
+    
+    # Clear cache
+    self.clear_cache()
+    
+    # Update metadata
+    if hasattr(self, 'metadata') and self.metadata is not None:
+        if 'operations' not in self.metadata:
+            self.metadata['operations'] = []
+        self.metadata['operations'].append({
+            'type': 'rotate_coordinate_system',
+            'target_theta': float(target_theta),
+            'target_phi': float(target_phi),
+            'interp_method': interp_method
         })
