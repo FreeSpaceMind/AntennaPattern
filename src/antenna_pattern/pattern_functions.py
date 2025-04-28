@@ -1138,6 +1138,8 @@ def rotate_coordinate_system(self, target_theta: float, target_phi: float,
     Raises:
         ValueError: If interpolation method is invalid
     """
+    from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+    from .polarization import polarization_tp2xy, polarization_xy2pt
 
     # Validate interpolation method
     valid_methods = ['linear', 'cubic']
@@ -1204,108 +1206,136 @@ def rotate_coordinate_system(self, target_theta: float, target_phi: float,
     e_theta_new = np.zeros_like(self.data.e_theta.values, dtype=complex)
     e_phi_new = np.zeros_like(self.data.e_phi.values, dtype=complex)
     
-    # Pre-compute spherical to Cartesian conversion for the grid
-    # Generate the meshgrid for vectorized operations
-    THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
-    
-    # Calculate sines and cosines once
-    sin_theta = np.sin(THETA)
-    cos_theta = np.cos(THETA)
-    sin_phi = np.sin(PHI)
-    cos_phi = np.cos(PHI)
-    
-    # Generate Cartesian coordinates for each grid point
-    X = sin_theta * cos_phi
-    Y = sin_theta * sin_phi
-    Z = cos_theta
-    
-    # Prepare the points for interpolation
-    grid_points = np.vstack([X.flatten(), Y.flatten(), Z.flatten()]).T
-    
     for freq_idx in range(len(frequency)):
         # Get field components for this frequency
         e_theta_freq = self.data.e_theta.values[freq_idx]
         e_phi_freq = self.data.e_phi.values[freq_idx]
         
-        # Convert to Ludwig's III (x/y) components in a vectorized way
-        # We need to reshape the arrays to apply polarization_tp2xy
-        phi_deg = np.degrees(PHI)
-        e_x_grid = np.zeros_like(e_theta_freq, dtype=complex)
-        e_y_grid = np.zeros_like(e_phi_freq, dtype=complex)
+        # Create lists to hold the source points and field values
+        points = []         # 3D Cartesian coordinates
+        e_x_values = []     # X-component of electric field
+        e_y_values = []     # Y-component of electric field 
+        e_z_values = []     # Z-component of electric field
         
-        # Vectorize the polarization conversion by iterating over each phi angle
-        for phi_idx, phi_val in enumerate(phi):
-            e_x_grid[:, phi_idx], e_y_grid[:, phi_idx] = polarization_tp2xy(
-                phi_val, e_theta_freq[:, phi_idx], e_phi_freq[:, phi_idx]
-            )
-        
-        # Flatten the data for interpolation
-        e_x_values = e_x_grid.flatten()
-        e_y_values = e_y_grid.flatten()
-        e_z_values = np.zeros_like(e_x_values)  # Z component is zero for far-field
-        
-        # Rotate grid points - this gives us the positions after rotation
-        # Each original point (x, y, z) becomes a new point (x', y', z')
-        # We need to know where each original point maps to in the new system
-        from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
-        
-        # Create interpolation functions for the field components
-        e_x_interp = LinearNDInterpolator(grid_points, e_x_values, fill_value=0)
-        e_y_interp = LinearNDInterpolator(grid_points, e_y_values, fill_value=0)
-        
-        # For points outside the convex hull, use nearest neighbor as backup
-        e_x_interp_nn = NearestNDInterpolator(grid_points, e_x_values)
-        e_y_interp_nn = NearestNDInterpolator(grid_points, e_y_values)
-        
-        # Now apply the rotation to the original grid
-        # We want to find the field values at the rotated positions
+        # Convert spherical grid to 3D vectors
         for t_idx, t_val in enumerate(theta_rad):
-            # Calculate points on this theta ring
             sin_t = np.sin(t_val)
             cos_t = np.cos(t_val)
             
-            # Vectorize the phi loop for this theta value
-            x_ring = sin_t * np.cos(phi_rad)
-            y_ring = sin_t * np.sin(phi_rad)
-            z_ring = np.full_like(phi_rad, cos_t)
+            for p_idx, p_val in enumerate(phi_rad):
+                sin_p = np.sin(p_val)
+                cos_p = np.cos(p_val)
+                
+                # 3D position of this grid point
+                x = sin_t * cos_p
+                y = sin_t * sin_p
+                z = cos_t
+                
+                # Spherical unit vectors at this point
+                theta_hat = np.array([
+                    cos_t * cos_p,
+                    cos_t * sin_p,
+                    -sin_t
+                ])
+                
+                phi_hat = np.array([
+                    -sin_p,
+                    cos_p,
+                    0
+                ])
+                
+                # Get field values
+                e_theta_val = e_theta_freq[t_idx, p_idx]
+                e_phi_val = e_phi_freq[t_idx, p_idx]
+                
+                # Convert field to Cartesian components
+                e_x = e_theta_val * theta_hat[0] + e_phi_val * phi_hat[0]
+                e_y = e_theta_val * theta_hat[1] + e_phi_val * phi_hat[1]
+                e_z = e_theta_val * theta_hat[2] + e_phi_val * phi_hat[2]
+                
+                # Store the point and field values
+                points.append([x, y, z])
+                e_x_values.append(e_x)
+                e_y_values.append(e_y)
+                e_z_values.append(e_z)
+        
+        # Convert to arrays for interpolation
+        points = np.array(points)
+        e_x_values = np.array(e_x_values)
+        e_y_values = np.array(e_y_values)
+        e_z_values = np.array(e_z_values)
+        
+        # Create interpolation functions
+        # Linear interpolation for the vector field components
+        e_x_interp = LinearNDInterpolator(points, e_x_values, fill_value=0)
+        e_y_interp = LinearNDInterpolator(points, e_y_values, fill_value=0)
+        e_z_interp = LinearNDInterpolator(points, e_z_values, fill_value=0)
+        
+        # For points outside the convex hull, use nearest neighbor
+        e_x_interp_nn = NearestNDInterpolator(points, e_x_values)
+        e_y_interp_nn = NearestNDInterpolator(points, e_y_values)
+        e_z_interp_nn = NearestNDInterpolator(points, e_z_values)
+        
+        # Now for each output point, compute the rotated field
+        for t_idx, t_val in enumerate(theta_rad):
+            sin_t = np.sin(t_val)
+            cos_t = np.cos(t_val)
             
-            # Stack into points array for vectorized rotation
-            points_ring = np.vstack([x_ring, y_ring, z_ring]).T
-            
-            # Apply rotation matrix to all points in this ring
-            rotated_points = np.dot(points_ring, rot_matrix.T)
-            
-            # Normalize the rotated points to ensure they're on unit sphere
-            norms = np.linalg.norm(rotated_points, axis=1, keepdims=True)
-            rotated_points = rotated_points / norms
-            
-            # Interpolate field components at the rotated positions
-            e_x_vals = e_x_interp(rotated_points)
-            e_y_vals = e_y_interp(rotated_points)
-            
-            # Handle points outside convex hull
-            mask = np.isnan(e_x_vals)
-            if np.any(mask):
-                e_x_vals[mask] = e_x_interp_nn(rotated_points[mask])
-                e_y_vals[mask] = e_y_interp_nn(rotated_points[mask])
-            
-            # Prepare field vectors for rotation back to original system
-            e_field_vectors = np.zeros((len(phi), 3), dtype=complex)
-            e_field_vectors[:, 0] = e_x_vals
-            e_field_vectors[:, 1] = e_y_vals
-            
-            # Apply inverse rotation to the field vectors
-            e_field_rotated = np.dot(e_field_vectors, inv_rot_matrix.T)
-            
-            # Extract the x and y components
-            e_x_orig = e_field_rotated[:, 0]
-            e_y_orig = e_field_rotated[:, 1]
-            
-            # Convert back to spherical components for each phi value
-            for p_idx, p_val in enumerate(phi):
-                e_theta_new[freq_idx, t_idx, p_idx], e_phi_new[freq_idx, t_idx, p_idx] = polarization_xy2pt(
-                    p_val, e_x_orig[p_idx], e_y_orig[p_idx]
-                )
+            for p_idx, p_val in enumerate(phi_rad):
+                sin_p = np.sin(p_val)
+                cos_p = np.cos(p_val)
+                
+                # Original point in 3D
+                orig_point = np.array([
+                    sin_t * cos_p,
+                    sin_t * sin_p,
+                    cos_t
+                ])
+                
+                # Find where this point comes from in the rotated coordinate system
+                # We apply the inverse rotation to find the corresponding point
+                rot_point = rot_matrix @ orig_point
+                
+                # Normalize to ensure we're on the unit sphere
+                rot_point = rot_point / np.linalg.norm(rot_point)
+                
+                # Handle potential numerical issues - ensure unit vector
+                if abs(np.linalg.norm(rot_point) - 1.0) > 1e-10:
+                    rot_point = rot_point / np.linalg.norm(rot_point)
+                
+                # Interpolate field at the rotated point
+                e_x_rot = e_x_interp(rot_point)
+                e_y_rot = e_y_interp(rot_point)
+                e_z_rot = e_z_interp(rot_point)
+                
+                # If outside the convex hull, use nearest neighbor
+                if np.isnan(e_x_rot):
+                    e_x_rot = e_x_interp_nn(rot_point)
+                    e_y_rot = e_y_interp_nn(rot_point)
+                    e_z_rot = e_z_interp_nn(rot_point)
+                
+                # Rotated field vector
+                e_vec_rot = np.array([e_x_rot, e_y_rot, e_z_rot])
+                
+                # Apply inverse rotation to the field vector
+                e_vec_orig = inv_rot_matrix @ e_vec_rot
+                
+                # Calculate local basis vectors at original point
+                theta_hat_orig = np.array([
+                    cos_t * cos_p,
+                    cos_t * sin_p,
+                    -sin_t
+                ])
+                
+                phi_hat_orig = np.array([
+                    -sin_p,
+                    cos_p,
+                    0
+                ])
+                
+                # Project rotated field onto original basis vectors
+                e_theta_new[freq_idx, t_idx, p_idx] = np.dot(e_vec_orig, theta_hat_orig)
+                e_phi_new[freq_idx, t_idx, p_idx] = np.dot(e_vec_orig, phi_hat_orig)
     
     # Update the pattern data
     self.data['e_theta'].values = e_theta_new
