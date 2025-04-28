@@ -1229,27 +1229,15 @@ def rotate_coordinate_system(self, target_theta: float, target_phi: float,
                 y = sin_t * sin_p
                 z = cos_t
                 
-                # Spherical unit vectors at this point
-                theta_hat = np.array([
-                    cos_t * cos_p,
-                    cos_t * sin_p,
-                    -sin_t
-                ])
+                # Convert to Ludwig's III components first
+                e_x, e_y = polarization_tp2xy(
+                    np.degrees(p_val),  # Convert back to degrees for polarization function
+                    e_theta_freq[t_idx, p_idx],
+                    e_phi_freq[t_idx, p_idx]
+                )
                 
-                phi_hat = np.array([
-                    -sin_p,
-                    cos_p,
-                    0
-                ])
-                
-                # Get field values
-                e_theta_val = e_theta_freq[t_idx, p_idx]
-                e_phi_val = e_phi_freq[t_idx, p_idx]
-                
-                # Convert field to Cartesian components
-                e_x = e_theta_val * theta_hat[0] + e_phi_val * phi_hat[0]
-                e_y = e_theta_val * theta_hat[1] + e_phi_val * phi_hat[1]
-                e_z = e_theta_val * theta_hat[2] + e_phi_val * phi_hat[2]
+                # In spherical coordinates, the z-component is zero for far-field pattern
+                e_z = 0
                 
                 # Store the point and field values
                 points.append([x, y, z])
@@ -1264,6 +1252,8 @@ def rotate_coordinate_system(self, target_theta: float, target_phi: float,
         e_z_values = np.array(e_z_values)
         
         # Create interpolation functions
+        from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+        
         # Linear interpolation for the vector field components
         e_x_interp = LinearNDInterpolator(points, e_x_values, fill_value=0)
         e_y_interp = LinearNDInterpolator(points, e_y_values, fill_value=0)
@@ -1312,28 +1302,22 @@ def rotate_coordinate_system(self, target_theta: float, target_phi: float,
                     e_y_rot = e_y_interp_nn(rot_point)
                     e_z_rot = e_z_interp_nn(rot_point)
                 
-                # Rotated field vector
+                # Create the field vector in the rotated system
                 e_vec_rot = np.array([e_x_rot, e_y_rot, e_z_rot])
                 
-                # Apply inverse rotation to the field vector
+                # Rotate the field vector back to the original coordinate system
                 e_vec_orig = inv_rot_matrix @ e_vec_rot
                 
-                # Calculate local basis vectors at original point
-                theta_hat_orig = np.array([
-                    cos_t * cos_p,
-                    cos_t * sin_p,
-                    -sin_t
-                ])
+                # Extract the x and y components in the original system
+                e_x_orig = e_vec_orig[0]
+                e_y_orig = e_vec_orig[1]
                 
-                phi_hat_orig = np.array([
-                    -sin_p,
-                    cos_p,
-                    0
-                ])
-                
-                # Project rotated field onto original basis vectors
-                e_theta_new[freq_idx, t_idx, p_idx] = np.dot(e_vec_orig, theta_hat_orig)
-                e_phi_new[freq_idx, t_idx, p_idx] = np.dot(e_vec_orig, phi_hat_orig)
+                # Convert Ludwig's III (e_x, e_y) back to spherical (e_theta, e_phi)
+                e_theta_new[freq_idx, t_idx, p_idx], e_phi_new[freq_idx, t_idx, p_idx] = polarization_xy2pt(
+                    np.degrees(p_val),  # Convert back to degrees for polarization function
+                    e_x_orig,
+                    e_y_orig
+                )
     
     # Update the pattern data
     self.data['e_theta'].values = e_theta_new
