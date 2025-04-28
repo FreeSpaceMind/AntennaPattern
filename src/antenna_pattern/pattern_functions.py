@@ -1147,28 +1147,47 @@ def rotate_phi(pattern_obj, phi_offset: float) -> None:
             e_theta_slice = e_theta[f_idx, t_idx, :]
             e_phi_slice = e_phi[f_idx, t_idx, :]
             
+            # Extract magnitude and phase
+            e_theta_mag = np.abs(e_theta_slice)
+            e_theta_phase = np.angle(e_theta_slice)
+            e_phi_mag = np.abs(e_phi_slice)
+            e_phi_phase = np.angle(e_phi_slice)
+            
+            # Unwrap phases to ensure smooth interpolation
+            e_theta_phase_unwrapped = np.unwrap(e_theta_phase)
+            e_phi_phase_unwrapped = np.unwrap(e_phi_phase)
+            
             # Calculate new phi coordinates (shifted by phi_offset)
-            # For phi rotation, we simply offset the phi values
             phi_new = (phi - phi_offset) % 360
             
             # Extend phi range to handle periodicity correctly
             phi_ext = np.concatenate([phi - 360, phi, phi + 360])
-            e_theta_ext = np.tile(e_theta_slice, 3)
-            e_phi_ext = np.tile(e_phi_slice, 3)
             
-            # Create interpolation functions for real and imaginary parts
-            # Use linear interpolation for robustness
-            theta_real_interp = interp1d(phi_ext, np.real(e_theta_ext), kind='linear')
-            theta_imag_interp = interp1d(phi_ext, np.imag(e_theta_ext), kind='linear')
-            phi_real_interp = interp1d(phi_ext, np.real(e_phi_ext), kind='linear')
-            phi_imag_interp = interp1d(phi_ext, np.imag(e_phi_ext), kind='linear')
+            # Create extended magnitude and phase arrays
+            e_theta_mag_ext = np.tile(e_theta_mag, 3)
+            e_theta_phase_ext = np.tile(e_theta_phase_unwrapped, 3)
+            e_theta_phase_ext[len(phi):2*len(phi)] = e_theta_phase_unwrapped  # Center section has original unwrapped phase
+            e_theta_phase_ext[:len(phi)] = e_theta_phase_unwrapped - 2*np.pi  # First section offset by -2π
+            e_theta_phase_ext[2*len(phi):] = e_theta_phase_unwrapped + 2*np.pi  # Last section offset by +2π
+            
+            e_phi_mag_ext = np.tile(e_phi_mag, 3)
+            e_phi_phase_ext = np.tile(e_phi_phase_unwrapped, 3)
+            e_phi_phase_ext[len(phi):2*len(phi)] = e_phi_phase_unwrapped  # Center section has original unwrapped phase
+            e_phi_phase_ext[:len(phi)] = e_phi_phase_unwrapped - 2*np.pi  # First section offset by -2π
+            e_phi_phase_ext[2*len(phi):] = e_phi_phase_unwrapped + 2*np.pi  # Last section offset by +2π
+            
+            # Create interpolation functions for magnitude and phase
+            theta_mag_interp = interp1d(phi_ext, e_theta_mag_ext, kind='linear')
+            theta_phase_interp = interp1d(phi_ext, e_theta_phase_ext, kind='linear')
+            phi_mag_interp = interp1d(phi_ext, e_phi_mag_ext, kind='linear')
+            phi_phase_interp = interp1d(phi_ext, e_phi_phase_ext, kind='linear')
             
             # Interpolate at the new coordinates
             e_theta_rotated[f_idx, t_idx, :] = (
-                theta_real_interp(phi_new) + 1j * theta_imag_interp(phi_new)
+                theta_mag_interp(phi_new) * np.exp(1j * theta_phase_interp(phi_new))
             )
             e_phi_rotated[f_idx, t_idx, :] = (
-                phi_real_interp(phi_new) + 1j * phi_imag_interp(phi_new)
+                phi_mag_interp(phi_new) * np.exp(1j * phi_phase_interp(phi_new))
             )
     
     # Update the pattern data
