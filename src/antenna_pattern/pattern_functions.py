@@ -1208,8 +1208,6 @@ def rotate_phi(pattern_obj, phi_offset: float) -> None:
                     ])
                 else:
                     # Fallback if no matching negative theta found
-                    logger.warning(f"No matching negative theta found for theta={t_val}. "
-                                  f"Using extrapolation for phi > 180.")
                     
                     # Create extended phi range by duplicating and shifting
                     phi_ext = np.concatenate([phi - 360, phi, phi + 360])
