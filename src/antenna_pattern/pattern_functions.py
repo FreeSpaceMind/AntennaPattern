@@ -1232,6 +1232,7 @@ def rotate_coordinate_system(self, target_theta: float, target_phi: float,
                 z = cos_t
                 
                 # Spherical unit vectors at this point
+                # These are column vectors, shape (3,)
                 theta_hat = np.array([
                     cos_t * cos_p,
                     cos_t * sin_p,
@@ -1249,6 +1250,7 @@ def rotate_coordinate_system(self, target_theta: float, target_phi: float,
                 e_phi_val = e_phi_freq[t_idx, p_idx]
                 
                 # Convert field to Cartesian components
+                # These are scalar multiplications followed by vector addition
                 e_x = e_theta_val * theta_hat[0] + e_phi_val * phi_hat[0]
                 e_y = e_theta_val * theta_hat[1] + e_phi_val * phi_hat[1]
                 e_z = e_theta_val * theta_hat[2] + e_phi_val * phi_hat[2]
@@ -1314,13 +1316,14 @@ def rotate_coordinate_system(self, target_theta: float, target_phi: float,
                     e_y_rot = e_y_interp_nn(rot_point)
                     e_z_rot = e_z_interp_nn(rot_point)
                 
-                # Rotated field vector
-                e_vec_rot = np.array([e_x_rot, e_y_rot, e_z_rot])
+                # Rotated field vector - ensuring it's a 1D array, shape (3,)
+                e_vec_rot = np.array([e_x_rot, e_y_rot, e_z_rot]).flatten()
                 
                 # Apply inverse rotation to the field vector
                 e_vec_orig = inv_rot_matrix @ e_vec_rot
                 
                 # Calculate local basis vectors at original point
+                # These are 1D arrays with shape (3,)
                 theta_hat_orig = np.array([
                     cos_t * cos_p,
                     cos_t * sin_p,
@@ -1333,7 +1336,8 @@ def rotate_coordinate_system(self, target_theta: float, target_phi: float,
                     0
                 ])
                 
-                # Project rotated field onto original basis vectors
+                # Project rotated field onto original basis vectors using dot product
+                # Both vectors are 1D arrays of shape (3,), so dot product is a scalar
                 e_theta_new[freq_idx, t_idx, p_idx] = np.dot(e_vec_orig, theta_hat_orig)
                 e_phi_new[freq_idx, t_idx, p_idx] = np.dot(e_vec_orig, phi_hat_orig)
     
