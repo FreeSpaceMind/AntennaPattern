@@ -1125,7 +1125,7 @@ def rotate_phi(pattern_obj, phi_offset: float) -> None:
     
     Args:
         pattern_obj: AntennaPattern object to modify
-        phi_offset: Angle in degrees to rotate the pattern
+        phi_offset: Angle in degrees to rotate the pattern (positive is counterclockwise)
     """
     from scipy.interpolate import interp1d
     
@@ -1136,72 +1136,32 @@ def rotate_phi(pattern_obj, phi_offset: float) -> None:
     e_theta = pattern_obj.data.e_theta.values.copy()
     e_phi = pattern_obj.data.e_phi.values.copy()
     
-    # Determine coordinate system type
-    is_central = np.min(theta) < 0
-    
-    # Check for full phi coverage
-    phi_step = np.median(np.diff(phi)) if len(phi) > 1 else 0
-    if phi_step > 0:
-        expected_last_phi = phi[0] + np.floor((360 - 1e-5) / phi_step) * phi_step
-        actual_last_phi = phi[-1]
-        is_full_coverage = np.isclose(actual_last_phi % 360, expected_last_phi % 360, rtol=1e-5, atol=phi_step/10)
-    else:
-        is_full_coverage = False
-    
     # Create new arrays for rotated data
     e_theta_rotated = np.zeros_like(e_theta)
     e_phi_rotated = np.zeros_like(e_phi)
     
-    # For each frequency and theta angle
+    # Process each frequency and theta angle
     for f_idx in range(len(frequencies)):
         for t_idx in range(len(theta)):
-            # Current theta value - direction depends on whether above or below horizon
-            # This is key to fixing the mirroring issue
-            t_val = theta[t_idx]
-            
-            # Get current electric field component values
+            # Get current field slices
             e_theta_slice = e_theta[f_idx, t_idx, :]
             e_phi_slice = e_phi[f_idx, t_idx, :]
             
             # Calculate new phi coordinates (shifted by phi_offset)
-            # The direction of rotation depends on the hemisphere:
-            # - In Northern hemisphere (theta < 90°), positive phi_offset is counterclockwise
-            # - In Southern hemisphere (theta > 90°), need to reverse direction
-            # For central coordinates, use absolute theta value to determine hemisphere
-            if is_central:
-                hemisphere_factor = np.sign(np.cos(np.radians(t_val)))
-            else:
-                hemisphere_factor = 1.0 if t_val < 90.0 else -1.0
-                
-            # Apply direction-corrected offset
-            effective_offset = hemisphere_factor * phi_offset
-            phi_new = (phi - effective_offset) % 360
+            # For phi rotation, we simply offset the phi values
+            phi_new = (phi - phi_offset) % 360
             
-            if is_full_coverage:
-                # Use extended phi range for proper periodic interpolation
-                phi_ext = np.concatenate([phi - 360, phi, phi + 360])
-                e_theta_ext = np.tile(e_theta_slice, 3)
-                e_phi_ext = np.tile(e_phi_slice, 3)
-                
-                # Create interpolation functions - using cubic for smoother results
-                theta_real_interp = interp1d(phi_ext, np.real(e_theta_ext), kind='cubic')
-                theta_imag_interp = interp1d(phi_ext, np.imag(e_theta_ext), kind='cubic')
-                phi_real_interp = interp1d(phi_ext, np.real(e_phi_ext), kind='cubic')
-                phi_imag_interp = interp1d(phi_ext, np.imag(e_phi_ext), kind='cubic')
-            else:
-                # For partial coverage, use extrapolation
-                theta_real_interp = interp1d(phi, np.real(e_theta_slice), 
-                                          bounds_error=False, fill_value='extrapolate',
-                                          kind='cubic' if len(phi) > 3 else 'linear')
-                theta_imag_interp = interp1d(phi, np.imag(e_theta_slice),
-                                          bounds_error=False, fill_value='extrapolate',
-                                          kind='cubic' if len(phi) > 3 else 'linear')
-                phi_real_interp = interp1d(phi, np.real(e_phi_slice),
-                                        bounds_error=False, fill_value='extrapolate',
-                                        kind='cubic' if len(phi) > 3 else 'linear')
-                phi_imag_interp = interp1d(phi, np.imag(e_phi_slice),
-                                        bounds_error=False, fill_value='extrapolate',
-                                        kind='cubic' if len(phi) > 3 else 'linear')
+            # Extend phi range to handle periodicity correctly
+            phi_ext = np.concatenate([phi - 360, phi, phi + 360])
+            e_theta_ext = np.tile(e_theta_slice, 3)
+            e_phi_ext = np.tile(e_phi_slice, 3)
+            
+            # Create interpolation functions for real and imaginary parts
+            # Use linear interpolation for robustness
+            theta_real_interp = interp1d(phi_ext, np.real(e_theta_ext), kind='linear')
+            theta_imag_interp = interp1d(phi_ext, np.imag(e_theta_ext), kind='linear')
+            phi_real_interp = interp1d(phi_ext, np.real(e_phi_ext), kind='linear')
+            phi_imag_interp = interp1d(phi_ext, np.imag(e_phi_ext), kind='linear')
             
             # Interpolate at the new coordinates
             e_theta_rotated[f_idx, t_idx, :] = (
@@ -1210,13 +1170,6 @@ def rotate_phi(pattern_obj, phi_offset: float) -> None:
             e_phi_rotated[f_idx, t_idx, :] = (
                 phi_real_interp(phi_new) + 1j * phi_imag_interp(phi_new)
             )
-            
-            # Apply hemisphere-dependent sign changes to maintain correct
-            # relationships between the components
-            if hemisphere_factor < 0:
-                # In Southern hemisphere, e_phi component gets a sign flip
-                # when phi is rotated (due to spherical coordinate system properties)
-                e_phi_rotated[f_idx, t_idx, :] *= -1
     
     # Update the pattern data
     pattern_obj.data['e_theta'].values = e_theta_rotated
@@ -1234,6 +1187,5 @@ def rotate_phi(pattern_obj, phi_offset: float) -> None:
             pattern_obj.metadata['operations'] = []
         pattern_obj.metadata['operations'].append({
             'type': 'rotate_phi',
-            'phi_offset': float(phi_offset),
-            'coordinate_system': 'central' if is_central else 'sided'
+            'phi_offset': float(phi_offset)
         })
