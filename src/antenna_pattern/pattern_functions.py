@@ -1255,10 +1255,11 @@ def rotate_coordinate_system(self, target_theta: float, target_phi: float,
                 phi_hat_rot_z = 0
                 
                 # Get field values at rotated position through interpolation
-                e_theta_mag_val = e_theta_mag_interp(theta_rot, phi_rot, grid=False)[0]
-                e_phi_mag_val = e_phi_mag_interp(theta_rot, phi_rot, grid=False)[0]
-                e_theta_phase_val = e_theta_phase_interp(theta_rot, phi_rot, grid=False)[0]
-                e_phi_phase_val = e_phi_phase_interp(theta_rot, phi_rot, grid=False)[0]
+                # Fix: RectBivariateSpline.ev() evaluates at specified points
+                e_theta_mag_val = float(e_theta_mag_interp.ev(theta_rot, phi_rot))
+                e_phi_mag_val = float(e_phi_mag_interp.ev(theta_rot, phi_rot))
+                e_theta_phase_val = float(e_theta_phase_interp.ev(theta_rot, phi_rot))
+                e_phi_phase_val = float(e_phi_phase_interp.ev(theta_rot, phi_rot))
                 
                 # Construct complex field at rotated position
                 e_theta_rot = e_theta_mag_val * np.exp(1j * e_theta_phase_val)
