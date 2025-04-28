@@ -12,7 +12,7 @@ from .pattern_functions import(
     unwrap_phase, swap_polarization_axes, apply_mars, 
     normalize_phase, change_polarization, translate,
     scale_pattern, transform_coordinates, mirror_pattern,
-    normalize_at_boresight, rotate_coordinate_system
+    normalize_at_boresight, rotate_phi
 )
 from .utilities import find_nearest
 from .polarization import (
@@ -512,6 +512,16 @@ class AntennaPattern:
         """
         # Delegate to the pattern_functions implementation
         transform_coordinates(self, format)
+
+    def rotate_phi(self, phi_offset: float) -> None:
+        """
+        Rotate the antenna pattern around the z-axis by the specified phi angle offset.
+        
+        Args:
+            phi_offset: Angle in degrees to rotate the pattern
+        """
+        # Delegate to the pattern_functions implementation
+        rotate_phi(self, phi_offset)
     
     def split_patterns(self) -> Tuple['AntennaPattern', 'AntennaPattern']:
         """

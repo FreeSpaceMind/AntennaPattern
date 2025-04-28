@@ -5,7 +5,7 @@ These functions contained here to shorten the AntennaPattern definition file (pa
 
 import numpy as np
 from typing import Tuple, Union, Optional, List, Any, Callable
-from scipy.interpolate import interp1d, LinearNDInterpolator, NearestNDInterpolator
+from scipy.interpolate import interp1d
 
 from .utilities import lightspeed, frequency_to_wavelength
 from .polarization import polarization_tp2xy, polarization_tp2rl, polarization_xy2pt
@@ -1117,4 +1117,120 @@ def normalize_at_boresight(pattern_obj) -> None:
             'boresight_theta': float(theta[theta0_idx]),
             'normalized_components': ['e_theta', 'e_phi'],
             'normalized_attributes': ['magnitude', 'phase']
+        })
+
+def rotate_phi(pattern_obj, phi_offset: float) -> None:
+    """
+    Rotate the antenna pattern around the z-axis by the specified phi angle offset.
+    
+    This function shifts all pattern data along the phi dimension while preserving
+    the original phi vector. The rotation is achieved through interpolation.
+    
+    Args:
+        pattern_obj: AntennaPattern object to modify
+        phi_offset: Angle in degrees to rotate the pattern
+        
+    Note:
+        Positive phi_offset corresponds to counter-clockwise rotation when 
+        looking down the z-axis.
+    """
+    
+    # Get pattern data
+    frequencies = pattern_obj.frequencies
+    theta = pattern_obj.theta_angles
+    phi = pattern_obj.phi_angles
+    
+    # Check for central coordinates
+    is_central = np.min(theta) < 0
+    orig_format = 'central' if is_central else 'sided'
+    
+    # If central coordinates, transform to sided first
+    if is_central:
+        transform_coordinates(pattern_obj, 'sided')
+        
+    # After potential transformation, get the updated data
+    e_theta = pattern_obj.data.e_theta.values.copy()
+    e_phi = pattern_obj.data.e_phi.values.copy()
+    phi = pattern_obj.phi_angles  # Get potentially updated phi values
+    
+    # Check if phi covers a full circle
+    phi_step = np.median(np.diff(phi))  # Get the typical step size
+    expected_last_phi = phi[0] + 360 - phi_step  # Expected value of the last phi point
+    actual_last_phi = phi[-1]  # Actual last phi value
+    
+    # Allow for small floating point errors
+    is_full_coverage = np.isclose(actual_last_phi, expected_last_phi, rtol=1e-5, atol=phi_step/10)
+    
+    # Create new arrays for rotated data
+    e_theta_rotated = np.zeros_like(e_theta)
+    e_phi_rotated = np.zeros_like(e_phi)
+    
+    # Process each frequency and theta angle
+    for f_idx in range(len(frequencies)):
+        for t_idx in range(len(theta)):
+            # Extract data for the current frequency and theta angle
+            e_theta_slice = e_theta[f_idx, t_idx, :]
+            e_phi_slice = e_phi[f_idx, t_idx, :]
+            
+            # Calculate new phi coordinates (shifted by phi_offset)
+            phi_new = (phi - phi_offset) % 360
+            
+            if is_full_coverage:
+                # For full coverage, we can use periodic interpolation
+                # We extend the data for proper periodic handling
+                phi_ext = np.concatenate([phi - 360, phi, phi + 360])
+                e_theta_ext = np.tile(e_theta_slice, 3)
+                e_phi_ext = np.tile(e_phi_slice, 3)
+                
+                # Create interpolation functions - using cubic for smoother results
+                theta_real_interp = interp1d(phi_ext, np.real(e_theta_ext), kind='cubic')
+                theta_imag_interp = interp1d(phi_ext, np.imag(e_theta_ext), kind='cubic')
+                phi_real_interp = interp1d(phi_ext, np.real(e_phi_ext), kind='cubic')
+                phi_imag_interp = interp1d(phi_ext, np.imag(e_phi_ext), kind='cubic')
+            else:
+                # For partial coverage, use best effort interpolation
+                # with extrapolation for out-of-range values
+                theta_real_interp = interp1d(phi, np.real(e_theta_slice), 
+                                          bounds_error=False, fill_value='extrapolate',
+                                          kind='cubic' if len(phi) > 3 else 'linear')
+                theta_imag_interp = interp1d(phi, np.imag(e_theta_slice),
+                                          bounds_error=False, fill_value='extrapolate',
+                                          kind='cubic' if len(phi) > 3 else 'linear')
+                phi_real_interp = interp1d(phi, np.real(e_phi_slice),
+                                        bounds_error=False, fill_value='extrapolate',
+                                        kind='cubic' if len(phi) > 3 else 'linear')
+                phi_imag_interp = interp1d(phi, np.imag(e_phi_slice),
+                                        bounds_error=False, fill_value='extrapolate',
+                                        kind='cubic' if len(phi) > 3 else 'linear')
+            
+            # Interpolate at the new coordinates
+            e_theta_rotated[f_idx, t_idx, :] = (
+                theta_real_interp(phi_new) + 1j * theta_imag_interp(phi_new)
+            )
+            e_phi_rotated[f_idx, t_idx, :] = (
+                phi_real_interp(phi_new) + 1j * phi_imag_interp(phi_new)
+            )
+    
+    # Update the pattern data
+    pattern_obj.data['e_theta'].values = e_theta_rotated
+    pattern_obj.data['e_phi'].values = e_phi_rotated
+    
+    # Recalculate derived components e_co and e_cx
+    pattern_obj.assign_polarization(pattern_obj.polarization)
+    
+    # Convert back to original coordinate format if needed
+    if is_central:
+        transform_coordinates(pattern_obj, 'central')
+    
+    # Clear cache
+    pattern_obj.clear_cache()
+    
+    # Update metadata
+    if hasattr(pattern_obj, 'metadata') and pattern_obj.metadata is not None:
+        if 'operations' not in pattern_obj.metadata:
+            pattern_obj.metadata['operations'] = []
+        pattern_obj.metadata['operations'].append({
+            'type': 'rotate_phi',
+            'phi_offset': float(phi_offset),
+            'coordinate_transform': True if is_central else False
         })
