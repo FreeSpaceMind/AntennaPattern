@@ -1244,7 +1244,8 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     This function physically rotates the coordinate system around the z-axis,
     which correctly handles the transformation in spherical coordinates.
     It preserves both magnitude and phase characteristics by directly transforming
-    the E-field vector components.
+    the E-field vector components and includes phase normalization to ensure
+    all phi cuts align properly at boresight.
     
     Args:
         pattern_obj: AntennaPattern object to modify
@@ -1262,12 +1263,12 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     # Convert phi_offset to radians for calculations
     phi_offset_rad = np.radians(phi_offset)
     
-    # Create a new sorted phi array to ensure consistent ordering
-    # We keep the original phi grid but the field values get rotated
-    
     # Initialize output arrays
     e_theta_new = np.zeros_like(e_theta, dtype=complex)
     e_phi_new = np.zeros_like(e_phi, dtype=complex)
+    
+    # Find boresight index for phase normalization
+    boresight_idx = np.argmin(np.abs(theta))
     
     # Process each frequency
     for f_idx in range(len(frequency)):
@@ -1327,17 +1328,30 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
                     e_theta_val = e_theta1 * (1 - weight) + e_theta2 * weight
                     e_phi_val = e_phi1 * (1 - weight) + e_phi2 * weight
                 
-                # Now we need to transform the field components to account for
-                # the rotated coordinate system
-                
-                # In spherical coordinates, when you rotate around the z-axis:
-                # - e_r (radial) component is unchanged
-                # - e_theta component is unchanged (still points in theta direction)
-                # - e_phi component is unchanged (still points in phi direction)
-                
-                # So we can directly assign the interpolated values
+                # Assign the interpolated values
                 e_theta_new[f_idx, t_idx, p_out_idx] = e_theta_val
                 e_phi_new[f_idx, t_idx, p_out_idx] = e_phi_val
+        
+        # Phase normalization to ensure all phi cuts align at boresight
+        # We'll calculate a reference phase (from the first phi cut or median)
+        ref_phase_theta = np.angle(e_theta_new[f_idx, boresight_idx, 0])
+        ref_phase_phi = np.angle(e_phi_new[f_idx, boresight_idx, 0])
+        
+        # Apply phase correction to each phi cut
+        for p_idx in range(len(phi)):
+            # Calculate phase difference at boresight
+            current_phase_theta = np.angle(e_theta_new[f_idx, boresight_idx, p_idx])
+            phase_diff_theta = ref_phase_theta - current_phase_theta
+            # Normalize to [-π, π]
+            phase_diff_theta = (phase_diff_theta + np.pi) % (2 * np.pi) - np.pi
+            
+            # Apply the same phase correction to e_phi to maintain consistency
+            # This preserves the relationship between e_theta and e_phi
+            
+            # Apply phase correction to this entire phi cut
+            correction_factor = np.exp(1j * phase_diff_theta)
+            e_theta_new[f_idx, :, p_idx] *= correction_factor
+            e_phi_new[f_idx, :, p_idx] *= correction_factor
     
     # Update the pattern data
     pattern_obj.data['e_theta'].values = e_theta_new
@@ -1355,5 +1369,6 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
             pattern_obj.metadata['operations'] = []
         pattern_obj.metadata['operations'].append({
             'type': 'shift_phi_origin',
-            'phi_offset': float(phi_offset)
+            'phi_offset': float(phi_offset),
+            'phase_normalized': True
         })
