@@ -1335,13 +1335,12 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
         # Phase normalization to ensure all phi cuts align at boresight
         # We'll calculate a reference phase (from the first phi cut or median)
         ref_phase_theta = np.angle(e_theta_new[f_idx, boresight_idx, 0])
-        ref_phase_phi = np.angle(e_phi_new[f_idx, boresight_idx, 0])
         
         # Apply phase correction to each phi cut
         for p_idx in range(len(phi)):
             # Calculate phase difference at boresight
             current_phase_theta = np.angle(e_theta_new[f_idx, boresight_idx, p_idx])
-            phase_diff_theta = ref_phase_theta - current_phase_theta
+            phase_diff_theta = ref_phase_theta - current_phase_theta - phi[p_idx]
             # Normalize to [-π, π]
             phase_diff_theta = (phase_diff_theta + np.pi) % (2 * np.pi) - np.pi
             
