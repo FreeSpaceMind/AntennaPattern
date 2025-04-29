@@ -12,7 +12,7 @@ from .pattern_functions import(
     unwrap_phase, swap_polarization_axes, apply_mars, 
     normalize_phase, change_polarization, translate,
     scale_pattern, transform_coordinates, mirror_pattern,
-    normalize_at_boresight, rotate_phi
+    normalize_at_boresight, shift_theta_origin
 )
 from .utilities import find_nearest
 from .polarization import (
@@ -513,16 +513,26 @@ class AntennaPattern:
         # Delegate to the pattern_functions implementation
         transform_coordinates(self, format)
 
-    def rotate_phi(self, phi_offset: float) -> None:
+    def shift_theta_origin(self, theta_offset: float) -> None:
         """
-        Rotate the antenna pattern around the z-axis by the specified phi angle offset.
+        Shifts the origin of the theta coordinate axis for all phi cuts.
+        
+        This is useful for aligning measurement data when the mechanical 
+        antenna rotation axis doesn't align with the desired coordinate 
+        system (e.g., antenna boresight).
         
         Args:
-            phi_offset: Angle in degrees to rotate the pattern
+            theta_offset: Angle in degrees to shift the theta origin.
+                        Positive values move theta=0 to the right (positive theta),
+                        negative values move theta=0 to the left (negative theta).
+                        
+        Notes:
+            - This performs interpolation along the theta axis for each phi cut
+            - Original theta grid points are preserved
         """
         # Delegate to the pattern_functions implementation
-        rotate_phi(self, phi_offset)
-    
+        shift_theta_origin(self, theta_offset)
+
     def split_patterns(self) -> Tuple['AntennaPattern', 'AntennaPattern']:
         """
         Split antenna pattern into two separate patterns if both conditions are met:
