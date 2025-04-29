@@ -1244,10 +1244,6 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     This is useful for aligning measurement data when the mechanical antenna rotation 
     reference doesn't align with the desired coordinate system (e.g., principal planes).
     
-    The function works by converting to 3D Cartesian coordinates, performing a rotation
-    about the z-axis, and then converting back to spherical coordinates. This approach
-    correctly preserves the spherical nature of the coordinate system.
-    
     Args:
         pattern_obj: AntennaPattern object to modify
         phi_offset: Angle in degrees to shift the phi origin.
@@ -1265,97 +1261,70 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     e_theta_new = np.zeros_like(e_theta, dtype=complex)
     e_phi_new = np.zeros_like(e_phi, dtype=complex)
     
-    # Convert phi offset to radians
-    phi_offset_rad = np.radians(phi_offset)
-    
-    # Create rotation matrix for z-axis rotation
-    # This rotates the coordinate system, not the fields
-    rot_matrix = np.array([
-        [np.cos(phi_offset_rad), -np.sin(phi_offset_rad), 0],
-        [np.sin(phi_offset_rad), np.cos(phi_offset_rad), 0],
-        [0, 0, 1]
-    ])
-    
     # Process each frequency separately
     for f_idx in range(len(frequency)):
-        # Create meshgrid of theta/phi points in original coordinate system
-        theta_mesh, phi_mesh = np.meshgrid(np.radians(theta), np.radians(phi), indexing='ij')
+        # For each phi cut, we'll use a simpler approach - directly shift the phi value
+        # We'll create a new set of phi values that are shifted
+        shifted_phi = np.mod(phi + phi_offset, 360.0)
         
-        # Convert to 3D Cartesian coordinates on unit sphere
-        x = np.sin(theta_mesh) * np.cos(phi_mesh)
-        y = np.sin(theta_mesh) * np.sin(phi_mesh)
-        z = np.cos(theta_mesh)
+        # For each theta value, we'll interpolate e_x and e_y components across phi
+        # First, we need to convert e_theta and e_phi to e_x and e_y for all theta/phi
+        e_x = np.zeros((len(theta), len(phi)), dtype=complex)
+        e_y = np.zeros((len(theta), len(phi)), dtype=complex)
         
-        # Apply rotation to the coordinate system
-        # For each point in the original system, find the corresponding point in the rotated system
-        coords = np.stack([x.flatten(), y.flatten(), z.flatten()], axis=1)
-        rotated_coords = np.dot(rot_matrix, coords.T).T
+        # Convert each theta ring separately to avoid broadcast issues
+        for t_idx in range(len(theta)):
+            e_x[t_idx], e_y[t_idx] = polarization_tp2xy(
+                phi, e_theta[f_idx, t_idx], e_phi[f_idx, t_idx]
+            )
         
-        # Reshape back to grid
-        x_rot = rotated_coords[:, 0].reshape(x.shape)
-        y_rot = rotated_coords[:, 1].reshape(y.shape)
-        z_rot = rotated_coords[:, 2].reshape(z.shape)
-        
-        # Convert rotated coordinates back to spherical
-        theta_rot = np.arccos(z_rot)
-        phi_rot = np.arctan2(y_rot, x_rot)
-        # Ensure phi is in [0, 2π]
-        phi_rot = np.mod(phi_rot, 2*np.pi)
-        
-        # For each theta/phi point in original grid, we need to find field value
-        # at corresponding point in rotated coordinate system using interpolation
-        
-        # Convert the field components to Cartesian for interpolation
-        e_x, e_y = polarization_tp2xy(phi, e_theta[f_idx], e_phi[f_idx])
-        
-        # Create flattened arrays for interpolation
-        points = np.column_stack([theta_mesh.flatten(), phi_mesh.flatten()])
-        
-        # Create interpolation functions for Cartesian field components
-        # We need to perform interpolation in spherical coordinates (theta, phi)
-        # but we interpolate the Cartesian field components (e_x, e_y)
-        
-        # Real and imaginary parts of e_x
-        e_x_real_interp = LinearNDInterpolator(
-            points, 
-            np.real(e_x).flatten(),
-            fill_value=0
-        )
-        e_x_imag_interp = LinearNDInterpolator(
-            points, 
-            np.imag(e_x).flatten(),
-            fill_value=0
-        )
-        
-        # Real and imaginary parts of e_y
-        e_y_real_interp = LinearNDInterpolator(
-            points, 
-            np.real(e_y).flatten(),
-            fill_value=0
-        )
-        e_y_imag_interp = LinearNDInterpolator(
-            points, 
-            np.imag(e_y).flatten(),
-            fill_value=0
-        )
-        
-        # Evaluate the interpolation functions at the rotated coordinates
-        # We need the field values in the rotated coordinate system
-        rot_points = np.column_stack([theta_rot.flatten(), phi_rot.flatten()])
-        
-        e_x_real_new = e_x_real_interp(rot_points).reshape(e_x.shape)
-        e_x_imag_new = e_x_imag_interp(rot_points).reshape(e_x.shape)
-        e_y_real_new = e_y_real_interp(rot_points).reshape(e_y.shape)
-        e_y_imag_new = e_y_imag_interp(rot_points).reshape(e_y.shape)
-        
-        # Combine real and imaginary parts
-        e_x_new = e_x_real_new + 1j * e_x_imag_new
-        e_y_new = e_y_real_new + 1j * e_y_imag_new
-        
-        # Convert back to spherical components
-        for p_idx in range(len(phi)):
-            e_theta_new[f_idx, :, p_idx], e_phi_new[f_idx, :, p_idx] = polarization_xy2pt(
-                phi, e_x_new[:, p_idx], e_y_new[:, p_idx]
+        # Now for each theta value, interpolate e_x and e_y along phi
+        for t_idx in range(len(theta)):
+            # Extract e_x and e_y for this theta ring
+            e_x_ring = e_x[t_idx]
+            e_y_ring = e_y[t_idx]
+            
+            # We'll interpolate magnitude and phase separately for better results
+            mag_x = np.abs(e_x_ring)
+            phase_x = np.unwrap(np.angle(e_x_ring))
+            
+            mag_y = np.abs(e_y_ring)
+            phase_y = np.unwrap(np.angle(e_y_ring))
+            
+            # Create extended phi arrays for periodic interpolation
+            ext_phi = np.concatenate([phi - 360.0, phi, phi + 360.0])
+            
+            # Extend magnitude and phase arrays
+            ext_mag_x = np.concatenate([mag_x, mag_x, mag_x])
+            ext_phase_x = np.concatenate([phase_x - 2*np.pi, phase_x, phase_x + 2*np.pi])
+            
+            ext_mag_y = np.concatenate([mag_y, mag_y, mag_y])
+            ext_phase_y = np.concatenate([phase_y - 2*np.pi, phase_y, phase_y + 2*np.pi])
+            
+            # Create interpolation functions
+            mag_x_interp = interp1d(ext_phi, ext_mag_x, kind='linear', bounds_error=False, fill_value='extrapolate')
+            phase_x_interp = interp1d(ext_phi, ext_phase_x, kind='cubic', bounds_error=False, fill_value='extrapolate')
+            
+            mag_y_interp = interp1d(ext_phi, ext_mag_y, kind='linear', bounds_error=False, fill_value='extrapolate')
+            phase_y_interp = interp1d(ext_phi, ext_phase_y, kind='cubic', bounds_error=False, fill_value='extrapolate')
+            
+            # Get new values at the original phi positions but using shifted data
+            # The key is to evaluate at phi - phi_offset to get the shifted values
+            target_phi = np.mod(phi - phi_offset, 360.0)  # This is where we want to interpolate
+            
+            mag_x_new = mag_x_interp(target_phi)
+            phase_x_new = phase_x_interp(target_phi)
+            
+            mag_y_new = mag_y_interp(target_phi)
+            phase_y_new = phase_y_interp(target_phi)
+            
+            # Recombine into complex values
+            e_x_new = mag_x_new * np.exp(1j * phase_x_new)
+            e_y_new = mag_y_new * np.exp(1j * phase_y_new)
+            
+            # Convert back to spherical components for this theta ring
+            e_theta_new[f_idx, t_idx], e_phi_new[f_idx, t_idx] = polarization_xy2pt(
+                phi, e_x_new, e_y_new
             )
     
     # Update the pattern data
