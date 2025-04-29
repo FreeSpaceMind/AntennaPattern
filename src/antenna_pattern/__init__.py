@@ -15,7 +15,7 @@ from .pattern import AntennaPattern
 from .ant_io import read_cut, read_ffd, load_pattern_npz, save_pattern_npz
 from .polarization import (
     polarization_tp2xy,
-    polarization_xy2pt,
+    polarization_xy2tp,
     polarization_tp2rl,
     polarization_rl2xy,
     polarization_rl2tp
@@ -68,7 +68,7 @@ __all__ = [
     'load_pattern_npz',
     'save_pattern_npz',
     'polarization_tp2xy',
-    'polarization_xy2pt',
+    'polarization_xy2tp',
     'polarization_tp2rl',
     'polarization_rl2xy',
     'polarization_rl2tp',

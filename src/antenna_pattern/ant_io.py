@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Optional, Union, Any, Tuple
 
 from .pattern import AntennaPattern
-from .polarization import polarization_rl2tp, polarization_xy2pt
+from .polarization import polarization_rl2tp, polarization_xy2tp
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -310,7 +310,7 @@ def read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end:
     elif icomp == 3:
         # Polarization is linear co and cross (x and y) - vectorized conversion
         for phi_idx, phi_val in enumerate(unique_phi):
-            theta_slice, phi_slice = polarization_xy2pt(
+            theta_slice, phi_slice = polarization_xy2tp(
                 phi_val, 
                 e_theta[:, :, phi_idx], 
                 e_phi[:, :, phi_idx]

@@ -47,7 +47,7 @@ def polarization_tp2xy(phi: RealArray, e_theta: ComplexArray, e_phi: ComplexArra
     return e_x, e_y
 
 
-def polarization_xy2pt(phi: RealArray, e_x: ComplexArray, e_y: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
+def polarization_xy2tp(phi: RealArray, e_x: ComplexArray, e_y: ComplexArray) -> Tuple[ComplexArray, ComplexArray]:
     """
     Convert Ludwig's III X and Y field components to spherical field components.
     
@@ -134,6 +134,6 @@ def polarization_rl2tp(phi: RealArray, e_right: ComplexArray, e_left: ComplexArr
     e_x, e_y = polarization_rl2xy(e_right, e_left)
     
     # Then convert to theta,phi
-    e_theta, e_phi = polarization_xy2pt(phi, e_x, e_y)
+    e_theta, e_phi = polarization_xy2tp(phi, e_x, e_y)
     
     return e_theta, e_phi

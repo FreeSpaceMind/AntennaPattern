@@ -8,7 +8,7 @@ from typing import Tuple, Union, Optional, List, Any, Callable
 from scipy.interpolate import interp1d, LinearNDInterpolator
 
 from .utilities import lightspeed, frequency_to_wavelength
-from .polarization import polarization_tp2xy, polarization_tp2rl, polarization_xy2pt
+from .polarization import polarization_tp2xy, polarization_tp2rl, polarization_xy2tp
 
 def change_polarization(pattern_obj, new_polarization: str) -> None:
     """
@@ -310,7 +310,7 @@ def swap_polarization_axes(pattern_obj) -> None:
     
     # Convert to x/y and back to swap the axes
     e_x, e_y = polarization_tp2xy(phi, e_theta, e_phi)
-    e_theta_new, e_phi_new = polarization_xy2pt(phi, e_y, e_x)  # Note: x and y are swapped
+    e_theta_new, e_phi_new = polarization_xy2tp(phi, e_y, e_x)  # Note: x and y are swapped
     
     # Update the pattern data directly
     pattern_obj.data['e_theta'].values = e_theta_new
@@ -1385,7 +1385,7 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
             e_y_new = mag_y_new * np.exp(1j * phase_y_new)
             
             # Convert back to spherical components for this theta ring
-            e_theta_new[f_idx, t_idx], e_phi_new[f_idx, t_idx] = polarization_xy2pt(
+            e_theta_new[f_idx, t_idx], e_phi_new[f_idx, t_idx] = polarization_xy2tp(
                 phi, e_x_new, e_y_new
             )
     
