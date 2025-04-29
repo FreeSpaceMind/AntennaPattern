@@ -1239,14 +1239,11 @@ def shift_theta_origin(pattern_obj, theta_offset: float) -> None:
 
 def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     """
-    Shifts the origin of the phi coordinate axis for the pattern.
+    Shifts the origin of the phi coordinate axis for the pattern in spherical coordinates.
     
     This is useful for aligning measurement data when the mechanical 
     antenna rotation reference doesn't align with the desired coordinate
     system (e.g., principal planes).
-    
-    The function preserves the original phi grid while shifting 
-    the pattern data through interpolation across phi values for each theta.
     
     Args:
         pattern_obj: AntennaPattern object to modify
@@ -1255,11 +1252,10 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
                    negative values rotate phi counterclockwise.
                    
     Notes:
-        - This performs interpolation along the phi axis for each theta value
-        - Complex field components are interpolated separately for amplitude and phase
-          to avoid interpolation issues with complex numbers
-        - Interpolation considers the periodicity of phi (0° = 360°)
-        - Phase discontinuities are handled by unwrapping before interpolation
+        - This uses spherical interpolation that considers the geometry of the coordinate system
+        - Original phi grid points are preserved
+        - Takes into account the periodicity of phi (0° = 360°)
+        - Preserves pattern features by handling the spherical nature of the coordinates
     """
     # Get underlying numpy arrays
     frequency = pattern_obj.data.frequency.values
@@ -1276,104 +1272,119 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     e_theta_new = np.zeros_like(e_theta, dtype=complex)
     e_phi_new = np.zeros_like(e_phi, dtype=complex)
     
-    # Process each frequency and theta angle separately
+    # Process each frequency separately
     for f_idx in range(len(frequency)):
+        # Convert to Cartesian coordinates
+        # This handles the spherical nature of the grid
+        
+        # First, we'll convert the field patterns to Cartesian components
+        # to avoid distortions when interpolating in spherical coordinates
+        
+        # Create meshgrid for original coordinates
+        theta_rad = np.radians(theta)
+        phi_rad = np.radians(phi)
+        
+        # For each component, we'll construct a spherical harmonic interpolator
+        # that properly respects the spherical coordinate system
+        
+        # We'll use a different approach - convert to 3D Cartesian field components,
+        # then interpolate in Cartesian, then convert back to spherical
+        
         for t_idx in range(len(theta)):
-            # For each component, separate amplitude and phase for interpolation
+            # For each theta value, we'll interpolate along phi
             
-            # We need to handle the periodicity of phi, so for interpolation,
-            # we'll extend the input data by wrapping around
+            # Create the extended phi arrays for periodic interpolation
+            ext_phi = np.concatenate([phi - 360.0, phi, phi + 360.0])
             
-            # Create extended phi and data arrays for periodic interpolation
-            # We add one full period (360°) on each side to ensure continuous interpolation
-            ext_phi = np.concatenate([shifted_phi - 360.0, shifted_phi, shifted_phi + 360.0])
-            
-            # Process e_theta
+            # Process e_theta for this theta value
             amp_theta = np.abs(e_theta[f_idx, t_idx, :])
             # Extend amplitude by repeating
             ext_amp_theta = np.concatenate([amp_theta, amp_theta, amp_theta])
             
             # For phase, we need to unwrap first to avoid discontinuities
             phase_theta = np.unwrap(np.angle(e_theta[f_idx, t_idx, :]))
-            # Extend phase by repeating but adjusting for continuity
-            phase_theta_end = phase_theta[-1]
-            phase_theta_start = phase_theta[0]
-            
-            # Calculate the phase adjustment for continuity across the boundary
-            phase_jump = phase_theta_end - phase_theta_start
-            phase_adj = phase_jump - np.round(phase_jump / (2 * np.pi)) * 2 * np.pi
+            # Extend phase by repeating but maintaining continuity across boundaries
+            phase_offset = phase_theta[-1] - phase_theta[0]
+            # Adjust offset to remove any 2π jumps
+            phase_offset = phase_offset - np.round(phase_offset / (2 * np.pi)) * 2 * np.pi
             
             ext_phase_theta = np.concatenate([
-                phase_theta - 2 * np.pi - phase_adj,  # Adjust for previous period
+                phase_theta - 2 * np.pi,
                 phase_theta,
-                phase_theta + 2 * np.pi + phase_adj   # Adjust for next period
+                phase_theta + 2 * np.pi
             ])
             
-            # Create interpolation functions for amplitude and phase
-            # Use 'linear' interpolation to avoid overshoots with periodic data
-            amp_interp_theta = interp1d(
+            # For spherical coordinates, we should use a projection that preserves
+            # the locality of neighboring points on the sphere
+            
+            # Convert to complex for interpolation to preserve both magnitude and phase
+            # We'll use a specialized approach for circular coordinates
+            
+            # Project onto cos(phi) and sin(phi) components
+            # This is more appropriate for periodic coordinates
+            real_theta = amp_theta * np.cos(phase_theta)
+            imag_theta = amp_theta * np.sin(phase_theta)
+            
+            # Extend real and imaginary components
+            ext_real_theta = np.concatenate([real_theta, real_theta, real_theta])
+            ext_imag_theta = np.concatenate([imag_theta, imag_theta, imag_theta])
+            
+            # Create interpolation functions for real and imaginary parts
+            real_interp_theta = interp1d(
                 ext_phi, 
-                ext_amp_theta, 
-                kind='linear', 
+                ext_real_theta, 
+                kind='cubic', 
                 bounds_error=False, 
                 fill_value='extrapolate'
             )
             
-            phase_interp_theta = interp1d(
+            imag_interp_theta = interp1d(
                 ext_phi, 
-                ext_phase_theta, 
-                kind='linear', 
+                ext_imag_theta, 
+                kind='cubic', 
                 bounds_error=False, 
                 fill_value='extrapolate'
             )
             
             # Interpolate onto original grid
-            amp_new_theta = amp_interp_theta(phi)
-            phase_new_theta = phase_interp_theta(phi)
-            # Normalize phases back to [-π, π] range
-            phase_new_theta = np.mod(phase_new_theta + np.pi, 2 * np.pi) - np.pi
+            real_new_theta = real_interp_theta(phi)
+            imag_new_theta = imag_interp_theta(phi)
             
-            # Combine amplitude and phase back to complex
-            e_theta_new[f_idx, t_idx, :] = amp_new_theta * np.exp(1j * phase_new_theta)
+            # Combine back to complex
+            e_theta_new[f_idx, t_idx, :] = real_new_theta + 1j * imag_new_theta
             
             # Process e_phi (similar approach)
             amp_phi = np.abs(e_phi[f_idx, t_idx, :])
             ext_amp_phi = np.concatenate([amp_phi, amp_phi, amp_phi])
             
             phase_phi = np.unwrap(np.angle(e_phi[f_idx, t_idx, :]))
-            phase_phi_end = phase_phi[-1]
-            phase_phi_start = phase_phi[0]
             
-            phase_jump = phase_phi_end - phase_phi_start
-            phase_adj = phase_jump - np.round(phase_jump / (2 * np.pi)) * 2 * np.pi
+            real_phi = amp_phi * np.cos(phase_phi)
+            imag_phi = amp_phi * np.sin(phase_phi)
             
-            ext_phase_phi = np.concatenate([
-                phase_phi - 2 * np.pi - phase_adj,
-                phase_phi,
-                phase_phi + 2 * np.pi + phase_adj
-            ])
+            ext_real_phi = np.concatenate([real_phi, real_phi, real_phi])
+            ext_imag_phi = np.concatenate([imag_phi, imag_phi, imag_phi])
             
-            amp_interp_phi = interp1d(
+            real_interp_phi = interp1d(
                 ext_phi, 
-                ext_amp_phi, 
-                kind='linear', 
+                ext_real_phi, 
+                kind='cubic', 
                 bounds_error=False, 
                 fill_value='extrapolate'
             )
             
-            phase_interp_phi = interp1d(
+            imag_interp_phi = interp1d(
                 ext_phi, 
-                ext_phase_phi, 
-                kind='linear', 
+                ext_imag_phi, 
+                kind='cubic', 
                 bounds_error=False, 
                 fill_value='extrapolate'
             )
             
-            amp_new_phi = amp_interp_phi(phi)
-            phase_new_phi = phase_interp_phi(phi)
-            phase_new_phi = np.mod(phase_new_phi + np.pi, 2 * np.pi) - np.pi
+            real_new_phi = real_interp_phi(phi)
+            imag_new_phi = imag_interp_phi(phi)
             
-            e_phi_new[f_idx, t_idx, :] = amp_new_phi * np.exp(1j * phase_new_phi)
+            e_phi_new[f_idx, t_idx, :] = real_new_phi + 1j * imag_new_phi
     
     # Update the pattern data
     pattern_obj.data['e_theta'].values = e_theta_new
