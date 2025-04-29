@@ -1281,40 +1281,72 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     # Process each frequency and theta separately
     for f_idx in range(len(frequency)):
         for t_idx in range(len(theta)):
-            # First convert spherical components (e_theta, e_phi) to Cartesian (e_x, e_y)
-            # for this specific theta value and frequency
+            # First convert spherical components to Cartesian
             e_x, e_y = polarization_tp2xy(phi, e_theta[f_idx, t_idx, :], e_phi[f_idx, t_idx, :])
             
+            # Now separate magnitude and phase for each Cartesian component
+            # This approach preserves magnitude better during interpolation
+            mag_x = np.abs(e_x)
+            phase_x = np.unwrap(np.angle(e_x))
+            
+            mag_y = np.abs(e_y)
+            phase_y = np.unwrap(np.angle(e_y))
+            
             # Create extended phi arrays for periodic interpolation
-            # We extend both the original phi and the shifted phi arrays
             ext_phi = np.concatenate([phi - 360.0, phi, phi + 360.0])
             ext_shifted_phi = np.concatenate([shifted_phi - 360.0, shifted_phi, shifted_phi + 360.0])
             
-            # Extend the Cartesian field components
-            ext_e_x = np.concatenate([e_x, e_x, e_x])
-            ext_e_y = np.concatenate([e_y, e_y, e_y])
+            # Extend the magnitude and phase arrays
+            ext_mag_x = np.concatenate([mag_x, mag_x, mag_x])
+            ext_phase_x = np.concatenate([phase_x - 2*np.pi, phase_x, phase_x + 2*np.pi])
             
-            # Create interpolation functions for Cartesian components
-            # We interpolate from the shifted grid (ext_shifted_phi) to the original grid (phi)
-            e_x_interp = interp1d(
+            ext_mag_y = np.concatenate([mag_y, mag_y, mag_y])
+            ext_phase_y = np.concatenate([phase_y - 2*np.pi, phase_y, phase_y + 2*np.pi])
+            
+            # Create interpolation functions for magnitude (linear to preserve peaks)
+            # and phase (cubic for smoothness)
+            mag_x_interp = interp1d(
                 ext_shifted_phi, 
-                ext_e_x, 
+                ext_mag_x, 
+                kind='linear',  # Linear for magnitude to preserve peaks
+                bounds_error=False, 
+                fill_value='extrapolate'
+            )
+            
+            phase_x_interp = interp1d(
+                ext_shifted_phi, 
+                ext_phase_x, 
                 kind='cubic', 
                 bounds_error=False, 
                 fill_value='extrapolate'
             )
             
-            e_y_interp = interp1d(
+            mag_y_interp = interp1d(
                 ext_shifted_phi, 
-                ext_e_y, 
+                ext_mag_y, 
+                kind='linear',  # Linear for magnitude to preserve peaks
+                bounds_error=False, 
+                fill_value='extrapolate'
+            )
+            
+            phase_y_interp = interp1d(
+                ext_shifted_phi, 
+                ext_phase_y, 
                 kind='cubic', 
                 bounds_error=False, 
                 fill_value='extrapolate'
             )
             
             # Interpolate onto original grid
-            e_x_new = e_x_interp(phi)
-            e_y_new = e_y_interp(phi)
+            mag_x_new = mag_x_interp(phi)
+            phase_x_new = phase_x_interp(phi)
+            
+            mag_y_new = mag_y_interp(phi)
+            phase_y_new = phase_y_interp(phi)
+            
+            # Recombine magnitude and phase to get complex values
+            e_x_new = mag_x_new * np.exp(1j * phase_x_new)
+            e_y_new = mag_y_new * np.exp(1j * phase_y_new)
             
             # Convert back to spherical components
             e_theta_new[f_idx, t_idx, :], e_phi_new[f_idx, t_idx, :] = polarization_xy2pt(
