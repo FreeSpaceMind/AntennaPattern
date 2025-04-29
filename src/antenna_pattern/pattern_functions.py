@@ -1269,8 +1269,10 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     e_phi = pattern_obj.data.e_phi.values.copy()
     
     # Create shifted phi array for original data position
-    # Phi is periodic, so we need to handle wraparound
-    shifted_phi = np.mod(phi - phi_offset, 360.0)
+    # Phi is periodic, so we handle wraparound
+    # Note: For interpolation, we need to shift in the opposite direction
+    # since we're interpolating from the shifted grid to the original grid
+    shifted_phi = np.mod(phi + phi_offset, 360.0)
     
     # Initialize output arrays with same shape as input
     e_theta_new = np.zeros_like(e_theta, dtype=complex)
@@ -1281,21 +1283,21 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
         for t_idx in range(len(theta)):
             # First convert spherical components (e_theta, e_phi) to Cartesian (e_x, e_y)
             # for this specific theta value and frequency
-            # Use the polarization_tp2xy function from the existing polarization module
             e_x, e_y = polarization_tp2xy(phi, e_theta[f_idx, t_idx, :], e_phi[f_idx, t_idx, :])
             
             # Create extended phi arrays for periodic interpolation
-            # Adding one full period on each side ensures smooth interpolation across boundaries
+            # We extend both the original phi and the shifted phi arrays
             ext_phi = np.concatenate([phi - 360.0, phi, phi + 360.0])
+            ext_shifted_phi = np.concatenate([shifted_phi - 360.0, shifted_phi, shifted_phi + 360.0])
             
             # Extend the Cartesian field components
             ext_e_x = np.concatenate([e_x, e_x, e_x])
             ext_e_y = np.concatenate([e_y, e_y, e_y])
             
             # Create interpolation functions for Cartesian components
-            # Complex interpolation is fine here since we're working with physical components
+            # We interpolate from the shifted grid (ext_shifted_phi) to the original grid (phi)
             e_x_interp = interp1d(
-                ext_phi, 
+                ext_shifted_phi, 
                 ext_e_x, 
                 kind='cubic', 
                 bounds_error=False, 
@@ -1303,7 +1305,7 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
             )
             
             e_y_interp = interp1d(
-                ext_phi, 
+                ext_shifted_phi, 
                 ext_e_y, 
                 kind='cubic', 
                 bounds_error=False, 
@@ -1315,7 +1317,6 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
             e_y_new = e_y_interp(phi)
             
             # Convert back to spherical components
-            # Use the polarization_xy2pt function
             e_theta_new[f_idx, t_idx, :], e_phi_new[f_idx, t_idx, :] = polarization_xy2pt(
                 phi, e_x_new, e_y_new
             )
