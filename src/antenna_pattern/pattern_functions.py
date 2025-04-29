@@ -1239,16 +1239,26 @@ def shift_theta_origin(pattern_obj, theta_offset: float) -> None:
 
 def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     """
-    Shifts the origin of the phi coordinate axis for the pattern in spherical coordinates.
+    Shifts the origin of the phi coordinate axis for the pattern.
     
-    This is useful for aligning measurement data when the mechanical antenna rotation 
-    reference doesn't align with the desired coordinate system (e.g., principal planes).
+    This is useful for aligning measurement data when the mechanical 
+    antenna rotation reference doesn't align with the desired coordinate
+    system (e.g., principal planes).
+    
+    The function works with both 'sided' (theta: 0-180°, phi: 0-360°) and
+    'central' (theta: -180-180°, phi: 0-180°) coordinate conventions.
     
     Args:
         pattern_obj: AntennaPattern object to modify
         phi_offset: Angle in degrees to shift the phi origin.
                    Positive values rotate phi clockwise,
                    negative values rotate phi counterclockwise.
+                   
+    Notes:
+        - Performs interpolation along the phi axis for each theta value
+        - Converts to Cartesian field components for improved interpolation
+        - Takes into account the periodicity of phi
+        - Handles both sided and central pattern coordinate conventions
     """
     # Get underlying numpy arrays
     frequency = pattern_obj.data.frequency.values
@@ -1257,16 +1267,19 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     e_theta = pattern_obj.data.e_theta.values.copy()
     e_phi = pattern_obj.data.e_phi.values.copy()
     
+    # Determine coordinate convention
+    theta_min, theta_max = np.min(theta), np.max(theta)
+    phi_min, phi_max = np.min(phi), np.max(phi)
+    
+    is_sided = theta_min >= 0 and theta_max <= 180 and phi_max > 180
+    is_central = theta_min < 0 and phi_max <= 180
+    
     # Initialize output arrays with same shape as input
     e_theta_new = np.zeros_like(e_theta, dtype=complex)
     e_phi_new = np.zeros_like(e_phi, dtype=complex)
     
     # Process each frequency separately
     for f_idx in range(len(frequency)):
-        # For each phi cut, we'll use a simpler approach - directly shift the phi value
-        # We'll create a new set of phi values that are shifted
-        shifted_phi = np.mod(phi + phi_offset, 360.0)
-        
         # For each theta value, we'll interpolate e_x and e_y components across phi
         # First, we need to convert e_theta and e_phi to e_x and e_y for all theta/phi
         e_x = np.zeros((len(theta), len(phi)), dtype=complex)
@@ -1284,22 +1297,74 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
             e_x_ring = e_x[t_idx]
             e_y_ring = e_y[t_idx]
             
-            # We'll interpolate magnitude and phase separately for better results
+            # Handle coordinate system specifics for this theta value
+            if is_sided:
+                # For 'sided' coordinates, we need to handle the full 0-360° phi range
+                # Extend phi for periodic interpolation
+                # For this case, concatenating [phi-360, phi, phi+360] is a good approach
+                ext_phi = np.concatenate([phi - 360.0, phi, phi + 360.0])
+                
+                # Where to interpolate depends on the phi range
+                target_phi = np.mod(phi - phi_offset, 360.0)
+                
+            elif is_central:
+                # For 'central' coordinates (theta: -180 to 180, phi: 0 to 180)
+                # we need to handle the transition at theta=0
+                theta_val = theta[t_idx]
+                
+                if phi_max <= 180:
+                    # If we have a partial phi range (0-180°), we need to be careful with boundaries
+                    # We'll exploit the spherical symmetry: (theta, phi) is the same point as
+                    # (-theta, phi+180°)
+                    
+                    # Create extended phi range including the "mirror" points
+                    ext_phi = np.concatenate([phi - 180.0, phi, phi + 180.0])
+                    
+                    # If theta is negative, we're in the "back" hemisphere
+                    # and need to adjust our target phi
+                    if theta_val < 0:
+                        target_phi = np.mod(phi + 180.0 - phi_offset, 360.0)
+                        # These points will use phi+180° in the original data
+                    else:
+                        target_phi = np.mod(phi - phi_offset, 360.0)
+                else:
+                    # If phi covers the full range, we can use the sided approach
+                    ext_phi = np.concatenate([phi - 360.0, phi, phi + 360.0])
+                    target_phi = np.mod(phi - phi_offset, 360.0)
+            else:
+                # If we can't determine the coordinate system, use a generic approach
+                ext_phi = np.concatenate([phi - 360.0, phi, phi + 360.0])
+                target_phi = np.mod(phi - phi_offset, 360.0)
+            
+            # Extract and extend magnitude and phase
             mag_x = np.abs(e_x_ring)
             phase_x = np.unwrap(np.angle(e_x_ring))
             
             mag_y = np.abs(e_y_ring)
             phase_y = np.unwrap(np.angle(e_y_ring))
             
-            # Create extended phi arrays for periodic interpolation
-            ext_phi = np.concatenate([phi - 360.0, phi, phi + 360.0])
-            
             # Extend magnitude and phase arrays
-            ext_mag_x = np.concatenate([mag_x, mag_x, mag_x])
-            ext_phase_x = np.concatenate([phase_x - 2*np.pi, phase_x, phase_x + 2*np.pi])
-            
-            ext_mag_y = np.concatenate([mag_y, mag_y, mag_y])
-            ext_phase_y = np.concatenate([phase_y - 2*np.pi, phase_y, phase_y + 2*np.pi])
+            # We need to handle both 'sided' and 'central' extensions
+            if is_central and phi_max <= 180 and theta[t_idx] < 0:
+                # For central coordinates with back hemisphere (theta < 0)
+                # We need to handle special extension for mirror points
+                
+                # For magnitude, we just repeat
+                ext_mag_x = np.concatenate([mag_x, mag_x, mag_x])
+                ext_mag_y = np.concatenate([mag_y, mag_y, mag_y])
+                
+                # For phase, we need to account for the hemisphere effect
+                # When crossing hemispheres, we might need phase adjustments
+                # This is approximate and may need refinement
+                ext_phase_x = np.concatenate([phase_x - np.pi, phase_x, phase_x + np.pi])
+                ext_phase_y = np.concatenate([phase_y - np.pi, phase_y, phase_y + np.pi])
+            else:
+                # Standard extension for sided coordinates or central front hemisphere
+                ext_mag_x = np.concatenate([mag_x, mag_x, mag_x])
+                ext_phase_x = np.concatenate([phase_x - 2*np.pi, phase_x, phase_x + 2*np.pi])
+                
+                ext_mag_y = np.concatenate([mag_y, mag_y, mag_y])
+                ext_phase_y = np.concatenate([phase_y - 2*np.pi, phase_y, phase_y + 2*np.pi])
             
             # Create interpolation functions
             mag_x_interp = interp1d(ext_phi, ext_mag_x, kind='linear', bounds_error=False, fill_value='extrapolate')
@@ -1308,10 +1373,7 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
             mag_y_interp = interp1d(ext_phi, ext_mag_y, kind='linear', bounds_error=False, fill_value='extrapolate')
             phase_y_interp = interp1d(ext_phi, ext_phase_y, kind='cubic', bounds_error=False, fill_value='extrapolate')
             
-            # Get new values at the original phi positions but using shifted data
-            # The key is to evaluate at phi - phi_offset to get the shifted values
-            target_phi = np.mod(phi - phi_offset, 360.0)  # This is where we want to interpolate
-            
+            # Get new values at the target phi positions
             mag_x_new = mag_x_interp(target_phi)
             phase_x_new = phase_x_interp(target_phi)
             
@@ -1343,5 +1405,6 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
             pattern_obj.metadata['operations'] = []
         pattern_obj.metadata['operations'].append({
             'type': 'shift_phi_origin',
-            'phi_offset': float(phi_offset)
+            'phi_offset': float(phi_offset),
+            'coordinate_system': 'sided' if is_sided else ('central' if is_central else 'unknown')
         })
