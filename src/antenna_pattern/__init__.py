@@ -31,7 +31,8 @@ from .pattern_functions import (
     isometric_rotation,
     mirror_pattern,
     normalize_at_boresight,
-    shift_theta_origin
+    shift_theta_origin,
+    shift_phi_origin
 )
 from .analysis import (
     calculate_phase_center,
@@ -82,6 +83,7 @@ __all__ = [
     'mirror_pattern',
     'normalize_at_boresight',
     'shift_theta_origin',
+    'shift_phi_origin',
     'calculate_phase_center',
     'principal_plane_phase_center',
     'get_axial_ratio',

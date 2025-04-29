@@ -12,7 +12,8 @@ from .pattern_functions import(
     unwrap_phase, swap_polarization_axes, apply_mars, 
     normalize_phase, change_polarization, translate,
     scale_pattern, transform_coordinates, mirror_pattern,
-    normalize_at_boresight, shift_theta_origin
+    normalize_at_boresight, shift_theta_origin,
+    shift_phi_origin
 )
 from .utilities import find_nearest
 from .polarization import (
@@ -532,6 +533,27 @@ class AntennaPattern:
         """
         # Delegate to the pattern_functions implementation
         shift_theta_origin(self, theta_offset)
+
+    def shift_phi_origin(self, phi_offset: float) -> None:
+        """
+        Shifts the origin of the phi coordinate axis for the pattern.
+        
+        This is useful for aligning measurement data when the mechanical 
+        antenna rotation reference doesn't align with the desired coordinate
+        system (e.g., principal planes).
+        
+        Args:
+            phi_offset: Angle in degrees to shift the phi origin.
+                    Positive values rotate phi clockwise,
+                    negative values rotate phi counterclockwise.
+                    
+        Notes:
+            - This performs interpolation along the phi axis for each theta value
+            - Original phi grid points are preserved
+            - Takes into account the periodicity of phi (0° = 360°)
+        """
+        # Delegate to the pattern_functions implementation
+        shift_phi_origin(self, phi_offset)
 
     def split_patterns(self) -> Tuple['AntennaPattern', 'AntennaPattern']:
         """
