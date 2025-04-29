@@ -1355,9 +1355,22 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
                 
                 # For phase, we need to account for the hemisphere effect
                 # When crossing hemispheres, we might need phase adjustments
-                # This is approximate and may need refinement
-                ext_phase_x = np.concatenate([phase_x - np.pi, phase_x, phase_x + np.pi])
-                ext_phase_y = np.concatenate([phase_y - np.pi, phase_y, phase_y + np.pi])
+                # Calculate the phase difference between first and last point
+                phase_x_diff = phase_x[-1] - phase_x[0]
+                phase_y_diff = phase_y[-1] - phase_y[0]
+
+                # Construct the extended phases maintaining continuity
+                # For the left extension, continue from the right end backward with the same slope
+                left_phase_x = phase_x[0] - np.flip(np.arange(1, len(phase_x) + 1)) * (phase_x_diff / len(phase_x))
+                left_phase_y = phase_y[0] - np.flip(np.arange(1, len(phase_y) + 1)) * (phase_y_diff / len(phase_y))
+
+                # For the right extension, continue from the left end forward with the same slope
+                right_phase_x = phase_x[-1] + np.arange(1, len(phase_x) + 1) * (phase_x_diff / len(phase_x))
+                right_phase_y = phase_y[-1] + np.arange(1, len(phase_y) + 1) * (phase_y_diff / len(phase_y))
+
+                # Concatenate to get extended continuous phase
+                ext_phase_x = np.concatenate([left_phase_x, phase_x, right_phase_x])
+                ext_phase_y = np.concatenate([left_phase_y, phase_y, right_phase_y])
             else:
                 # Standard extension for sided coordinates or central front hemisphere
                 ext_mag_x = np.concatenate([mag_x, mag_x, mag_x])
