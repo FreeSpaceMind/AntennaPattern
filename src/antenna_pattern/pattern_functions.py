@@ -885,9 +885,6 @@ def transform_coordinates(pattern_obj, format: str = 'sided') -> None:
     if (format == 'sided' and is_sided) or (format == 'central' and is_central):
         return
     
-    # Create new coordinate arrays and data arrays first
-    # Then only update the pattern_obj once at the end
-    
     # Apply transformation based on target format
     if format == 'sided':
         # Target: theta 0:180, phi 0:360
@@ -915,10 +912,26 @@ def transform_coordinates(pattern_obj, format: str = 'sided') -> None:
         new_e_phi[:, :, :len(phi)] = e_phi[:, theta0_idx:, :]
         
         # Second half of phi range - copy from negative theta (flipped)
-        # Negative theta becomes positive theta with phi+180
+        # For a more symmetric result, exclude theta=0 from the flipped section
         if theta0_idx > 0:  # Only if we have negative theta values
-            new_e_theta[:, :, len(phi):] = np.flip(e_theta[:, :theta0_idx+1, :], axis=1)
-            new_e_phi[:, :, len(phi):] = np.flip(e_phi[:, :theta0_idx+1, :], axis=1)
+            neg_theta_section = e_theta[:, :theta0_idx, :]  # Exclude theta0_idx
+            neg_phi_section = e_phi[:, :theta0_idx, :]
+            
+            # Flip and assign - note that this might not fill the entire array
+            # if there aren't enough negative theta values
+            new_e_theta[:, :len(neg_theta_section), len(phi):] = np.flip(neg_theta_section, axis=1)
+            new_e_phi[:, :len(neg_theta_section), len(phi):] = np.flip(neg_phi_section, axis=1)
+            
+            # If there aren't enough negative theta values to fill the array,
+            # we need to pad with the last value or zeros
+            if len(neg_theta_section) < len(new_theta):
+                remaining = len(new_theta) - len(neg_theta_section)
+                # Fill the remaining positions with zeros
+                for i in range(remaining):
+                    idx = len(neg_theta_section) + i
+                    if idx < len(new_theta):
+                        new_e_theta[:, idx, len(phi):] = 0
+                        new_e_phi[:, idx, len(phi):] = 0
     
     elif format == 'central':
         # Target: theta -180:180, phi 0:180
@@ -930,28 +943,33 @@ def transform_coordinates(pattern_obj, format: str = 'sided') -> None:
         # Generate new theta array
         new_theta = np.concatenate((-np.flip(theta[1:]), theta))
         
-        # Find phi 180 crossing index
-        phi180_idx = np.argmax(phi >= 180)
-        if phi180_idx == 0 and phi[0] < 180:
-            # No values >= 180
-            phi180_idx = len(phi)
+        # Find phi 180 crossing index - improved method
+        phi180_idx = np.searchsorted(phi, 180, side='left')
         
         # Generate new phi vector (only 0-180)
         new_phi = phi[:phi180_idx]
+        if len(new_phi) == 0:
+            # If no phi values are < 180, use all phi values
+            new_phi = phi
         
         # Initialize new electric field arrays
         new_e_theta = np.zeros((frequencies.size, len(new_theta), len(new_phi)), dtype=np.complex128)
         new_e_phi = np.zeros((frequencies.size, len(new_theta), len(new_phi)), dtype=np.complex128)
         
         # Fill new electric field arrays
+        # Positive theta section (original data)
+        new_e_theta[:, len(theta)-1:, :] = e_theta[:, :, :len(new_phi)]
+        new_e_phi[:, len(theta)-1:, :] = e_phi[:, :, :len(new_phi)]
+        
         # Negative theta section (with phi+180 from original data)
         if phi180_idx < len(phi):  # Only if we have phi values >= 180
-            new_e_theta[:, :len(theta)-1, :] = np.flip(e_theta[:, 1:, phi180_idx:], axis=1)
-            new_e_phi[:, :len(theta)-1, :] = np.flip(e_phi[:, 1:, phi180_idx:], axis=1)
-        
-        # Positive theta section (original data)
-        new_e_theta[:, len(theta)-1:, :] = e_theta[:, :, :phi180_idx]
-        new_e_phi[:, len(theta)-1:, :] = e_phi[:, :, :phi180_idx]
+            # Extract the high phi section
+            phi_high_indices = np.arange(phi180_idx, len(phi))
+            
+            if len(phi_high_indices) > 0:
+                # Flip the theta axis for the negative theta values
+                new_e_theta[:, :len(theta)-1, :] = np.flip(e_theta[:, 1:, phi_high_indices], axis=1)
+                new_e_phi[:, :len(theta)-1, :] = np.flip(e_phi[:, 1:, phi_high_indices], axis=1)
     
     # Now create a completely new Dataset with the new coordinates and data
     new_data = xr.Dataset(
