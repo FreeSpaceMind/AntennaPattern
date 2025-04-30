@@ -1119,8 +1119,8 @@ def normalize_at_boresight(pattern_obj) -> None:
         
         # Instead of averaging phases,
         # choose the first phi cut's phase as reference for each component
-        e_theta_ref_phase = np.angle(e_theta_boresight[0])-np.radians(phi[0])
-        e_phi_ref_phase = np.angle(e_phi_boresight[0])-np.radians(phi[0])
+        e_theta_ref_phase = np.angle(e_theta_boresight[0])+np.radians(phi[0])
+        e_phi_ref_phase = np.angle(e_phi_boresight[0])+np.radians(phi[0])
         
         # Apply normalization to each phi cut
         for p_idx in range(len(phi)):
