@@ -1297,12 +1297,8 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
                Positive values rotate phi clockwise,
                negative values rotate phi counterclockwise.
     """
-    # Get underlying numpy arrays
-    frequency = pattern_obj.data.frequency.values
+    # Get theta array
     theta = pattern_obj.data.theta.values
-    phi = pattern_obj.data.phi.values
-    e_theta = pattern_obj.data.e_theta.values.copy()
-    e_phi = pattern_obj.data.e_phi.values.copy()
     
     # Check if we have a central or sided pattern
     is_central = np.any(theta < 0)
@@ -1312,11 +1308,13 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
         # Transform to sided coordinates in place
         pattern_obj.transform_coordinates('sided')
         
-        # Update our references to the transformed data
-        theta = pattern_obj.theta_angles
-        phi = pattern_obj.phi_angles
-        e_theta = pattern_obj.data.e_theta.values.copy()
-        e_phi = pattern_obj.data.e_phi.values.copy()
+        # Update theta array
+        theta = pattern_obj.data.theta.values
+
+    # Get underlying numpy arrays
+    phi = pattern_obj.data.phi.values
+    e_theta = pattern_obj.data.e_theta.values.copy()
+    e_phi = pattern_obj.data.e_phi.values.copy()
     
     # Apply the phi offset to all phi values
     new_phi = phi + phi_offset
@@ -1327,9 +1325,6 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
         new_phi[new_phi < 0] += 360
     while np.any(new_phi >= 360):
         new_phi[new_phi >= 360] -= 360
-    
-    # Now ensure all phi values are within the original range
-    phi_min, phi_max = np.min(phi), np.max(phi)
     
     # Sort indices to maintain ascending order
     sort_indices = np.argsort(new_phi)
@@ -1347,8 +1342,8 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     pattern_obj.data['e_phi'].values = sorted_e_phi
     
     # If originally central, transform back
-    if is_central:
-        pattern_obj.transform_coordinates('central')
+    # if is_central:
+    #     pattern_obj.transform_coordinates('central')
     
     # Recalculate derived components
     pattern_obj.assign_polarization(pattern_obj.polarization)
