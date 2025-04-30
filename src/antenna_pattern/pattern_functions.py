@@ -914,8 +914,8 @@ def transform_coordinates(pattern_obj, format: str = 'sided') -> None:
         # Second half of phi range - copy from negative theta (flipped)
         if theta0_idx > 0:  # Only if we have negative theta values
             # Get the flipped negative theta section
-            flipped_e_theta = np.flip(e_theta[:, :theta0_idx, :], axis=1)
-            flipped_e_phi = np.flip(e_phi[:, :theta0_idx, :], axis=1)
+            flipped_e_theta = -np.flip(e_theta[:, :theta0_idx, :], axis=1)
+            flipped_e_phi = -np.flip(e_phi[:, :theta0_idx, :], axis=1)
             
             # Calculate how many values to copy (minimum of available and needed)
             n_values = min(flipped_e_theta.shape[1], new_e_theta.shape[1])
