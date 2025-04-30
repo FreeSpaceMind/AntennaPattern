@@ -4,6 +4,7 @@ These functions contained here to shorten the AntennaPattern definition file (pa
 """
 
 import numpy as np
+import xarray as xr
 from typing import Tuple, Union, Optional, List, Any, Callable
 from scipy.interpolate import interp1d, LinearNDInterpolator
 
@@ -869,8 +870,8 @@ def transform_coordinates(pattern_obj, format: str = 'sided') -> None:
     phi = pattern_obj.phi_angles
     
     # Get field components
-    e_theta = pattern_obj.data.e_theta.values
-    e_phi = pattern_obj.data.e_phi.values
+    e_theta = pattern_obj.data.e_theta.values.copy()
+    e_phi = pattern_obj.data.e_phi.values.copy()
     frequencies = pattern_obj.frequencies
     
     # Check current format
@@ -884,69 +885,89 @@ def transform_coordinates(pattern_obj, format: str = 'sided') -> None:
     if (format == 'sided' and is_sided) or (format == 'central' and is_central):
         return
     
+    # Create new coordinate arrays and data arrays first
+    # Then only update the pattern_obj once at the end
+    
     # Apply transformation based on target format
     if format == 'sided':
         # Target: theta 0:180, phi 0:360
-        # Every cut will now get split into two cuts. 
-        # The negative theta values will become a new cut with postitive theta, phi +180 deg.
-
-        # ensure phi is within central range
+        
+        # Ensure phi is within central range
         if np.max(phi) >= 180:
             raise ValueError("Input phi must be less than 180 when transforming to sided")
         
-        # get theta 0 idx
+        # Find theta = 0 index
         theta0_idx = np.argmin(np.abs(theta))
-
-        # create new theta vector
-        new_theta = theta[theta0_idx:]
-
-        # create new phi vector
-        new_phi = np.concatenate((phi, phi+180))
-
-        # initilize new electric field vectors
-        new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-        new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
         
-        # Fill new electric field vectors
-        new_e_theta[:, :, :np.size(phi)] = e_theta[:, theta0_idx:, :]
-        new_e_theta[:, :, np.size(phi):] = np.flip(e_theta[:, :theta0_idx+1, :], axis=1)
-        new_e_phi[:, :, :np.size(phi)] = e_phi[:, theta0_idx:, :]
-        new_e_phi[:, :, np.size(phi):] = np.flip(e_phi[:, :theta0_idx+1, :], axis=1)
+        # Create new theta vector (positive values only)
+        new_theta = theta[theta0_idx:]
+        
+        # Create new phi vector
+        new_phi = np.concatenate((phi, phi+180))
+        
+        # Initialize new electric field arrays
+        new_e_theta = np.zeros((frequencies.size, len(new_theta), len(new_phi)), dtype=np.complex128)
+        new_e_phi = np.zeros((frequencies.size, len(new_theta), len(new_phi)), dtype=np.complex128)
+        
+        # Fill new electric field arrays
+        # First half of phi range - copy from positive theta
+        new_e_theta[:, :, :len(phi)] = e_theta[:, theta0_idx:, :]
+        new_e_phi[:, :, :len(phi)] = e_phi[:, theta0_idx:, :]
+        
+        # Second half of phi range - copy from negative theta (flipped)
+        # Negative theta becomes positive theta with phi+180
+        if theta0_idx > 0:  # Only if we have negative theta values
+            new_e_theta[:, :, len(phi):] = np.flip(e_theta[:, :theta0_idx+1, :], axis=1)
+            new_e_phi[:, :, len(phi):] = np.flip(e_phi[:, :theta0_idx+1, :], axis=1)
     
     elif format == 'central':
         # Target: theta -180:180, phi 0:180
-
-        # ensure theta starts at 0
+        
+        # Ensure theta starts at 0
         if theta[0] != 0:
             raise ValueError("Input theta must start at 0 when transforming to central")
-
-        # generate new theta array
+        
+        # Generate new theta array
         new_theta = np.concatenate((-np.flip(theta[1:]), theta))
-
-        # get phi 180 crossing
+        
+        # Find phi 180 crossing index
         phi180_idx = np.argmax(phi >= 180)
-
-        # generate new phi vector
+        if phi180_idx == 0 and phi[0] < 180:
+            # No values >= 180
+            phi180_idx = len(phi)
+        
+        # Generate new phi vector (only 0-180)
         new_phi = phi[:phi180_idx]
-
-        # initilize new electric field vectors
-        new_e_theta = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-        new_e_phi = np.zeros(shape=(frequencies.size, new_theta.size, new_phi.size), dtype=np.complex128)
-
-        # Fill new electric field vectors
-        new_e_theta[:, :theta.size, :] = np.flip(e_theta[:, :, phi180_idx:], axis=2)
-        new_e_theta[:, theta.size-1:, :] = e_theta[:, :, :phi180_idx]
-        new_e_phi[:, :theta.size, :] = np.flip(e_phi[:, :, phi180_idx:], axis=2)
-        new_e_phi[:, theta.size-1:, :] = e_phi[:, :, :phi180_idx]
+        
+        # Initialize new electric field arrays
+        new_e_theta = np.zeros((frequencies.size, len(new_theta), len(new_phi)), dtype=np.complex128)
+        new_e_phi = np.zeros((frequencies.size, len(new_theta), len(new_phi)), dtype=np.complex128)
+        
+        # Fill new electric field arrays
+        # Negative theta section (with phi+180 from original data)
+        if phi180_idx < len(phi):  # Only if we have phi values >= 180
+            new_e_theta[:, :len(theta)-1, :] = np.flip(e_theta[:, 1:, phi180_idx:], axis=1)
+            new_e_phi[:, :len(theta)-1, :] = np.flip(e_phi[:, 1:, phi180_idx:], axis=1)
+        
+        # Positive theta section (original data)
+        new_e_theta[:, len(theta)-1:, :] = e_theta[:, :, :phi180_idx]
+        new_e_phi[:, len(theta)-1:, :] = e_phi[:, :, :phi180_idx]
     
-    # Update pattern data with new coordinates and field components
-    pattern_obj.data = pattern_obj.data.assign_coords({
-        'theta': new_theta,
-        'phi': new_phi
-    })
+    # Now create a completely new Dataset with the new coordinates and data
+    new_data = xr.Dataset(
+        data_vars={
+            'e_theta': (['frequency', 'theta', 'phi'], new_e_theta),
+            'e_phi': (['frequency', 'theta', 'phi'], new_e_phi),
+        },
+        coords={
+            'theta': new_theta,
+            'phi': new_phi,
+            'frequency': frequencies,
+        }
+    )
     
-    pattern_obj.data['e_theta'] = (['frequency', 'theta', 'phi'], new_e_theta)
-    pattern_obj.data['e_phi'] = (['frequency', 'theta', 'phi'], new_e_phi)
+    # Replace the pattern's data with the new dataset
+    pattern_obj.data = new_data
     
     # Recalculate derived components e_co and e_cx
     pattern_obj.assign_polarization(pattern_obj.polarization)
