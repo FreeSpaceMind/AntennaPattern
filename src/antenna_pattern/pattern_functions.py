@@ -1318,17 +1318,17 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     
     # Apply the phi offset to all phi values
     new_phi = phi + phi_offset
+
+    # apply a phase correction for any cuts that crossed the 0 and 180 boundaries
+    crossings = np.argwhere(((phi>=0) and (new_phi<0)) or ((phi<180) and (new_phi>=180)))
+    e_phi[crossings] *= np.exp(1j*np.pi)
     
     # For a proper coordinate system, phi should always be normalized to 0-360
     # regardless of the original phi range
     while np.any(new_phi < 0):
-        e_theta[new_phi < 0] *= np.exp(1j*np.pi)
-        e_phi[:, :, new_phi < 0] *= np.exp(1j*np.pi)
         new_phi[:, :, new_phi < 0] += 360
     while np.any(new_phi >= 360):
         new_phi[new_phi >= 360] -= 360
-        e_theta[:, :, new_phi < 0] *= np.exp(1j*np.pi)
-        e_phi[:, :, new_phi < 0] *= np.exp(1j*np.pi)
     
     # Sort indices to maintain ascending order
     sort_indices = np.argsort(new_phi)
@@ -1345,12 +1345,12 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     pattern_obj.data['e_theta'].values = sorted_e_theta
     pattern_obj.data['e_phi'].values = sorted_e_phi
     
+    # Recalculate derived components
+    pattern_obj.assign_polarization(pattern_obj.polarization)
+
     # If originally central, transform back
     if is_central:
         pattern_obj.transform_coordinates('central')
-    
-    # Recalculate derived components
-    pattern_obj.assign_polarization(pattern_obj.polarization)
     
     # Clear cache
     pattern_obj.clear_cache()
