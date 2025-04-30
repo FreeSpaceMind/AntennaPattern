@@ -1318,10 +1318,6 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     
     # Apply the phi offset to all phi values
     new_phi = phi + phi_offset
-
-    # apply a phase correction for any cuts that crossed the 0 and 180 boundaries
-    e_phi[:, :, new_phi < 0] *= np.exp(1j*np.pi)
-    e_phi[:, :, new_phi >= 360] *= np.exp(1j*np.pi)
     
     # For a proper coordinate system, phi should always be normalized to 0-360
     # regardless of the original phi range
