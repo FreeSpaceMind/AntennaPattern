@@ -1255,7 +1255,6 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     e_theta = pattern_obj.data.e_theta.values.copy()
     e_phi = pattern_obj.data.e_phi.values.copy()
     
-<<<<<<< HEAD
     # Check if we have a central or sided pattern
     is_central = np.any(theta < 0)
     
@@ -1269,70 +1268,9 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
         phi = pattern_obj.phi_angles
         e_theta = pattern_obj.data.e_theta.values.copy()
         e_phi = pattern_obj.data.e_phi.values.copy()
-=======
-    # Initialize outputs with same shape as inputs
-    e_theta_new = np.zeros_like(e_theta, dtype=complex)
-    e_phi_new = np.zeros_like(e_phi, dtype=complex)
->>>>>>> 0a1e796164527ba3d2cbcee33352485b14289449
     
-<<<<<<< HEAD
     # Apply the phi offset to all phi values
     new_phi = phi + phi_offset
-=======
-    # For each frequency and theta angle, interpolate the field value
-    for f_idx in range(len(frequency)):
-        for t_idx in range(len(theta)):
-            # Extract complex values for this theta angle
-            e_theta_slice = e_theta[f_idx, t_idx, :]
-            e_phi_slice = e_phi[f_idx, t_idx, :]
-            
-            # Unwrap phases for interpolation
-            amp_theta = np.abs(e_theta_slice)
-            phase_theta = np.unwrap(np.angle(e_theta_slice))
-            
-            amp_phi = np.abs(e_phi_slice)
-            phase_phi = np.unwrap(np.angle(e_phi_slice))
-            
-            # Create extended phi array for interpolation that accounts for periodicity
-            # Add one full cycle on both sides
-            ext_phi = np.concatenate([phi - 360, phi, phi + 360])
-            
-            # Extend the amplitude and phase arrays to match
-            ext_amp_theta = np.tile(amp_theta, 3)
-            ext_phase_theta = np.tile(phase_theta, 3)
-            
-            ext_amp_phi = np.tile(amp_phi, 3)
-            ext_phase_phi = np.tile(phase_phi, 3)
-            
-            # Create cubic interpolation functions
-            from scipy.interpolate import interp1d
-            
-            theta_amp_interp = interp1d(ext_phi, ext_amp_theta, kind='cubic', bounds_error=False, 
-                                       fill_value=(ext_amp_theta[0], ext_amp_theta[-1]))
-            theta_phase_interp = interp1d(ext_phi, ext_phase_theta, kind='cubic', bounds_error=False,
-                                         fill_value=(ext_phase_theta[0], ext_phase_theta[-1]))
-            
-            phi_amp_interp = interp1d(ext_phi, ext_amp_phi, kind='cubic', bounds_error=False,
-                                     fill_value=(ext_amp_phi[0], ext_amp_phi[-1]))
-            phi_phase_interp = interp1d(ext_phi, ext_phase_phi, kind='cubic', bounds_error=False,
-                                       fill_value=(ext_phase_phi[0], ext_phase_phi[-1]))
-            
-            # For each phi in the output, find the rotated point in the input
-            for p_out_idx, phi_out in enumerate(phi):
-                # Calculate input phi accounting for rotation
-                phi_in = phi_out + phi_offset
-                
-                # Interpolate at the desired phi_in angle
-                new_amp_theta = theta_amp_interp(phi_in)
-                new_phase_theta = theta_phase_interp(phi_in)
-                
-                new_amp_phi = phi_amp_interp(phi_in)
-                new_phase_phi = phi_phase_interp(phi_in)
-                
-                # Combine amplitude and phase to get complex value
-                e_theta_new[f_idx, t_idx, p_out_idx] = new_amp_theta * np.exp(1j * new_phase_theta)
-                e_phi_new[f_idx, t_idx, p_out_idx] = new_amp_phi * np.exp(1j * new_phase_phi)
->>>>>>> 0a1e796164527ba3d2cbcee33352485b14289449
     
     # Determine the phi range
     phi_min, phi_max = np.min(phi), np.max(phi)
