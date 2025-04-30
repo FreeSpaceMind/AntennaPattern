@@ -1342,8 +1342,8 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     pattern_obj.data['e_phi'].values = sorted_e_phi
     
     # If originally central, transform back
-    # if is_central:
-    #     pattern_obj.transform_coordinates('central')
+    if is_central:
+        pattern_obj.transform_coordinates('central')
     
     # Recalculate derived components
     pattern_obj.assign_polarization(pattern_obj.polarization)
