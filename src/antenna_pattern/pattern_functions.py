@@ -1239,9 +1239,8 @@ def shift_theta_origin(pattern_obj, theta_offset: float) -> None:
 
 def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     """
-    Shifts the origin of the phi coordinate axis for the pattern using a two-step approach:
-    1. First rotate to the nearest existing phi cut
-    2. Then interpolate the remaining smaller phi increment
+    Shifts the origin of the phi coordinate axis for the pattern using interpolation
+    with proper handling of phase unwrapping and phi periodicity.
     
     Args:
         pattern_obj: AntennaPattern object to modify
@@ -1256,16 +1255,8 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     e_theta = pattern_obj.data.e_theta.values.copy()
     e_phi = pattern_obj.data.e_phi.values.copy()
     
-    # Check if we need to convert from central to sided
+    # Check if we have a central or sided pattern
     is_central = np.any(theta < 0)
-    if is_central:
-        # Use the existing transform_coordinates method
-        pattern_obj.transform_coordinates('sided')
-        # Update our local references after transformation
-        theta = pattern_obj.data.theta.values
-        phi = pattern_obj.data.phi.values
-        e_theta = pattern_obj.data.e_theta.values.copy()
-        e_phi = pattern_obj.data.e_phi.values.copy()
     
     # Initialize outputs with same shape as inputs
     e_theta_new = np.zeros_like(e_theta, dtype=complex)
@@ -1274,7 +1265,6 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     # For each frequency and theta angle, interpolate the field value
     for f_idx in range(len(frequency)):
         for t_idx in range(len(theta)):
-            # Create a circular interpolation function for this theta slice
             # Extract complex values for this theta angle
             e_theta_slice = e_theta[f_idx, t_idx, :]
             e_phi_slice = e_phi[f_idx, t_idx, :]
@@ -1286,37 +1276,30 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
             amp_phi = np.abs(e_phi_slice)
             phase_phi = np.unwrap(np.angle(e_phi_slice))
             
+            # Create extended phi array for interpolation that accounts for periodicity
+            # Add points wrapping around both ends to handle circular interpolation
+            ext_phi = np.concatenate([phi - 360, phi, phi + 360])
+            
+            # Extend the amplitude and phase arrays to match
+            ext_amp_theta = np.tile(amp_theta, 3)
+            ext_phase_theta = np.concatenate([phase_theta, phase_theta, phase_theta])
+            # We don't add/subtract 2π from phase since we've already unwrapped it
+            
+            ext_amp_phi = np.tile(amp_phi, 3)
+            ext_phase_phi = np.concatenate([phase_phi, phase_phi, phase_phi])
+            
+            # Create cubic spline interpolations
+            from scipy.interpolate import CubicSpline
+            theta_amp_interp = CubicSpline(ext_phi, ext_amp_theta, bc_type='periodic')
+            theta_phase_interp = CubicSpline(ext_phi, ext_phase_theta, bc_type='periodic')
+            
+            phi_amp_interp = CubicSpline(ext_phi, ext_amp_phi, bc_type='periodic')
+            phi_phase_interp = CubicSpline(ext_phi, ext_phase_phi, bc_type='periodic')
+            
             # For each phi in the output, find the rotated point in the input
             for p_out_idx, phi_out in enumerate(phi):
                 # Calculate input phi accounting for rotation
                 phi_in = phi_out + phi_offset
-                
-                # Create extended phi array for interpolation that accounts for periodicity
-                # Add points wrapping around both ends to handle circular interpolation
-                ext_phi = np.concatenate([phi - 360, phi, phi + 360])
-                
-                # Extend the amplitude and phase arrays to match
-                ext_amp_theta = np.tile(amp_theta, 3)
-                ext_phase_theta = np.concatenate([
-                    phase_theta - 2*np.pi, 
-                    phase_theta, 
-                    phase_theta + 2*np.pi
-                ])
-                
-                ext_amp_phi = np.tile(amp_phi, 3)
-                ext_phase_phi = np.concatenate([
-                    phase_phi - 2*np.pi, 
-                    phase_phi, 
-                    phase_phi + 2*np.pi
-                ])
-                
-                # Create cubic spline interpolations
-                from scipy.interpolate import CubicSpline
-                theta_amp_interp = CubicSpline(ext_phi, ext_amp_theta)
-                theta_phase_interp = CubicSpline(ext_phi, ext_phase_theta)
-                
-                phi_amp_interp = CubicSpline(ext_phi, ext_amp_phi)
-                phi_phase_interp = CubicSpline(ext_phi, ext_phase_phi)
                 
                 # Interpolate at the desired phi_in angle
                 new_amp_theta = theta_amp_interp(phi_in)
@@ -1333,12 +1316,8 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     pattern_obj.data['e_theta'].values = e_theta_new
     pattern_obj.data['e_phi'].values = e_phi_new
     
-    # If we converted from central to sided, convert back to central
-    if is_central:
-        pattern_obj.transform_coordinates('central')
-    else:
-        # Recalculate derived components e_co and e_cx
-        pattern_obj.assign_polarization(pattern_obj.polarization)
+    # Recalculate derived components e_co and e_cx
+    pattern_obj.assign_polarization(pattern_obj.polarization)
     
     # Clear cache
     pattern_obj.clear_cache()
