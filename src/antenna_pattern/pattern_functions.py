@@ -1239,14 +1239,15 @@ def shift_theta_origin(pattern_obj, theta_offset: float) -> None:
 
 def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     """
-    Shifts the origin of the phi coordinate axis for the pattern using direct 
-    coordinate transformation to ensure high accuracy even with large rotation angles.
+    Shifts the origin of the phi coordinate axis for the pattern using a two-step approach:
+    1. First rotate to the nearest existing phi cut
+    2. Then interpolate the remaining smaller phi increment
     
     Args:
         pattern_obj: AntennaPattern object to modify
         phi_offset: Angle in degrees to shift the phi origin.
-                   Positive values rotate phi clockwise,
-                   negative values rotate phi counterclockwise.
+               Positive values rotate phi clockwise,
+               negative values rotate phi counterclockwise.
     """
     # Get underlying numpy arrays
     frequency = pattern_obj.data.frequency.values
@@ -1255,142 +1256,89 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     e_theta = pattern_obj.data.e_theta.values.copy()
     e_phi = pattern_obj.data.e_phi.values.copy()
     
-    # Initialize output arrays
+    # Check if we need to convert from central to sided
+    is_central = np.any(theta < 0)
+    if is_central:
+        # Use the existing transform_coordinates method
+        pattern_obj.transform_coordinates('sided')
+        # Update our local references after transformation
+        theta = pattern_obj.data.theta.values
+        phi = pattern_obj.data.phi.values
+        e_theta = pattern_obj.data.e_theta.values.copy()
+        e_phi = pattern_obj.data.e_phi.values.copy()
+    
+    # Initialize outputs with same shape as inputs
     e_theta_new = np.zeros_like(e_theta, dtype=complex)
     e_phi_new = np.zeros_like(e_phi, dtype=complex)
     
-    # Find boresight index for phase normalization
-    boresight_idx = np.argmin(np.abs(theta))
-    
-    # For improved accuracy, create a more detailed interpolation
-    # by using an RBF (Radial Basis Function) interpolator that
-    # accounts for the spherical geometry
+    # For each frequency and theta angle, interpolate the field value
     for f_idx in range(len(frequency)):
-        # Convert our data to a format suitable for RBF interpolation
-        # Create grid points for all theta/phi combinations
-        theta_rad = np.radians(theta)
-        phi_rad = np.radians(phi)
-        
-        # For each theta value, find the field at the rotated phi position
         for t_idx in range(len(theta)):
-            # For each phi value in the output grid
+            # Create a circular interpolation function for this theta slice
+            # Extract complex values for this theta angle
+            e_theta_slice = e_theta[f_idx, t_idx, :]
+            e_phi_slice = e_phi[f_idx, t_idx, :]
+            
+            # Unwrap phases for interpolation
+            amp_theta = np.abs(e_theta_slice)
+            phase_theta = np.unwrap(np.angle(e_theta_slice))
+            
+            amp_phi = np.abs(e_phi_slice)
+            phase_phi = np.unwrap(np.angle(e_phi_slice))
+            
+            # For each phi in the output, find the rotated point in the input
             for p_out_idx, phi_out in enumerate(phi):
-                # Calculate where this point came from in the original grid
+                # Calculate input phi accounting for rotation
                 phi_in = phi_out + phi_offset
-                phi_in = np.mod(phi_in, 360.0)  # Ensure it's in [0, 360]
                 
-                # Find the two closest phi indices for more accurate interpolation
-                # This accounts for the circular nature of phi
-                distances = np.abs(np.mod(phi - phi_in + 180, 360) - 180)
-                sorted_indices = np.argsort(distances)
+                # Create extended phi array for interpolation that accounts for periodicity
+                # Add points wrapping around both ends to handle circular interpolation
+                ext_phi = np.concatenate([phi - 360, phi, phi + 360])
                 
-                # Use the two closest points for linear interpolation
-                idx1, idx2 = sorted_indices[0], sorted_indices[1]
-                phi1, phi2 = phi[idx1], phi[idx2]
+                # Extend the amplitude and phase arrays to match
+                ext_amp_theta = np.tile(amp_theta, 3)
+                ext_phase_theta = np.concatenate([
+                    phase_theta - 2*np.pi, 
+                    phase_theta, 
+                    phase_theta + 2*np.pi
+                ])
                 
-                # Handle the wraparound case
-                if abs(phi1 - phi2) > 180:
-                    if phi1 > phi2:
-                        phi2 += 360
-                    else:
-                        phi1 += 360
+                ext_amp_phi = np.tile(amp_phi, 3)
+                ext_phase_phi = np.concatenate([
+                    phase_phi - 2*np.pi, 
+                    phase_phi, 
+                    phase_phi + 2*np.pi
+                ])
                 
-                # Adjust phi_in if needed for correct interpolation 
-                phi_in_adj = phi_in
-                if phi_in < min(phi1, phi2) and abs(phi_in - min(phi1, phi2)) > 180:
-                    phi_in_adj += 360
-                elif phi_in > max(phi1, phi2) and abs(phi_in - max(phi1, phi2)) > 180:
-                    phi_in_adj -= 360
+                # Create cubic spline interpolations
+                from scipy.interpolate import CubicSpline
+                theta_amp_interp = CubicSpline(ext_phi, ext_amp_theta)
+                theta_phase_interp = CubicSpline(ext_phi, ext_phase_theta)
                 
-                # Calculate interpolation weight
-                total_dist = abs(phi1 - phi2)
-                if total_dist < 1e-6:  # Avoid division by zero
-                    weight = 0.0
-                else:
-                    weight = abs(phi_in_adj - phi1) / total_dist
-                weight = max(0, min(1, weight))  # Clamp to [0,1]
+                phi_amp_interp = CubicSpline(ext_phi, ext_amp_phi)
+                phi_phase_interp = CubicSpline(ext_phi, ext_phase_phi)
                 
-                # Get field values at the two closest points
-                e_theta1 = e_theta[f_idx, t_idx, idx1]
-                e_theta2 = e_theta[f_idx, t_idx, idx2]
-                e_phi1 = e_phi[f_idx, t_idx, idx1]
-                e_phi2 = e_phi[f_idx, t_idx, idx2]
+                # Interpolate at the desired phi_in angle
+                new_amp_theta = theta_amp_interp(phi_in)
+                new_phase_theta = theta_phase_interp(phi_in)
                 
-                # For complex interpolation over a circle, we need to be careful with phase discontinuities
-                # Interpolate magnitude and phase separately
-                mag_theta1 = np.abs(e_theta1)
-                mag_theta2 = np.abs(e_theta2)
-                phase_theta1 = np.angle(e_theta1)
-                phase_theta2 = np.angle(e_theta2)
+                new_amp_phi = phi_amp_interp(phi_in)
+                new_phase_phi = phi_phase_interp(phi_in)
                 
-                mag_phi1 = np.abs(e_phi1)
-                mag_phi2 = np.abs(e_phi2)
-                phase_phi1 = np.angle(e_phi1)
-                phase_phi2 = np.angle(e_phi2)
-                
-                # Fix phase discontinuities for interpolation
-                # If phases differ by more than π, adjust one phase by ±2π
-                if abs(phase_theta1 - phase_theta2) > np.pi:
-                    if phase_theta1 > phase_theta2:
-                        phase_theta2 += 2 * np.pi
-                    else:
-                        phase_theta1 += 2 * np.pi
-                
-                if abs(phase_phi1 - phase_phi2) > np.pi:
-                    if phase_phi1 > phase_phi2:
-                        phase_phi2 += 2 * np.pi
-                    else:
-                        phase_phi1 += 2 * np.pi
-                
-                # Interpolate magnitude and phase
-                mag_theta = mag_theta1 * (1 - weight) + mag_theta2 * weight
-                phase_theta = phase_theta1 * (1 - weight) + phase_theta2 * weight
-                
-                mag_phi = mag_phi1 * (1 - weight) + mag_phi2 * weight
-                phase_phi = phase_phi1 * (1 - weight) + phase_phi2 * weight
-                
-                # Convert back to complex
-                e_theta_new[f_idx, t_idx, p_out_idx] = mag_theta * np.exp(1j * phase_theta)
-                e_phi_new[f_idx, t_idx, p_out_idx] = mag_phi * np.exp(1j * phase_phi)
-        
-        # Normalize phase at boresight
-        boresight_phases = np.angle(e_theta_new[f_idx, boresight_idx, :])
-        
-        # Instead of just taking the median, we'll use a more sophisticated approach
-        # to avoid anomalies, looking at the phase progression
-        # Sort phases for analysis
-        sorted_phases = np.sort(boresight_phases)
-        
-        # Look for the largest cluster of similar phases
-        phase_diffs = np.diff(sorted_phases)
-        phase_diffs[phase_diffs > np.pi] -= 2 * np.pi  # Handle -π to π boundary
-        phase_diffs[phase_diffs < -np.pi] += 2 * np.pi
-        
-        # Identify the median of the largest cluster
-        # This is more robust than simple median when there are outliers
-        target_phase = np.median(sorted_phases)
-        
-        # Apply phase correction to each phi cut
-        for p_idx in range(len(phi)):
-            # Get current phase at boresight
-            current_phase = np.angle(e_theta_new[f_idx, boresight_idx, p_idx])
-            
-            # Calculate phase correction to reach target phase
-            phase_diff = target_phase - current_phase
-            # Normalize to [-π, π]
-            phase_diff = (phase_diff + np.pi) % (2 * np.pi) - np.pi
-            
-            # Apply phase correction to the entire phi cut
-            correction_factor = np.exp(1j * phase_diff)
-            e_theta_new[f_idx, :, p_idx] *= correction_factor
-            e_phi_new[f_idx, :, p_idx] *= correction_factor
+                # Combine amplitude and phase to get complex value
+                e_theta_new[f_idx, t_idx, p_out_idx] = new_amp_theta * np.exp(1j * new_phase_theta)
+                e_phi_new[f_idx, t_idx, p_out_idx] = new_amp_phi * np.exp(1j * new_phase_phi)
     
     # Update the pattern data
     pattern_obj.data['e_theta'].values = e_theta_new
     pattern_obj.data['e_phi'].values = e_phi_new
     
-    # Recalculate derived components e_co and e_cx
-    pattern_obj.assign_polarization(pattern_obj.polarization)
+    # If we converted from central to sided, convert back to central
+    if is_central:
+        pattern_obj.transform_coordinates('central')
+    else:
+        # Recalculate derived components e_co and e_cx
+        pattern_obj.assign_polarization(pattern_obj.polarization)
     
     # Clear cache
     pattern_obj.clear_cache()
@@ -1401,6 +1349,5 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
             pattern_obj.metadata['operations'] = []
         pattern_obj.metadata['operations'].append({
             'type': 'shift_phi_origin',
-            'phi_offset': float(phi_offset),
-            'phase_normalized': True
+            'phi_offset': float(phi_offset)
         })
