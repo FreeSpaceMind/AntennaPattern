@@ -1322,9 +1322,13 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     # For a proper coordinate system, phi should always be normalized to 0-360
     # regardless of the original phi range
     while np.any(new_phi < 0):
+        e_theta[new_phi < 0] *= np.exp(1j*np.pi)
+        e_phi[new_phi < 0] *= np.exp(1j*np.pi)
         new_phi[new_phi < 0] += 360
     while np.any(new_phi >= 360):
         new_phi[new_phi >= 360] -= 360
+        e_theta[new_phi < 0] *= np.exp(1j*np.pi)
+        e_phi[new_phi < 0] *= np.exp(1j*np.pi)
     
     # Sort indices to maintain ascending order
     sort_indices = np.argsort(new_phi)
