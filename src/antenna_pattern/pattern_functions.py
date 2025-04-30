@@ -1321,15 +1321,15 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     # Apply the phi offset to all phi values
     new_phi = phi + phi_offset
     
-    # Determine the phi range
-    phi_min, phi_max = np.min(phi), np.max(phi)
-    phi_range = phi_max - phi_min
+    # For a proper coordinate system, phi should always be normalized to 0-360
+    # regardless of the original phi range
+    while np.any(new_phi < 0):
+        new_phi[new_phi < 0] += 360
+    while np.any(new_phi >= 360):
+        new_phi[new_phi >= 360] -= 360
     
-    # Normalize all phi values to stay within the original range
-    while np.any(new_phi < phi_min):
-        new_phi[new_phi < phi_min] += phi_range
-    while np.any(new_phi > phi_max):
-        new_phi[new_phi > phi_max] -= phi_range
+    # Now ensure all phi values are within the original range
+    phi_min, phi_max = np.min(phi), np.max(phi)
     
     # Sort indices to maintain ascending order
     sort_indices = np.argsort(new_phi)
