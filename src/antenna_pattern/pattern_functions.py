@@ -1320,7 +1320,7 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     new_phi = phi + phi_offset
 
     # apply a phase correction for any cuts that crossed the 0 and 180 boundaries
-    crossings = np.argwhere(((phi>=0) and (new_phi<0)) or ((phi<180) and (new_phi>=180)))
+    crossings = np.argwhere(np.logical_or(np.logical_and(phi>=0, new_phi<0), np.logical_and(phi<180, new_phi>=180)))
     e_phi[crossings] *= np.exp(1j*np.pi)
     
     # For a proper coordinate system, phi should always be normalized to 0-360
