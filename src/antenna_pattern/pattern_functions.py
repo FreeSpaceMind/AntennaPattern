@@ -1255,9 +1255,6 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     e_theta = pattern_obj.data.e_theta.values.copy()
     e_phi = pattern_obj.data.e_phi.values.copy()
     
-    # Check if we have a central or sided pattern
-    is_central = np.any(theta < 0)
-    
     # Initialize outputs with same shape as inputs
     e_theta_new = np.zeros_like(e_theta, dtype=complex)
     e_phi_new = np.zeros_like(e_phi, dtype=complex)
@@ -1277,24 +1274,28 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
             phase_phi = np.unwrap(np.angle(e_phi_slice))
             
             # Create extended phi array for interpolation that accounts for periodicity
-            # Add points wrapping around both ends to handle circular interpolation
+            # Add one full cycle on both sides
             ext_phi = np.concatenate([phi - 360, phi, phi + 360])
             
             # Extend the amplitude and phase arrays to match
             ext_amp_theta = np.tile(amp_theta, 3)
-            ext_phase_theta = np.concatenate([phase_theta, phase_theta, phase_theta])
-            # We don't add/subtract 2π from phase since we've already unwrapped it
+            ext_phase_theta = np.tile(phase_theta, 3)
             
             ext_amp_phi = np.tile(amp_phi, 3)
-            ext_phase_phi = np.concatenate([phase_phi, phase_phi, phase_phi])
+            ext_phase_phi = np.tile(phase_phi, 3)
             
-            # Create cubic spline interpolations
-            from scipy.interpolate import CubicSpline
-            theta_amp_interp = CubicSpline(ext_phi, ext_amp_theta, bc_type='periodic')
-            theta_phase_interp = CubicSpline(ext_phi, ext_phase_theta, bc_type='periodic')
+            # Create cubic interpolation functions
+            from scipy.interpolate import interp1d
             
-            phi_amp_interp = CubicSpline(ext_phi, ext_amp_phi, bc_type='periodic')
-            phi_phase_interp = CubicSpline(ext_phi, ext_phase_phi, bc_type='periodic')
+            theta_amp_interp = interp1d(ext_phi, ext_amp_theta, kind='cubic', bounds_error=False, 
+                                       fill_value=(ext_amp_theta[0], ext_amp_theta[-1]))
+            theta_phase_interp = interp1d(ext_phi, ext_phase_theta, kind='cubic', bounds_error=False,
+                                         fill_value=(ext_phase_theta[0], ext_phase_theta[-1]))
+            
+            phi_amp_interp = interp1d(ext_phi, ext_amp_phi, kind='cubic', bounds_error=False,
+                                     fill_value=(ext_amp_phi[0], ext_amp_phi[-1]))
+            phi_phase_interp = interp1d(ext_phi, ext_phase_phi, kind='cubic', bounds_error=False,
+                                       fill_value=(ext_phase_phi[0], ext_phase_phi[-1]))
             
             # For each phi in the output, find the rotated point in the input
             for p_out_idx, phi_out in enumerate(phi):
