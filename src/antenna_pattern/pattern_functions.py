@@ -1239,8 +1239,8 @@ def shift_theta_origin(pattern_obj, theta_offset: float) -> None:
 
 def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     """
-    Shifts the origin of the phi coordinate axis for the pattern using interpolation
-    with proper handling of phase unwrapping and phi periodicity.
+    Shifts the origin of the phi coordinate axis for the pattern by adding the rotation
+    to all phi values while maintaining the original phi range and sorting order.
     
     Args:
         pattern_obj: AntennaPattern object to modify
@@ -1255,10 +1255,30 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
     e_theta = pattern_obj.data.e_theta.values.copy()
     e_phi = pattern_obj.data.e_phi.values.copy()
     
+<<<<<<< HEAD
+    # Check if we have a central or sided pattern
+    is_central = np.any(theta < 0)
+    
+    # If central, first convert to sided
+    if is_central:
+        # Transform to sided coordinates in place
+        pattern_obj.transform_coordinates('sided')
+        
+        # Update our references to the transformed data
+        theta = pattern_obj.theta_angles
+        phi = pattern_obj.phi_angles
+        e_theta = pattern_obj.data.e_theta.values.copy()
+        e_phi = pattern_obj.data.e_phi.values.copy()
+=======
     # Initialize outputs with same shape as inputs
     e_theta_new = np.zeros_like(e_theta, dtype=complex)
     e_phi_new = np.zeros_like(e_phi, dtype=complex)
+>>>>>>> 0a1e796164527ba3d2cbcee33352485b14289449
     
+<<<<<<< HEAD
+    # Apply the phi offset to all phi values
+    new_phi = phi + phi_offset
+=======
     # For each frequency and theta angle, interpolate the field value
     for f_idx in range(len(frequency)):
         for t_idx in range(len(theta)):
@@ -1312,12 +1332,38 @@ def shift_phi_origin(pattern_obj, phi_offset: float) -> None:
                 # Combine amplitude and phase to get complex value
                 e_theta_new[f_idx, t_idx, p_out_idx] = new_amp_theta * np.exp(1j * new_phase_theta)
                 e_phi_new[f_idx, t_idx, p_out_idx] = new_amp_phi * np.exp(1j * new_phase_phi)
+>>>>>>> 0a1e796164527ba3d2cbcee33352485b14289449
+    
+    # Determine the phi range
+    phi_min, phi_max = np.min(phi), np.max(phi)
+    phi_range = phi_max - phi_min
+    
+    # Normalize all phi values to stay within the original range
+    while np.any(new_phi < phi_min):
+        new_phi[new_phi < phi_min] += phi_range
+    while np.any(new_phi > phi_max):
+        new_phi[new_phi > phi_max] -= phi_range
+    
+    # Sort indices to maintain ascending order
+    sort_indices = np.argsort(new_phi)
+    
+    # Reorder phi and field components
+    sorted_phi = new_phi[sort_indices]
+    sorted_e_theta = e_theta[:, :, sort_indices]
+    sorted_e_phi = e_phi[:, :, sort_indices]
     
     # Update the pattern data
-    pattern_obj.data['e_theta'].values = e_theta_new
-    pattern_obj.data['e_phi'].values = e_phi_new
+    pattern_obj.data = pattern_obj.data.assign_coords({
+        'phi': sorted_phi
+    })
+    pattern_obj.data['e_theta'].values = sorted_e_theta
+    pattern_obj.data['e_phi'].values = sorted_e_phi
     
-    # Recalculate derived components e_co and e_cx
+    # If originally central, transform back
+    if is_central:
+        pattern_obj.transform_coordinates('central')
+    
+    # Recalculate derived components
     pattern_obj.assign_polarization(pattern_obj.polarization)
     
     # Clear cache
