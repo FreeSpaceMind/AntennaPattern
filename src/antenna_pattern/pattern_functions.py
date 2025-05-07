@@ -1072,8 +1072,7 @@ def normalize_at_boresight(pattern_obj) -> None:
     This function:
     1. Finds the boresight (theta=0) point for each phi angle
     2. For e_theta:
-       - Calculates average magnitude at boresight across all phi cuts
-       - Sets a reference phase (from the first phi cut)
+       - Sets a reference phase and magnitude (from the first phi cut)
        - Normalizes all phi cuts to have the same magnitude and phase at boresight
     3. For e_phi:
        - Follows the same process independently
@@ -1109,13 +1108,9 @@ def normalize_at_boresight(pattern_obj) -> None:
         e_theta_boresight = e_theta[f_idx, theta0_idx, :]
         e_phi_boresight = e_phi[f_idx, theta0_idx, :]
         
-        # Calculate magnitude at boresight
-        e_theta_magnitude = np.abs(e_theta_boresight)
-        e_phi_magnitude = np.abs(e_phi_boresight)
-        
-        # Calculate the average magnitude at boresight
-        e_theta_avg_magnitude = np.mean(e_theta_magnitude)
-        e_phi_avg_magnitude = np.mean(e_phi_magnitude)
+        # Calculate magnitude of first phi cut at boresight
+        e_theta_magnitude = np.abs(e_theta_boresight[0])
+        e_phi_magnitude = np.abs(e_phi_boresight[0])
         
         # Instead of averaging phases,
         # choose the first phi cut's phase as reference for each component
@@ -1130,8 +1125,8 @@ def normalize_at_boresight(pattern_obj) -> None:
             e_phi_current = e_phi[f_idx, theta0_idx, p_idx]
 
             # Calculate reference complex values at boresight (target values)
-            e_theta_ref = e_theta_avg_magnitude * np.exp(1j * (e_theta_ref_phase-np.radians(phi[p_idx])))
-            e_phi_ref = e_phi_avg_magnitude * np.exp(1j * (e_phi_ref_phase-np.radians(phi[p_idx])))
+            e_theta_ref = e_theta_magnitude * np.exp(1j * (e_theta_ref_phase-np.radians(phi[p_idx])))
+            e_phi_ref = e_phi_magnitude * np.exp(1j * (e_phi_ref_phase-np.radians(phi[p_idx])))
                 
             # Avoid division by zero
             if abs(e_theta_current) < 1e-15:
