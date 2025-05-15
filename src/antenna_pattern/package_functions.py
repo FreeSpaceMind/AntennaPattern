@@ -164,17 +164,6 @@ def difference_patterns(
         # Convert ratio back to spherical coordinates (e_theta, e_phi)
         e_theta_diff[f_idx], e_phi_diff[f_idx] = polarization_xy2tp(phi1, e_x_ratio, e_y_ratio)
         
-        # Normalize phase based on first phi cut at boresight
-        # Get phase of e_theta at boresight for first phi cut
-        reference_phase = np.angle(e_theta_diff[f_idx, boresight_idx, 0])
-        
-        # Calculate phase correction factor (to make first phi cut's boresight phase zero)
-        phase_correction = np.exp(-1j * reference_phase)
-        
-        # Apply this same correction to all phi cuts to preserve relative phase relationships
-        e_theta_diff[f_idx] *= phase_correction
-        e_phi_diff[f_idx] *= phase_correction
-    
     # Create metadata for the difference pattern
     metadata = {
         'source': 'difference_pattern',
