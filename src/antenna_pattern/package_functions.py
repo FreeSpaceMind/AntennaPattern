@@ -99,8 +99,9 @@ def difference_patterns(
     pattern and one that has had multipath suppression (e.g., MARS) applied. The
     result shows what was removed by the suppression algorithm.
     
-    The difference is calculated using complex field ratios (pattern1/pattern2), which
-    naturally captures both amplitude and phase differences in a physically meaningful way.
+    The difference is calculated using complex field ratios (pattern1/pattern2), with
+    phase normalization to align the first phi cut between patterns, eliminating
+    arbitrary phase reference differences.
     
     Args:
         pattern1: First AntennaPattern object (typically the original pattern)
@@ -133,19 +134,49 @@ def difference_patterns(
         raise ValueError("Patterns have different frequencies")
     
     # Get the field components
-    e_theta1 = pattern1.data.e_theta.values
-    e_phi1 = pattern1.data.e_phi.values
+    e_theta1 = pattern1.data.e_theta.values.copy()
+    e_phi1 = pattern1.data.e_phi.values.copy()
     
-    e_theta2 = pattern2.data.e_theta.values
-    e_phi2 = pattern2.data.e_phi.values
+    e_theta2 = pattern2.data.e_theta.values.copy()
+    e_phi2 = pattern2.data.e_phi.values.copy()
+    
+    # Find boresight index (closest to theta=0)
+    boresight_idx = np.argmin(np.abs(theta1))
+    
+    # For each frequency, normalize the first phi cut (phi_idx=0)
+    # This preserves relative phase relationships between phi cuts
+    for f_idx in range(len(freq1)):
+        # Get reference phases at boresight for first phi cut (phi_idx=0)
+        # Pattern 1
+        theta_ref_phase1 = np.angle(e_theta1[f_idx, boresight_idx, 0])
+        phi_ref_phase1 = np.angle(e_phi1[f_idx, boresight_idx, 0])
+        
+        # Pattern 2
+        theta_ref_phase2 = np.angle(e_theta2[f_idx, boresight_idx, 0])
+        phi_ref_phase2 = np.angle(e_phi2[f_idx, boresight_idx, 0])
+        
+        # Compute phase correction factors
+        theta_correction1 = np.exp(-1j * theta_ref_phase1)
+        phi_correction1 = np.exp(-1j * phi_ref_phase1)
+        
+        theta_correction2 = np.exp(-1j * theta_ref_phase2)
+        phi_correction2 = np.exp(-1j * phi_ref_phase2)
+        
+        # Apply corrections to all phi cuts for this frequency
+        # This preserves relative phase differences between cuts
+        for p_idx in range(len(phi1)):
+            e_theta1[f_idx, :, p_idx] *= theta_correction1
+            e_phi1[f_idx, :, p_idx] *= phi_correction1
+            
+            e_theta2[f_idx, :, p_idx] *= theta_correction2
+            e_phi2[f_idx, :, p_idx] *= phi_correction2
     
     # Avoid division by zero
     epsilon = 1e-15
     safe_e_theta2 = np.where(np.abs(e_theta2) < epsilon, epsilon, e_theta2)
     safe_e_phi2 = np.where(np.abs(e_phi2) < epsilon, epsilon, e_phi2)
     
-    # Compute complex ratios (e1/e2)
-    # This captures both amplitude and phase differences in one operation
+    # Compute complex ratios with phase-normalized fields
     e_theta_diff = e_theta1 / safe_e_theta2
     e_phi_diff = e_phi1 / safe_e_phi2
     
@@ -154,7 +185,7 @@ def difference_patterns(
         'source': 'difference_pattern',
         'pattern1_polarization': pattern1.polarization,
         'pattern2_polarization': pattern2.polarization,
-        'difference_method': 'complex_ratio',
+        'difference_method': 'first_cut_normalized_complex_ratio',
         'operations': []
     }
     
