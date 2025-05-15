@@ -95,13 +95,9 @@ def difference_patterns(
     """
     Create a new antenna pattern representing the difference between two patterns.
     
-    This function is particularly useful for calculating residuals between an original
-    pattern and one that has had multipath suppression (e.g., MARS) applied. The
-    result shows what was removed by the suppression algorithm.
-    
-    The difference is calculated using complex field ratios (pattern1/pattern2), with
-    phase normalization to align the first phi cut between patterns, eliminating
-    arbitrary phase reference differences.
+    This function computes the ratio between two patterns (pattern1/pattern2) while
+    compensating for the inherent phi-dependent phase progression that exists in
+    spherical field components.
     
     Args:
         pattern1: First AntennaPattern object (typically the original pattern)
@@ -134,58 +130,37 @@ def difference_patterns(
         raise ValueError("Patterns have different frequencies")
     
     # Get the field components
-    e_theta1 = pattern1.data.e_theta.values.copy()
-    e_phi1 = pattern1.data.e_phi.values.copy()
+    e_theta1 = pattern1.data.e_theta.values
+    e_phi1 = pattern1.data.e_phi.values
     
-    e_theta2 = pattern2.data.e_theta.values.copy()
-    e_phi2 = pattern2.data.e_phi.values.copy()
-    
-    # Find boresight index (closest to theta=0)
-    boresight_idx = np.argmin(np.abs(theta1))
-    
-    # For each frequency, normalize the first phi cut (phi_idx=0)
-    # This preserves relative phase relationships between phi cuts
-    for f_idx in range(len(freq1)):
-        # Get reference phases at boresight for first phi cut (phi_idx=0)
-        # Pattern 1
-        theta_ref_phase1 = np.angle(e_theta1[f_idx, boresight_idx, 0])
-        phi_ref_phase1 = np.angle(e_phi1[f_idx, boresight_idx, 0])
-        
-        # Pattern 2
-        theta_ref_phase2 = np.angle(e_theta2[f_idx, boresight_idx, 0])
-        phi_ref_phase2 = np.angle(e_phi2[f_idx, boresight_idx, 0])
-        
-        # Compute phase correction factors
-        theta_correction1 = np.exp(-1j * theta_ref_phase1)
-        phi_correction1 = np.exp(-1j * phi_ref_phase1)
-        
-        theta_correction2 = np.exp(-1j * theta_ref_phase2)
-        phi_correction2 = np.exp(-1j * phi_ref_phase2)
-        
-        # Apply corrections to all phi cuts for this frequency
-        # This preserves relative phase differences between cuts
-        for p_idx in range(len(phi1)):
-            e_theta1[f_idx, :, p_idx] *= theta_correction1
-            e_phi1[f_idx, :, p_idx] *= phi_correction1
-            
-            e_theta2[f_idx, :, p_idx] *= theta_correction2
-            e_phi2[f_idx, :, p_idx] *= phi_correction2
+    e_theta2 = pattern2.data.e_theta.values
+    e_phi2 = pattern2.data.e_phi.values
     
     # Avoid division by zero
     epsilon = 1e-15
     safe_e_theta2 = np.where(np.abs(e_theta2) < epsilon, epsilon, e_theta2)
     safe_e_phi2 = np.where(np.abs(e_phi2) < epsilon, epsilon, e_phi2)
     
-    # Compute complex ratios with phase-normalized fields
+    # Compute complex ratios (e1/e2)
     e_theta_diff = e_theta1 / safe_e_theta2
     e_phi_diff = e_phi1 / safe_e_phi2
+    
+    # Apply phi-dependent phase correction to remove the inherent phase progression
+    # This corrects for the coordinate basis changing with phi angle
+    for p_idx, phi_val in enumerate(phi1):
+        # Create phase correction factor based on phi angle
+        phase_correction = np.exp(-1j * np.radians(phi_val))
+        
+        # Apply correction to both field components
+        e_theta_diff[:, :, p_idx] *= phase_correction
+        e_phi_diff[:, :, p_idx] *= phase_correction
     
     # Create metadata for the difference pattern
     metadata = {
         'source': 'difference_pattern',
         'pattern1_polarization': pattern1.polarization,
         'pattern2_polarization': pattern2.polarization,
-        'difference_method': 'first_cut_normalized_complex_ratio',
+        'difference_method': 'complex_ratio_with_phi_correction',
         'operations': []
     }
     

@@ -796,9 +796,9 @@ def plot_pattern_statistics(
     ax.set_xlabel('Theta (degrees)')
     
     if value_type == 'gain':
-        y_label = f'{component.upper()} Gain (dBi)'
+        y_label = f'{component.lower()} Gain (dBi)'
     elif value_type == 'phase':
-        y_label = f'{component.upper()} Phase (degrees)'
+        y_label = f'{component.lower()} Phase (degrees)'
     elif value_type == 'axial_ratio':
         y_label = 'Axial Ratio (dB)'
     
