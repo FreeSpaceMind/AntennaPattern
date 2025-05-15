@@ -1131,7 +1131,7 @@ def normalize_at_boresight(pattern_obj) -> None:
 
             # Calculate reference complex values at boresight (target values)
             e_theta_ref = e_theta_avg_magnitude * np.exp(1j * (e_theta_ref_phase-np.radians(phi[p_idx])))
-            e_phi_ref = e_phi_avg_magnitude * np.exp(1j * (e_phi_ref_phase-np.radians(phi[p_idx]+90)))
+            e_phi_ref = e_phi_avg_magnitude * np.exp(1j * (e_phi_ref_phase-np.radians(phi[p_idx])))
                 
             # Avoid division by zero
             if abs(e_theta_current) < 1e-15:
