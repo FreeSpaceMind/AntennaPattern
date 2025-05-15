@@ -95,9 +95,10 @@ def difference_patterns(
     """
     Create a new antenna pattern representing the difference between two patterns.
     
-    This function computes the ratio between two patterns (pattern1/pattern2) while
-    compensating for the inherent phi-dependent phase progression that exists in
-    spherical field components.
+    This function converts the patterns to Ludwig's III coordinate system (e_x and e_y),
+    computes the complex ratio, and then converts back to spherical coordinates.
+    This approach avoids the inherent phi-dependent phase progression that exists
+    in spherical field components.
     
     Args:
         pattern1: First AntennaPattern object (typically the original pattern)
@@ -111,6 +112,7 @@ def difference_patterns(
         ValueError: If patterns have incompatible dimensions
     """
     import numpy as np
+    from .polarization import polarization_tp2xy, polarization_xy2tp
     
     # Check that patterns have the same dimensions
     theta1 = pattern1.theta_angles
@@ -136,31 +138,34 @@ def difference_patterns(
     e_theta2 = pattern2.data.e_theta.values
     e_phi2 = pattern2.data.e_phi.values
     
-    # Avoid division by zero
-    epsilon = 1e-15
-    safe_e_theta2 = np.where(np.abs(e_theta2) < epsilon, epsilon, e_theta2)
-    safe_e_phi2 = np.where(np.abs(e_phi2) < epsilon, epsilon, e_phi2)
+    # Initialize arrays for difference pattern
+    e_theta_diff = np.zeros_like(e_theta1, dtype=complex)
+    e_phi_diff = np.zeros_like(e_phi1, dtype=complex)
     
-    # Compute complex ratios (e1/e2)
-    e_theta_diff = e_theta1 / safe_e_theta2
-    e_phi_diff = e_phi1 / safe_e_phi2
-    
-    # Apply phi-dependent phase correction to remove the inherent phase progression
-    # This corrects for the coordinate basis changing with phi angle
-    for p_idx, phi_val in enumerate(phi1):
-        # Create phase correction factor based on phi angle
-        phase_correction = np.exp(-1j * np.radians(phi_val))
+    # Process each frequency separately
+    for f_idx in range(len(freq1)):
+        # Convert both patterns to Ludwig's III (e_x, e_y) for each phi cut
+        e_x1, e_y1 = polarization_tp2xy(phi1, e_theta1[f_idx], e_phi1[f_idx])
+        e_x2, e_y2 = polarization_tp2xy(phi1, e_theta2[f_idx], e_phi2[f_idx])
         
-        # Apply correction to both field components
-        e_theta_diff[:, :, p_idx] *= phase_correction
-        e_phi_diff[:, :, p_idx] *= phase_correction
+        # Avoid division by zero
+        epsilon = 1e-15
+        safe_e_x2 = np.where(np.abs(e_x2) < epsilon, epsilon, e_x2)
+        safe_e_y2 = np.where(np.abs(e_y2) < epsilon, epsilon, e_y2)
+        
+        # Compute complex ratios in Ludwig's III coordinate system
+        e_x_ratio = e_x1 / safe_e_x2
+        e_y_ratio = e_y1 / safe_e_y2
+        
+        # Convert ratio back to spherical coordinates (e_theta, e_phi)
+        e_theta_diff[f_idx], e_phi_diff[f_idx] = polarization_xy2tp(phi1, e_x_ratio, e_y_ratio)
     
     # Create metadata for the difference pattern
     metadata = {
         'source': 'difference_pattern',
         'pattern1_polarization': pattern1.polarization,
         'pattern2_polarization': pattern2.polarization,
-        'difference_method': 'complex_ratio_with_phi_correction',
+        'difference_method': 'ludwig3_complex_ratio',
         'operations': []
     }
     
