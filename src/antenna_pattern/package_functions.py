@@ -87,3 +87,83 @@ def average_patterns(patterns: List[AntennaPattern], weights: Optional[List[floa
         e_phi=e_phi_avg,
         metadata=metadata
     )
+
+def difference_patterns(
+    pattern1: AntennaPattern, 
+    pattern2: AntennaPattern, 
+    absolute: bool = False
+) -> AntennaPattern:
+    """
+    Create a new antenna pattern representing the difference between two patterns.
+    
+    This function computes the complex difference between two patterns, which must
+    have compatible dimensions (same theta, phi, and frequency values).
+    
+    Args:
+        pattern1: First AntennaPattern object
+        pattern2: Second AntennaPattern object
+        absolute: If True, take the absolute difference |p1-p2|, 
+                 otherwise take the signed difference (p1-p2)
+            
+    Returns:
+        AntennaPattern: A new antenna pattern containing the difference
+        
+    Raises:
+        ValueError: If patterns have incompatible dimensions
+    """
+    # Check that patterns have the same dimensions
+    theta1 = pattern1.theta_angles
+    phi1 = pattern1.phi_angles
+    freq1 = pattern1.frequencies
+    
+    theta2 = pattern2.theta_angles
+    phi2 = pattern2.phi_angles
+    freq2 = pattern2.frequencies
+    
+    # Verify the patterns have compatible dimensions
+    if not np.array_equal(theta1, theta2):
+        raise ValueError("Patterns have different theta angles")
+    if not np.array_equal(phi1, phi2):
+        raise ValueError("Patterns have different phi angles")
+    if not np.array_equal(freq1, freq2):
+        raise ValueError("Patterns have different frequencies")
+    
+    # Get the field components
+    e_theta1 = pattern1.data.e_theta.values
+    e_phi1 = pattern1.data.e_phi.values
+    
+    e_theta2 = pattern2.data.e_theta.values
+    e_phi2 = pattern2.data.e_phi.values
+    
+    # Compute the difference
+    if absolute:
+        e_theta_diff = np.abs(e_theta1 - e_theta2)
+        e_phi_diff = np.abs(e_phi1 - e_phi2)
+    else:
+        e_theta_diff = e_theta1 - e_theta2
+        e_phi_diff = e_phi1 - e_phi2
+    
+    # Create metadata for the difference pattern
+    metadata = {
+        'source': 'difference_pattern',
+        'pattern1_polarization': pattern1.polarization,
+        'pattern2_polarization': pattern2.polarization,
+        'absolute_difference': absolute,
+        'operations': []
+    }
+    
+    # Include original pattern metadata if available
+    if hasattr(pattern1, 'metadata') and pattern1.metadata:
+        metadata['pattern1_metadata'] = pattern1.metadata
+    if hasattr(pattern2, 'metadata') and pattern2.metadata:
+        metadata['pattern2_metadata'] = pattern2.metadata
+    
+    # Create a new pattern with the difference data
+    return AntennaPattern(
+        theta=theta1,
+        phi=phi1,
+        frequency=freq1,
+        e_theta=e_theta_diff,
+        e_phi=e_phi_diff,
+        metadata=metadata
+    )

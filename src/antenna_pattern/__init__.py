@@ -54,11 +54,16 @@ from .utilities import (
 from .plotting import (
     plot_pattern_cut,
     plot_multiple_patterns,
-    plot_pattern_difference
+    plot_pattern_difference,
+    plot_pattern_statistics,
+    add_spec_mask,
+    add_envelope_spec
 )
 
-# New functions
-from .package_functions import average_patterns
+from .package_functions import (
+    average_patterns,
+    difference_patterns
+)
 
 # Define what gets imported with "from antenna_pattern import *"
 __all__ = [
@@ -100,5 +105,9 @@ __all__ = [
     'plot_pattern_cut',
     'plot_multiple_patterns',
     'plot_pattern_difference',
-    'average_patterns'
+    'plot_pattern_statistics',
+    'add_spec_mask',
+    'add_envelope_spec',
+    'average_patterns',
+    'difference_patterns'
 ]

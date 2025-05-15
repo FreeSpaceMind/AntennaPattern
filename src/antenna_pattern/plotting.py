@@ -3,7 +3,7 @@ Plotting functions for antenna radiation patterns.
 """
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Optional, Union, List, Tuple, Literal
+from typing import Optional, Union, List, Tuple, Literal, Any, Dict
 import logging
 
 from .pattern import AntennaPattern
@@ -575,3 +575,441 @@ def plot_pattern_difference(
     fig.tight_layout()
     
     return fig
+
+def plot_pattern_statistics(
+    patterns: List[AntennaPattern],
+    statistic: str = 'mean',
+    frequency: Optional[float] = None,
+    phi: Optional[Union[float, List[float]]] = None,
+    component: str = 'e_co',
+    value_type: Literal['gain', 'phase', 'axial_ratio'] = 'gain',
+    percentile_range: Tuple[float, float] = (25, 75),
+    show_range: bool = False,
+    ax: Optional[plt.Axes] = None,
+    fig_size: Tuple[float, float] = (10, 6),
+    title: Optional[str] = None,
+    show_individual: bool = False,
+    alpha_individual: float = 0.2,
+    legend: bool = True
+) -> plt.Figure:
+    """
+    Plot statistical measures across multiple antenna patterns.
+    
+    Args:
+        patterns: List of AntennaPattern objects
+        statistic: Statistical measure to plot:
+            - 'mean': Arithmetic mean
+            - 'median': Median value
+            - 'rms': Root Mean Square value
+            - 'percentile': Show percentile range (controlled by percentile_range)
+            - 'std': Mean plus/minus one standard deviation
+        frequency: Specific frequency to plot in Hz, or None to use first frequency
+        phi: Specific phi angle(s) to plot in degrees, or None to use first phi
+        component: Field component ('e_co', 'e_cx', 'e_theta', 'e_phi')
+        value_type: Type of value to plot ('gain', 'phase', or 'axial_ratio')
+        percentile_range: Tuple of (lower, upper) percentiles to show when statistic='percentile'
+        show_range: If True, show min/max range as shaded area
+        ax: Optional matplotlib axes to plot on
+        fig_size: Figure size as (width, height) in inches
+        title: Optional title for the plot
+        show_individual: If True, plot individual patterns as thin lines
+        alpha_individual: Alpha transparency for individual pattern lines
+        legend: If True, add a legend to the plot
+        
+    Returns:
+        matplotlib.Figure: The created figure object
+        
+    Raises:
+        ValueError: If statistics type is invalid
+        ValueError: If patterns have incompatible dimensions
+    """
+    # Validate statistic type
+    valid_stats = ['mean', 'median', 'rms', 'percentile', 'std']
+    if statistic not in valid_stats:
+        raise ValueError(f"Invalid statistic: {statistic}. Must be one of {valid_stats}")
+    
+    # Create new figure and axes if not provided
+    if ax is None:
+        fig, ax = plt.subplots(figsize=fig_size)
+    else:
+        fig = ax.figure
+    
+    # Get a reference pattern for axis data
+    ref_pattern = patterns[0]
+    
+    # Handle frequency selection
+    frequencies = ref_pattern.frequencies
+    if frequency is None:
+        freq_idx = 0
+        selected_frequency = frequencies[0]
+    else:
+        nearest_freq, freq_idx = find_nearest(frequencies, frequency)
+        selected_frequency = nearest_freq
+    
+    # Handle phi selection
+    phi_angles = ref_pattern.phi_angles
+    if phi is None:
+        phi_idx = 0
+        selected_phi = phi_angles[0]
+    elif np.isscalar(phi):
+        nearest_phi, phi_idx = find_nearest(phi_angles, phi)
+        selected_phi = nearest_phi
+    else:
+        # Multiple phi angles - use first one for now
+        nearest_phi, phi_idx = find_nearest(phi_angles, phi[0])
+        selected_phi = nearest_phi
+        
+    # Get theta angles for the x-axis
+    theta = ref_pattern.theta_angles
+    
+    # Extract data for each pattern
+    data_arrays = []
+    for pattern in patterns:
+        # Validate compatibility
+        if not np.array_equal(pattern.theta_angles, theta):
+            raise ValueError("All patterns must have the same theta angles")
+        if not np.allclose(pattern.frequencies[freq_idx], selected_frequency, rtol=1e-6):
+            raise ValueError("All patterns must have compatible frequencies")
+        
+        # Extract data based on value_type
+        if value_type == 'gain':
+            data = pattern.get_gain_db(component)[freq_idx, :, phi_idx]
+        elif value_type == 'phase':
+            data = pattern.get_phase(component, unwrapped=True)[freq_idx, :, phi_idx] 
+        elif value_type == 'axial_ratio':
+            data = pattern.get_axial_ratio()[freq_idx, :, phi_idx]
+        else:
+            raise ValueError(f"Invalid value_type: {value_type}")
+            
+        data_arrays.append(data)
+    
+    # Stack data as 2D array (patterns × theta)
+    all_data = np.vstack(data_arrays)
+    
+    # Calculate statistics
+    mean_data = np.mean(all_data, axis=0)
+    median_data = np.median(all_data, axis=0)
+    std_data = np.std(all_data, axis=0)
+    min_data = np.min(all_data, axis=0)
+    max_data = np.max(all_data, axis=0)
+    
+    # For RMS, we need to square values, mean, then sqrt
+    # If dealing with dB, convert to linear first
+    if value_type == 'gain':
+        # Convert to linear, calculate RMS, then back to dB
+        linear_data = 10**(all_data/10)
+        rms_linear = np.sqrt(np.mean(linear_data**2, axis=0))
+        rms_data = 10 * np.log10(rms_linear)
+    else:
+        # For phase and axial ratio, calculate RMS directly
+        rms_data = np.sqrt(np.mean(all_data**2, axis=0))
+    
+    # Calculate percentiles if needed
+    lower_percentile = np.percentile(all_data, percentile_range[0], axis=0)
+    upper_percentile = np.percentile(all_data, percentile_range[1], axis=0)
+    
+    # Plot individual patterns if requested
+    if show_individual:
+        for i, data in enumerate(data_arrays):
+            ax.plot(theta, data, color='gray', alpha=alpha_individual, linewidth=0.8, 
+                   label="_nolegend_")
+    
+    # Set plot color and label
+    stat_color = 'blue'
+    range_alpha = 0.2
+    
+    # Plot the requested statistic
+    if statistic == 'mean':
+        ax.plot(theta, mean_data, color=stat_color, linewidth=2, 
+               label=f"Mean ({len(patterns)} patterns)")
+        stat_label = 'Mean'
+        
+    elif statistic == 'median':
+        ax.plot(theta, median_data, color=stat_color, linewidth=2, 
+               label=f"Median ({len(patterns)} patterns)")
+        stat_label = 'Median'
+        
+    elif statistic == 'rms':
+        ax.plot(theta, rms_data, color=stat_color, linewidth=2, 
+               label=f"RMS ({len(patterns)} patterns)")
+        stat_label = 'RMS'
+        
+    elif statistic == 'percentile':
+        ax.plot(theta, median_data, color=stat_color, linewidth=2, 
+               label=f"Median ({len(patterns)} patterns)")
+        ax.fill_between(theta, lower_percentile, upper_percentile, alpha=range_alpha, 
+                       color=stat_color, label=f"{percentile_range[0]}-{percentile_range[1]} Percentile")
+        stat_label = f"Percentile Range {percentile_range[0]}-{percentile_range[1]}"
+        
+    elif statistic == 'std':
+        ax.plot(theta, mean_data, color=stat_color, linewidth=2, 
+               label=f"Mean ({len(patterns)} patterns)")
+        ax.fill_between(theta, mean_data - std_data, mean_data + std_data, alpha=range_alpha, 
+                       color=stat_color, label=f"±1 Std Dev")
+        stat_label = 'Mean ±1 Std Dev'
+    
+    # Show min/max range if requested
+    if show_range and statistic != 'percentile':  # Don't add min/max if already showing percentiles
+        ax.fill_between(theta, min_data, max_data, alpha=range_alpha/2, color='gray', 
+                       label="Min-Max Range")
+    
+    # Set plot labels and grid
+    ax.set_xlabel('Theta (degrees)')
+    
+    if value_type == 'gain':
+        y_label = f'{component.upper()} Gain (dBi)'
+    elif value_type == 'phase':
+        y_label = f'{component.upper()} Phase (degrees)'
+    elif value_type == 'axial_ratio':
+        y_label = 'Axial Ratio (dB)'
+    
+    ax.set_ylabel(y_label)
+    
+    # Create title if not provided
+    if title is None:
+        freq_str = f"{selected_frequency/1e6:.1f} MHz"
+        phi_str = f"φ={selected_phi:.1f}°"
+        title = f"{stat_label} Antenna {value_type.capitalize()}: {freq_str}, {phi_str}"
+    
+    ax.set_title(title)
+    ax.grid(True)
+    
+    # Add legend if requested
+    if legend:
+        ax.legend(loc='best')
+    
+    # Make layout tight
+    fig.tight_layout()
+    
+    return fig
+
+def add_spec_mask(
+    ax: plt.Axes,
+    x_points: Union[List[float], np.ndarray],
+    y_points: Union[List[float], np.ndarray],
+    mask_type: Literal['upper', 'lower', 'both'] = 'upper',
+    fill: bool = True,
+    color: Optional[Union[str, Tuple[float, float, float]]] = None,
+    line_style: str = '-',
+    line_width: float = 2.0,
+    fill_alpha: float = 0.2,
+    label: Optional[str] = None,
+    auto_interpolate: bool = True,
+    interpolation_method: str = 'linear'
+) -> List[Any]:
+    """
+    Add a specification mask or line to an existing antenna pattern plot.
+    
+    Args:
+        ax: Matplotlib axes to add the spec mask to
+        x_points: X-axis points defining the spec mask (typically theta angles in degrees)
+        y_points: Y-axis points defining the spec mask (typically gain values in dB)
+        mask_type: Type of specification mask:
+            - 'upper': Mask is an upper limit (highlight region above the line)
+            - 'lower': Mask is a lower limit (highlight region below the line)
+            - 'both': Mask is a boundary line only (no fill)
+        fill: If True, fill the mask region
+        color: Color for the mask line and fill; if None, uses:
+            - Red for upper limits
+            - Green for lower limits
+            - Blue for boundary lines
+        line_style: Style for the mask line ('solid', 'dashed', etc.)
+        line_width: Width of the mask line
+        fill_alpha: Alpha transparency for the filled region
+        label: Label for the mask line in the legend
+        auto_interpolate: If True, automatically interpolate the mask to match x-axis limits
+        interpolation_method: Method for interpolation ('linear', 'nearest', 'cubic', etc.)
+        
+    Returns:
+        List of artists added to the plot (can be used for legend entries)
+        
+    Notes:
+        - If auto_interpolate is True, the mask will be extended to the current x-axis limits
+        - For a proper envelope mask with segments, provide all corner points in the mask
+    """
+    from scipy import interpolate
+    
+    # Convert inputs to numpy arrays
+    x_points = np.asarray(x_points)
+    y_points = np.asarray(y_points)
+    
+    # Validate inputs
+    if len(x_points) != len(y_points):
+        raise ValueError(f"x_points length ({len(x_points)}) must match y_points length ({len(y_points)})")
+    
+    if len(x_points) < 2:
+        raise ValueError("At least two points are required to define a spec mask")
+    
+    # Auto-interpolation to match current x-axis limits if requested
+    if auto_interpolate:
+        # Get current x-axis limits
+        x_min, x_max = ax.get_xlim()
+        
+        # Check if we need to extend the mask
+        if x_min < np.min(x_points) or x_max > np.max(x_points):
+            # Create a more dense set of points that spans the full x-axis
+            mask_interp = interpolate.interp1d(
+                x_points, 
+                y_points, 
+                kind=interpolation_method, 
+                bounds_error=False,
+                fill_value="extrapolate"
+            )
+            
+            # Create extended x-axis points
+            x_extended = np.linspace(
+                min(x_min, np.min(x_points)),
+                max(x_max, np.max(x_points)),
+                max(len(x_points) * 5, 100)  # Ensure smooth curve with enough points
+            )
+            
+            # Get interpolated y values
+            y_extended = mask_interp(x_extended)
+            
+            # Replace original points with extended points
+            x_points = x_extended
+            y_points = y_extended
+    
+    # Set default colors based on mask_type if not provided
+    if color is None:
+        if mask_type == 'upper':
+            color = 'red'
+        elif mask_type == 'lower':
+            color = 'green'
+        else:  # 'both'
+            color = 'blue'
+    
+    # Create list to store added artists
+    artists = []
+    
+    # Plot the spec line
+    line = ax.plot(
+        x_points, 
+        y_points, 
+        linestyle=line_style, 
+        linewidth=line_width, 
+        color=color,
+        label=label
+    )[0]
+    artists.append(line)
+    
+    # Add fill if requested
+    if fill and mask_type != 'both':
+        # Get current y-axis limits to determine fill boundaries
+        y_min, y_max = ax.get_ylim()
+        
+        if mask_type == 'upper':
+            # Fill from the line up to the top of the plot
+            fill_artist = ax.fill_between(
+                x_points,
+                y_points,
+                np.full_like(y_points, y_max),
+                color=color,
+                alpha=fill_alpha,
+                label='_nolegend_'  # Don't add fill to legend
+            )
+        else:  # 'lower'
+            # Fill from the line down to the bottom of the plot
+            fill_artist = ax.fill_between(
+                x_points,
+                np.full_like(y_points, y_min),
+                y_points,
+                color=color,
+                alpha=fill_alpha,
+                label='_nolegend_'  # Don't add fill to legend
+            )
+        
+        artists.append(fill_artist)
+    
+    return artists
+
+
+def add_envelope_spec(
+    ax: plt.Axes,
+    spec_points: Dict[str, List[Tuple[float, float]]],
+    colors: Optional[Dict[str, str]] = None,
+    fill: bool = True,
+    fill_alpha: float = 0.2,
+    line_width: float = 2.0,
+    auto_interpolate: bool = True
+) -> Dict[str, List[Any]]:
+    """
+    Add multiple specification masks to create an envelope specification.
+    
+    Args:
+        ax: Matplotlib axes to add the spec masks to
+        spec_points: Dictionary mapping spec names to lists of (x, y) tuples defining each spec
+        colors: Optional dictionary mapping spec names to colors
+        fill: If True, fill the mask regions
+        fill_alpha: Alpha transparency for the filled regions
+        line_width: Width of the mask lines
+        auto_interpolate: If True, automatically interpolate the masks to match x-axis limits
+        
+    Returns:
+        Dictionary mapping spec names to lists of artists added to the plot
+        
+    Example:
+        ```python
+        # Define spec points
+        spec_points = {
+            'upper_limit': [(0, 20), (10, 15), (30, 5), (90, 0)],  # Upper limit spec
+            'lower_limit': [(0, 10), (10, 8), (30, -5), (90, -10)]  # Lower limit spec
+        }
+        
+        # Add specs to plot
+        artists = add_envelope_spec(ax, spec_points, fill=True)
+        ```
+    """
+    # Default colors if not provided
+    if colors is None:
+        colors = {
+            'upper': 'red',
+            'lower': 'green',
+            'target': 'blue'
+        }
+    
+    # Create default color mapping for any spec names
+    default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    
+    # Process each spec and add to plot
+    result_artists = {}
+    
+    for i, (spec_name, points) in enumerate(spec_points.items()):
+        # Split points into x and y arrays
+        x_points = [p[0] for p in points]
+        y_points = [p[1] for p in points]
+        
+        # Determine if this is an upper, lower or target spec based on name
+        if 'upper' in spec_name.lower() or 'max' in spec_name.lower():
+            mask_type = 'upper'
+        elif 'lower' in spec_name.lower() or 'min' in spec_name.lower():
+            mask_type = 'lower'
+        else:
+            mask_type = 'both'  # Default to boundary line only
+        
+        # Get color for this spec
+        if spec_name in colors:
+            color = colors[spec_name]
+        elif mask_type in colors:
+            color = colors[mask_type]
+        else:
+            # Use next color from default cycle
+            color = default_colors[i % len(default_colors)]
+        
+        # Add the spec mask
+        artists = add_spec_mask(
+            ax=ax,
+            x_points=x_points,
+            y_points=y_points,
+            mask_type=mask_type,
+            fill=fill,
+            color=color,
+            line_width=line_width,
+            fill_alpha=fill_alpha,
+            label=spec_name,
+            auto_interpolate=auto_interpolate
+        )
+        
+        result_artists[spec_name] = artists
+    
+    return result_artists
