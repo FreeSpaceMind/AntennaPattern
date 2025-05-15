@@ -5,7 +5,6 @@ import numpy as np
 from typing import List, Optional, Union, Dict, Any
 
 from .pattern import AntennaPattern
-from .pattern_functions import unwrap_phase
 
 def average_patterns(patterns: List[AntennaPattern], weights: Optional[List[float]] = None) -> AntennaPattern:
     """
@@ -154,17 +153,30 @@ def difference_patterns(
     amp_theta_diff = amp_theta1 - amp_theta2
     amp_phi_diff = amp_phi1 - amp_phi2
     
-    # For phase, handle circular difference to get shortest path
-    phase_theta_diff = unwrap_phase(phase_theta1) - unwrap_phase(phase_theta2)
-    phase_phi_diff = unwrap_phase(phase_phi1) - unwrap_phase(phase_phi2)
+    # For phase differences, use complex field ratio approach 
+    # This preserves the true phase relationship between the patterns
+    # and handles phase wrapping naturally
+    
+    # Avoid division by zero
+    epsilon = 1e-15
+    safe_e_theta2 = np.where(np.abs(e_theta2) < epsilon, epsilon, e_theta2)
+    safe_e_phi2 = np.where(np.abs(e_phi2) < epsilon, epsilon, e_phi2)
+    
+    # Compute complex ratios (e1/e2)
+    complex_ratio_theta = e_theta1 / safe_e_theta2
+    complex_ratio_phi = e_phi1 / safe_e_phi2
+    
+    # Extract phase differences from the complex ratios
+    phase_diff_theta = np.angle(complex_ratio_theta)
+    phase_diff_phi = np.angle(complex_ratio_phi)
     
     # Convert amplitude differences back to linear scale
     amp_theta_linear = 10**(amp_theta_diff / 20)
     amp_phi_linear = 10**(amp_phi_diff / 20)
     
     # Reconstruct complex values with difference amplitude and phase
-    e_theta_diff = amp_theta_linear * np.exp(1j * phase_theta_diff)
-    e_phi_diff = amp_phi_linear * np.exp(1j * phase_phi_diff)
+    e_theta_diff = amp_theta_linear * np.exp(1j * phase_diff_theta)
+    e_phi_diff = amp_phi_linear * np.exp(1j * phase_diff_phi)
     
     # Create metadata for the difference pattern
     metadata = {
@@ -187,5 +199,6 @@ def difference_patterns(
         frequency=freq1,
         e_theta=e_theta_diff,
         e_phi=e_phi_diff,
+        polarization=pattern1.polarization,
         metadata=metadata
     )
