@@ -5,7 +5,7 @@ import numpy as np
 from typing import List, Optional, Union, Dict, Any
 
 from .pattern import AntennaPattern
-from .polarization import polarization_tp2xy, polarization_xy2tp
+from .polarization import polarization_tp2xy, polarization_xy2tp, polarization_rl2tp
 
 def average_patterns(patterns: List[AntennaPattern], weights: Optional[List[float]] = None) -> AntennaPattern:
     """
@@ -95,11 +95,7 @@ def difference_patterns(
 ) -> AntennaPattern:
     """
     Create a new antenna pattern representing the difference between two patterns.
-    
-    This function converts the patterns to Ludwig's III coordinate system (e_x and e_y),
-    computes the complex ratio, and then converts back to spherical coordinates.
-    The result is normalized so that the e_theta component at boresight for the first
-    phi cut has zero phase, while preserving phase relationships between all cuts.
+    Works directly with co-polarized component of the first pattern.
     
     Args:
         pattern1: First AntennaPattern object (typically the original pattern)
@@ -108,13 +104,7 @@ def difference_patterns(
     Returns:
         AntennaPattern: A new antenna pattern containing the difference (pattern1/pattern2)
                         with polarization matching pattern1
-        
-    Raises:
-        ValueError: If patterns have incompatible dimensions
     """
-    import numpy as np
-    from .polarization import polarization_tp2xy, polarization_xy2tp
-    
     # Check that patterns have the same dimensions
     theta1 = pattern1.theta_angles
     phi1 = pattern1.phi_angles
@@ -135,58 +125,96 @@ def difference_patterns(
     # Find boresight index (closest to theta=0)
     boresight_idx = np.argmin(np.abs(theta1))
     
-    # Get the field components
-    e_theta1 = pattern1.data.e_theta.values
-    e_phi1 = pattern1.data.e_phi.values
+    # Ensure both patterns have the same polarization
+    pol = pattern1.polarization
+    if pattern2.polarization != pol:
+        pattern2 = pattern2.change_polarization(pol)
     
-    e_theta2 = pattern2.data.e_theta.values
-    e_phi2 = pattern2.data.e_phi.values
+    # Get the field components - work directly with co-pol and cross-pol
+    e_co1 = pattern1.data.e_co.values
+    e_cx1 = pattern1.data.e_cx.values
+    
+    e_co2 = pattern2.data.e_co.values
+    e_cx2 = pattern2.data.e_cx.values
     
     # Initialize arrays for difference pattern
-    e_theta_diff = np.zeros_like(e_theta1, dtype=complex)
-    e_phi_diff = np.zeros_like(e_phi1, dtype=complex)
+    e_co_diff = np.zeros_like(e_co1, dtype=complex)
+    e_cx_diff = np.zeros_like(e_cx1, dtype=complex)
     
     # Process each frequency separately
     for f_idx in range(len(freq1)):
-        # Convert both patterns to Ludwig's III (e_x, e_y) for each phi cut
-        e_x1, e_y1 = polarization_tp2xy(phi1, e_theta1[f_idx], e_phi1[f_idx])
-        e_x2, e_y2 = polarization_tp2xy(phi1, e_theta2[f_idx], e_phi2[f_idx])
-        
         # Avoid division by zero
         epsilon = 1e-15
-        safe_e_x2 = np.where(np.abs(e_x2) < epsilon, epsilon, e_x2)
-        safe_e_y2 = np.where(np.abs(e_y2) < epsilon, epsilon, e_y2)
+        safe_e_co2 = np.where(np.abs(e_co2[f_idx]) < epsilon, epsilon, e_co2[f_idx])
+        safe_e_cx2 = np.where(np.abs(e_cx2[f_idx]) < epsilon, epsilon, e_cx2[f_idx])
         
-        # Compute complex ratios in Ludwig's III coordinate system
-        e_x_ratio = e_x1 / safe_e_x2
-        e_y_ratio = e_y1 / safe_e_y2
+        # Compute ratios directly in co/cross coordinate system
+        e_co_diff[f_idx] = e_co1[f_idx] / safe_e_co2
+        e_cx_diff[f_idx] = e_cx1[f_idx] / safe_e_cx2
         
-        # Convert ratio back to spherical coordinates (e_theta, e_phi)
-        e_theta_diff[f_idx], e_phi_diff[f_idx] = polarization_xy2tp(phi1, e_x_ratio, e_y_ratio)
+        # Normalize phase based on first phi cut at boresight
+        reference_phase = np.angle(e_co_diff[f_idx, boresight_idx, 0])
+        phase_correction = np.exp(-1j * reference_phase)
         
+        e_co_diff[f_idx] *= phase_correction
+        e_cx_diff[f_idx] *= phase_correction
+    
+    # Convert back to e_theta and e_phi based on polarization
+    e_theta_diff = np.zeros_like(e_co_diff, dtype=complex)
+    e_phi_diff = np.zeros_like(e_cx_diff, dtype=complex)
+    
+    if pol in ('rhcp', 'rh', 'r'):
+        # For RHCP: e_co = e_r, e_cx = e_l
+        # Convert from RHCP/LHCP to theta/phi
+        for f_idx in range(len(freq1)):
+            e_theta_temp, e_phi_temp = polarization_rl2tp(phi1, e_co_diff[f_idx], e_cx_diff[f_idx])
+            e_theta_diff[f_idx] = e_theta_temp
+            e_phi_diff[f_idx] = e_phi_temp
+    elif pol in ('lhcp', 'lh', 'l'):
+        # For LHCP: e_co = e_l, e_cx = e_r
+        # Convert from LHCP/RHCP to theta/phi
+        for f_idx in range(len(freq1)):
+            e_theta_temp, e_phi_temp = polarization_rl2tp(phi1, e_cx_diff[f_idx], e_co_diff[f_idx])
+            e_theta_diff[f_idx] = e_theta_temp
+            e_phi_diff[f_idx] = e_phi_temp
+    elif pol in ('x', 'l3x'):
+        # For X: e_co = e_x, e_cx = e_y
+        for f_idx in range(len(freq1)):
+            e_theta_temp, e_phi_temp = polarization_xy2tp(phi1, e_co_diff[f_idx], e_cx_diff[f_idx])
+            e_theta_diff[f_idx] = e_theta_temp
+            e_phi_diff[f_idx] = e_phi_temp
+    elif pol in ('y', 'l3y'):
+        # For Y: e_co = e_y, e_cx = e_x
+        for f_idx in range(len(freq1)):
+            e_theta_temp, e_phi_temp = polarization_xy2tp(phi1, e_cx_diff[f_idx], e_co_diff[f_idx])
+            e_theta_diff[f_idx] = e_theta_temp
+            e_phi_diff[f_idx] = e_phi_temp
+    else:
+        # For theta/phi, directly use values
+        if pol == 'theta':
+            e_theta_diff = e_co_diff
+            e_phi_diff = e_cx_diff
+        else:  # phi polarization
+            e_theta_diff = e_cx_diff
+            e_phi_diff = e_co_diff
+    
     # Create metadata for the difference pattern
     metadata = {
         'source': 'difference_pattern',
         'pattern1_polarization': pattern1.polarization,
         'pattern2_polarization': pattern2.polarization,
-        'difference_method': 'ludwig3_complex_ratio_normalized',
+        'difference_method': 'direct_co_cx_ratio',
         'operations': []
     }
     
-    # Include original pattern metadata if available
-    if hasattr(pattern1, 'metadata') and pattern1.metadata:
-        metadata['pattern1_metadata'] = pattern1.metadata
-    if hasattr(pattern2, 'metadata') and pattern2.metadata:
-        metadata['pattern2_metadata'] = pattern2.metadata
-    
-    # Create a new pattern with the difference data and explicitly set polarization
+    # Create a new pattern with the difference data
     result_pattern = AntennaPattern(
         theta=theta1,
         phi=phi1,
         frequency=freq1,
         e_theta=e_theta_diff,
         e_phi=e_phi_diff,
-        polarization=pattern1.polarization,  # Explicitly use pattern1's polarization
+        polarization=pattern1.polarization,
         metadata=metadata
     )
     
