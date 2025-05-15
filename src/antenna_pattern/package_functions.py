@@ -90,27 +90,27 @@ def average_patterns(patterns: List[AntennaPattern], weights: Optional[List[floa
 
 def difference_patterns(
     pattern1: AntennaPattern, 
-    pattern2: AntennaPattern, 
-    absolute: bool = False
+    pattern2: AntennaPattern
 ) -> AntennaPattern:
     """
     Create a new antenna pattern representing the difference between two patterns.
     
-    This function computes the complex difference between two patterns, which must
-    have compatible dimensions (same theta, phi, and frequency values).
+    This function computes the difference between two patterns by subtracting
+    amplitude in dB and phase separately. The patterns must have compatible 
+    dimensions (same theta, phi, and frequency values).
     
     Args:
         pattern1: First AntennaPattern object
         pattern2: Second AntennaPattern object
-        absolute: If True, take the absolute difference |p1-p2|, 
-                 otherwise take the signed difference (p1-p2)
             
     Returns:
-        AntennaPattern: A new antenna pattern containing the difference
+        AntennaPattern: A new antenna pattern containing the difference (pattern1 - pattern2)
         
     Raises:
         ValueError: If patterns have incompatible dimensions
     """
+    import numpy as np
+    
     # Check that patterns have the same dimensions
     theta1 = pattern1.theta_angles
     phi1 = pattern1.phi_angles
@@ -135,20 +135,41 @@ def difference_patterns(
     e_theta2 = pattern2.data.e_theta.values
     e_phi2 = pattern2.data.e_phi.values
     
-    # Compute the difference
-    if absolute:
-        e_theta_diff = np.abs(e_theta1 - e_theta2)
-        e_phi_diff = np.abs(e_phi1 - e_phi2)
-    else:
-        e_theta_diff = e_theta1 - e_theta2
-        e_phi_diff = e_phi1 - e_phi2
+    # Calculate amplitude in dB
+    amp_theta1 = 20 * np.log10(np.abs(e_theta1) + 1e-15)  # Avoid log(0)
+    amp_phi1 = 20 * np.log10(np.abs(e_phi1) + 1e-15)
+    
+    amp_theta2 = 20 * np.log10(np.abs(e_theta2) + 1e-15)
+    amp_phi2 = 20 * np.log10(np.abs(e_phi2) + 1e-15)
+    
+    # Calculate phases (in radians)
+    phase_theta1 = np.angle(e_theta1)
+    phase_phi1 = np.angle(e_phi1)
+    
+    phase_theta2 = np.angle(e_theta2)
+    phase_phi2 = np.angle(e_phi2)
+    
+    # Compute differences
+    amp_theta_diff = amp_theta1 - amp_theta2
+    amp_phi_diff = amp_phi1 - amp_phi2
+    
+    # For phase, handle circular difference to get shortest path
+    phase_theta_diff = np.mod(phase_theta1 - phase_theta2 + np.pi, 2*np.pi) - np.pi
+    phase_phi_diff = np.mod(phase_phi1 - phase_phi2 + np.pi, 2*np.pi) - np.pi
+    
+    # Convert amplitude differences back to linear scale
+    amp_theta_linear = 10**(amp_theta_diff / 20)
+    amp_phi_linear = 10**(amp_phi_diff / 20)
+    
+    # Reconstruct complex values with difference amplitude and phase
+    e_theta_diff = amp_theta_linear * np.exp(1j * phase_theta_diff)
+    e_phi_diff = amp_phi_linear * np.exp(1j * phase_phi_diff)
     
     # Create metadata for the difference pattern
     metadata = {
         'source': 'difference_pattern',
         'pattern1_polarization': pattern1.polarization,
         'pattern2_polarization': pattern2.polarization,
-        'absolute_difference': absolute,
         'operations': []
     }
     
