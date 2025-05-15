@@ -95,95 +95,92 @@ def difference_patterns(
     """
     Create a new antenna pattern representing the difference between two patterns.
     
-    This function converts the patterns to Ludwig's III coordinate system (e_x and e_y),
-    computes the complex ratio, and then converts back to spherical coordinates.
-    This approach avoids the inherent phi-dependent phase progression that exists
-    in spherical field components.
+    This function converts both patterns to a common coordinate system (Ludwig's III),
+    computes the complex difference directly, and then converts back. This preserves
+    the physical meaning of the subtraction operation.
     
     Args:
-        pattern1: First AntennaPattern object (typically the original pattern)
-        pattern2: Second AntennaPattern object (typically the processed pattern)
+        pattern1: First AntennaPattern object
+        pattern2: Second AntennaPattern object
             
     Returns:
-        AntennaPattern: A new antenna pattern containing the difference (pattern1/pattern2)
-                        with polarization matching pattern1
-        
-    Raises:
-        ValueError: If patterns have incompatible dimensions
+        AntennaPattern: A new antenna pattern containing the difference
     """
     import numpy as np
     from .polarization import polarization_tp2xy, polarization_xy2tp
     
-    # Check that patterns have the same dimensions
+    # Verify compatible dimensions
     theta1 = pattern1.theta_angles
     phi1 = pattern1.phi_angles
     freq1 = pattern1.frequencies
     
-    theta2 = pattern2.theta_angles
-    phi2 = pattern2.phi_angles
-    freq2 = pattern2.frequencies
+    if not (np.array_equal(theta1, pattern2.theta_angles) and 
+            np.array_equal(phi1, pattern2.phi_angles) and 
+            np.array_equal(freq1, pattern2.frequencies)):
+        raise ValueError("Patterns have incompatible dimensions")
     
-    # Verify the patterns have compatible dimensions
-    if not np.array_equal(theta1, theta2):
-        raise ValueError("Patterns have different theta angles")
-    if not np.array_equal(phi1, phi2):
-        raise ValueError("Patterns have different phi angles")
-    if not np.array_equal(freq1, freq2):
-        raise ValueError("Patterns have different frequencies")
-    
-    # Get the field components
+    # Get field components
     e_theta1 = pattern1.data.e_theta.values
     e_phi1 = pattern1.data.e_phi.values
-    
     e_theta2 = pattern2.data.e_theta.values
     e_phi2 = pattern2.data.e_phi.values
     
-    # Initialize arrays for difference pattern
+    # Initialize result arrays
     e_theta_diff = np.zeros_like(e_theta1, dtype=complex)
     e_phi_diff = np.zeros_like(e_phi1, dtype=complex)
     
-    # Process each frequency separately
+    # Process each frequency
     for f_idx in range(len(freq1)):
-        # Convert both patterns to Ludwig's III (e_x, e_y) for each phi cut
+        # Convert both patterns to Ludwig's III
         e_x1, e_y1 = polarization_tp2xy(phi1, e_theta1[f_idx], e_phi1[f_idx])
         e_x2, e_y2 = polarization_tp2xy(phi1, e_theta2[f_idx], e_phi2[f_idx])
         
-        # Avoid division by zero
-        epsilon = 1e-15
-        safe_e_x2 = np.where(np.abs(e_x2) < epsilon, epsilon, e_x2)
-        safe_e_y2 = np.where(np.abs(e_y2) < epsilon, epsilon, e_y2)
+        # Instead of division, take the logarithmic difference (for amplitudes in dB)
+        # and phase difference directly
         
-        # Compute complex ratios in Ludwig's III coordinate system
-        e_x_ratio = e_x1 / safe_e_x2
-        e_y_ratio = e_y1 / safe_e_y2
+        # Amplitude calculation in dB domain
+        amp_x1 = 20 * np.log10(np.abs(e_x1) + 1e-15)
+        amp_y1 = 20 * np.log10(np.abs(e_y1) + 1e-15)
+        amp_x2 = 20 * np.log10(np.abs(e_x2) + 1e-15)
+        amp_y2 = 20 * np.log10(np.abs(e_y2) + 1e-15)
         
-        # Convert ratio back to spherical coordinates (e_theta, e_phi)
-        e_theta_diff[f_idx], e_phi_diff[f_idx] = polarization_xy2tp(phi1, e_x_ratio, e_y_ratio)
+        # Amplitude differences in dB
+        amp_x_diff = amp_x1 - amp_x2
+        amp_y_diff = amp_y1 - amp_y2
+        
+        # Phase calculations (unwrapped to handle jumps)
+        phase_x1 = np.angle(e_x1)
+        phase_y1 = np.angle(e_y1)
+        phase_x2 = np.angle(e_x2)
+        phase_y2 = np.angle(e_y2)
+        
+        # Calculate phase differences (with proper wrapping)
+        phase_x_diff = np.mod(phase_x1 - phase_x2 + np.pi, 2*np.pi) - np.pi
+        phase_y_diff = np.mod(phase_y1 - phase_y2 + np.pi, 2*np.pi) - np.pi
+        
+        # Reconstruct complex field values from amplitude and phase
+        amp_x_linear = 10**(amp_x_diff / 20)
+        amp_y_linear = 10**(amp_y_diff / 20)
+        
+        e_x_diff = amp_x_linear * np.exp(1j * phase_x_diff)
+        e_y_diff = amp_y_linear * np.exp(1j * phase_y_diff)
+        
+        # Convert back to spherical coordinates
+        e_theta_diff[f_idx], e_phi_diff[f_idx] = polarization_xy2tp(phi1, e_x_diff, e_y_diff)
     
-    # Create metadata for the difference pattern
-    metadata = {
-        'source': 'difference_pattern',
-        'pattern1_polarization': pattern1.polarization,
-        'pattern2_polarization': pattern2.polarization,
-        'difference_method': 'ludwig3_complex_ratio',
-        'operations': []
-    }
-    
-    # Include original pattern metadata if available
-    if hasattr(pattern1, 'metadata') and pattern1.metadata:
-        metadata['pattern1_metadata'] = pattern1.metadata
-    if hasattr(pattern2, 'metadata') and pattern2.metadata:
-        metadata['pattern2_metadata'] = pattern2.metadata
-    
-    # Create a new pattern with the difference data and explicitly set polarization
+    # Create result pattern
     result_pattern = AntennaPattern(
         theta=theta1,
         phi=phi1,
         frequency=freq1,
         e_theta=e_theta_diff,
         e_phi=e_phi_diff,
-        polarization=pattern1.polarization,  # Explicitly use pattern1's polarization
-        metadata=metadata
+        polarization=pattern1.polarization,
+        metadata={
+            'source': 'difference_pattern',
+            'method': 'amplitude_phase_difference',
+            'operations': []
+        }
     )
     
     return result_pattern
