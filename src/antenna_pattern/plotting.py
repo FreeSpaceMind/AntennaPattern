@@ -577,14 +577,15 @@ def plot_pattern_difference(
     return fig
 
 def plot_pattern_statistics(
-    patterns: List[AntennaPattern],
-    statistic: str = 'mean',
-    frequency: Optional[float] = None,
+    pattern: AntennaPattern,
+    statistic_over: Literal['phi', 'frequency'] = 'phi',
+    frequency: Optional[Union[float, List[float]]] = None,
     phi: Optional[Union[float, List[float]]] = None,
     component: str = 'e_co',
     value_type: Literal['gain', 'phase', 'axial_ratio'] = 'gain',
+    statistic: Literal['mean', 'median', 'rms', 'percentile', 'std'] = 'mean',
     percentile_range: Tuple[float, float] = (25, 75),
-    show_range: bool = False,
+    show_range: bool = True,
     ax: Optional[plt.Axes] = None,
     fig_size: Tuple[float, float] = (10, 6),
     title: Optional[str] = None,
@@ -593,27 +594,32 @@ def plot_pattern_statistics(
     legend: bool = True
 ) -> plt.Figure:
     """
-    Plot statistical measures across multiple antenna patterns.
+    Plot statistical measures across phi angles or frequencies for a single pattern.
     
     Args:
-        patterns: List of AntennaPattern objects
+        pattern: AntennaPattern object
+        statistic_over: Dimension to compute statistics over ('phi' or 'frequency')
+        frequency: Specific frequency or list of frequencies to use (in Hz).
+                   If None and statistic_over='phi', the first frequency is used.
+                   If statistic_over='frequency', this parameter is ignored.
+        phi: Specific phi angle or list of phi angles to use (in degrees).
+             If None and statistic_over='frequency', the first phi is used.
+             If statistic_over='phi', this parameter is ignored.
+        component: Field component ('e_co', 'e_cx', 'e_theta', 'e_phi')
+        value_type: Type of value to plot ('gain', 'phase', or 'axial_ratio')
         statistic: Statistical measure to plot:
             - 'mean': Arithmetic mean
             - 'median': Median value
             - 'rms': Root Mean Square value
             - 'percentile': Show percentile range (controlled by percentile_range)
             - 'std': Mean plus/minus one standard deviation
-        frequency: Specific frequency to plot in Hz, or None to use first frequency
-        phi: Specific phi angle(s) to plot in degrees, or None to use first phi
-        component: Field component ('e_co', 'e_cx', 'e_theta', 'e_phi')
-        value_type: Type of value to plot ('gain', 'phase', or 'axial_ratio')
         percentile_range: Tuple of (lower, upper) percentiles to show when statistic='percentile'
         show_range: If True, show min/max range as shaded area
         ax: Optional matplotlib axes to plot on
         fig_size: Figure size as (width, height) in inches
         title: Optional title for the plot
-        show_individual: If True, plot individual patterns as thin lines
-        alpha_individual: Alpha transparency for individual pattern lines
+        show_individual: If True, plot individual cuts as thin lines
+        alpha_individual: Alpha transparency for individual lines
         legend: If True, add a legend to the plot
         
     Returns:
@@ -621,7 +627,6 @@ def plot_pattern_statistics(
         
     Raises:
         ValueError: If statistics type is invalid
-        ValueError: If patterns have incompatible dimensions
     """
     # Validate statistic type
     valid_stats = ['mean', 'median', 'rms', 'percentile', 'std']
@@ -634,59 +639,81 @@ def plot_pattern_statistics(
     else:
         fig = ax.figure
     
-    # Get a reference pattern for axis data
-    ref_pattern = patterns[0]
-    
-    # Handle frequency selection
-    frequencies = ref_pattern.frequencies
-    if frequency is None:
-        freq_idx = 0
-        selected_frequency = frequencies[0]
-    else:
-        nearest_freq, freq_idx = find_nearest(frequencies, frequency)
-        selected_frequency = nearest_freq
-    
-    # Handle phi selection
-    phi_angles = ref_pattern.phi_angles
-    if phi is None:
-        phi_idx = 0
-        selected_phi = phi_angles[0]
-    elif np.isscalar(phi):
-        nearest_phi, phi_idx = find_nearest(phi_angles, phi)
-        selected_phi = nearest_phi
-    else:
-        # Multiple phi angles - use first one for now
-        nearest_phi, phi_idx = find_nearest(phi_angles, phi[0])
-        selected_phi = nearest_phi
-        
     # Get theta angles for the x-axis
-    theta = ref_pattern.theta_angles
+    theta = pattern.theta_angles
     
-    # Extract data for each pattern
-    data_arrays = []
-    for pattern in patterns:
-        # Validate compatibility
-        if not np.array_equal(pattern.theta_angles, theta):
-            raise ValueError("All patterns must have the same theta angles")
-        if not np.allclose(pattern.frequencies[freq_idx], selected_frequency, rtol=1e-6):
-            raise ValueError("All patterns must have compatible frequencies")
+    # Initialize data based on statistic_over dimension
+    if statistic_over == 'phi':
+        # Get data across all phi angles
+        if frequency is None:
+            freq_idx = 0
+            selected_frequency = pattern.frequencies[0]
+        elif isinstance(frequency, (list, tuple, np.ndarray)):
+            # Multiple frequencies - use first one
+            nearest_freq, freq_idx = find_nearest(pattern.frequencies, frequency[0])
+            selected_frequency = nearest_freq
+        else:
+            # Single frequency
+            nearest_freq, freq_idx = find_nearest(pattern.frequencies, frequency)
+            selected_frequency = nearest_freq
+        
+        # Get all phi angles
+        phi_angles = pattern.phi_angles
         
         # Extract data based on value_type
         if value_type == 'gain':
-            data = pattern.get_gain_db(component)[freq_idx, :, phi_idx]
+            # Shape: [theta, phi]
+            data = pattern.get_gain_db(component)[freq_idx]
         elif value_type == 'phase':
-            data = pattern.get_phase(component, unwrapped=True)[freq_idx, :, phi_idx] 
+            data = pattern.get_phase(component, unwrapped=True)[freq_idx]
         elif value_type == 'axial_ratio':
-            data = pattern.get_axial_ratio()[freq_idx, :, phi_idx]
+            data = pattern.get_axial_ratio()[freq_idx]
         else:
             raise ValueError(f"Invalid value_type: {value_type}")
             
-        data_arrays.append(data)
+        dimension_label = f"φ angles ({len(phi_angles)})"
+        dimension_values = phi_angles
+        
+    elif statistic_over == 'frequency':
+        # Get data across all frequencies
+        if phi is None:
+            phi_idx = 0
+            selected_phi = pattern.phi_angles[0]
+        elif isinstance(phi, (list, tuple, np.ndarray)):
+            # Multiple phi angles - use first one
+            nearest_phi, phi_idx = find_nearest(pattern.phi_angles, phi[0])
+            selected_phi = nearest_phi
+        else:
+            # Single phi angle
+            nearest_phi, phi_idx = find_nearest(pattern.phi_angles, phi)
+            selected_phi = nearest_phi
+        
+        # Get all frequencies
+        frequencies = pattern.frequencies
+        
+        # Extract data based on value_type
+        if value_type == 'gain':
+            # Shape: [freq, theta]
+            data = pattern.get_gain_db(component)[:, :, phi_idx]
+        elif value_type == 'phase':
+            data = pattern.get_phase(component, unwrapped=True)[:, :, phi_idx]
+        elif value_type == 'axial_ratio':
+            data = pattern.get_axial_ratio()[:, :, phi_idx]
+        else:
+            raise ValueError(f"Invalid value_type: {value_type}")
+            
+        dimension_label = f"Frequencies ({len(frequencies)})"
+        dimension_values = frequencies / 1e9  # Convert to GHz for display
+        
+    else:
+        raise ValueError(f"Invalid statistic_over: {statistic_over}. Must be 'phi' or 'frequency'")
     
-    # Stack data as 2D array (patterns × theta)
-    all_data = np.vstack(data_arrays)
+    # Transpose data to have shape [dimension, theta]
+    # When statistic_over='phi', dimension represents different phi angles
+    # When statistic_over='frequency', dimension represents different frequencies
+    all_data = data.T if statistic_over == 'phi' else data
     
-    # Calculate statistics
+    # Calculate statistics across the dimension (phi or frequency)
     mean_data = np.mean(all_data, axis=0)
     median_data = np.median(all_data, axis=0)
     std_data = np.std(all_data, axis=0)
@@ -708,11 +735,22 @@ def plot_pattern_statistics(
     lower_percentile = np.percentile(all_data, percentile_range[0], axis=0)
     upper_percentile = np.percentile(all_data, percentile_range[1], axis=0)
     
-    # Plot individual patterns if requested
+    # Plot individual cuts if requested
     if show_individual:
-        for i, data in enumerate(data_arrays):
-            ax.plot(theta, data, color='gray', alpha=alpha_individual, linewidth=0.8, 
-                   label="_nolegend_")
+        for i in range(len(all_data)):
+            if statistic_over == 'phi':
+                label = f"φ={dimension_values[i]:.1f}°"
+            else:
+                label = f"{dimension_values[i]:.2f} GHz"
+                
+            # Only add to legend if there aren't too many lines
+            if len(all_data) > 10:
+                label = "_nolegend_"
+                
+            ax.plot(theta, all_data[i], 
+                   alpha=alpha_individual, 
+                   linewidth=0.8,
+                   label=label)
     
     # Set plot color and label
     stat_color = 'blue'
@@ -721,29 +759,30 @@ def plot_pattern_statistics(
     # Plot the requested statistic
     if statistic == 'mean':
         ax.plot(theta, mean_data, color=stat_color, linewidth=2, 
-               label=f"Mean ({len(patterns)} patterns)")
+               label=f"Mean across {dimension_label}")
         stat_label = 'Mean'
         
     elif statistic == 'median':
         ax.plot(theta, median_data, color=stat_color, linewidth=2, 
-               label=f"Median ({len(patterns)} patterns)")
+               label=f"Median across {dimension_label}")
         stat_label = 'Median'
         
     elif statistic == 'rms':
         ax.plot(theta, rms_data, color=stat_color, linewidth=2, 
-               label=f"RMS ({len(patterns)} patterns)")
+               label=f"RMS across {dimension_label}")
         stat_label = 'RMS'
         
     elif statistic == 'percentile':
         ax.plot(theta, median_data, color=stat_color, linewidth=2, 
-               label=f"Median ({len(patterns)} patterns)")
+               label=f"Median across {dimension_label}")
         ax.fill_between(theta, lower_percentile, upper_percentile, alpha=range_alpha, 
-                       color=stat_color, label=f"{percentile_range[0]}-{percentile_range[1]} Percentile")
+                       color=stat_color, 
+                       label=f"{percentile_range[0]}-{percentile_range[1]} Percentile")
         stat_label = f"Percentile Range {percentile_range[0]}-{percentile_range[1]}"
         
     elif statistic == 'std':
         ax.plot(theta, mean_data, color=stat_color, linewidth=2, 
-               label=f"Mean ({len(patterns)} patterns)")
+               label=f"Mean across {dimension_label}")
         ax.fill_between(theta, mean_data - std_data, mean_data + std_data, alpha=range_alpha, 
                        color=stat_color, label=f"±1 Std Dev")
         stat_label = 'Mean ±1 Std Dev'
@@ -767,9 +806,14 @@ def plot_pattern_statistics(
     
     # Create title if not provided
     if title is None:
-        freq_str = f"{selected_frequency/1e6:.1f} MHz"
-        phi_str = f"φ={selected_phi:.1f}°"
-        title = f"{stat_label} Antenna {value_type.capitalize()}: {freq_str}, {phi_str}"
+        if statistic_over == 'phi':
+            value_str = f"{selected_frequency/1e6:.1f} MHz"
+            over_str = "φ angles"
+        else:
+            value_str = f"φ={selected_phi:.1f}°"
+            over_str = "frequencies"
+            
+        title = f"{stat_label} {value_type.capitalize()} across {over_str}: {value_str}"
     
     ax.set_title(title)
     ax.grid(True)
