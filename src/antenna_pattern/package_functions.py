@@ -5,6 +5,7 @@ import numpy as np
 from typing import List, Optional, Union, Dict, Any
 
 from .pattern import AntennaPattern
+from .pattern_functions import unwrap_phase
 
 def average_patterns(patterns: List[AntennaPattern], weights: Optional[List[float]] = None) -> AntennaPattern:
     """
@@ -154,8 +155,8 @@ def difference_patterns(
     amp_phi_diff = amp_phi1 - amp_phi2
     
     # For phase, handle circular difference to get shortest path
-    phase_theta_diff = np.mod(phase_theta1 - phase_theta2 + np.pi, 2*np.pi) - np.pi
-    phase_phi_diff = np.mod(phase_phi1 - phase_phi2 + np.pi, 2*np.pi) - np.pi
+    phase_theta_diff = unwrap_phase(phase_theta1) - unwrap_phase(phase_theta1)
+    phase_phi_diff = unwrap_phase(phase_phi1) - unwrap_phase(phase_phi1)
     
     # Convert amplitude differences back to linear scale
     amp_theta_linear = 10**(amp_theta_diff / 20)
