@@ -155,8 +155,8 @@ def difference_patterns(
     amp_phi_diff = amp_phi1 - amp_phi2
     
     # For phase, handle circular difference to get shortest path
-    phase_theta_diff = unwrap_phase(phase_theta1) - unwrap_phase(phase_theta1)
-    phase_phi_diff = unwrap_phase(phase_phi1) - unwrap_phase(phase_phi1)
+    phase_theta_diff = unwrap_phase(phase_theta1) - unwrap_phase(phase_theta2)
+    phase_phi_diff = unwrap_phase(phase_phi1) - unwrap_phase(phase_phi2)
     
     # Convert amplitude differences back to linear scale
     amp_theta_linear = 10**(amp_theta_diff / 20)
