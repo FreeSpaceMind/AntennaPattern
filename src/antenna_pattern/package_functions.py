@@ -149,7 +149,7 @@ def difference_patterns(
     # This corrects for the coordinate basis changing with phi angle
     for p_idx, phi_val in enumerate(phi1):
         # Create phase correction factor based on phi angle
-        phase_correction = np.exp(-1j * np.radians(phi_val))
+        phase_correction = np.exp(1j * np.radians(phi_val))
         
         # Apply correction to both field components
         e_theta_diff[:, :, p_idx] *= phase_correction
