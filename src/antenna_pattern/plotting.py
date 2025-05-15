@@ -794,8 +794,6 @@ def add_spec_mask(
     line_width: float = 2.0,
     fill_alpha: float = 0.2,
     label: Optional[str] = None,
-    auto_interpolate: bool = True,
-    interpolation_method: str = 'linear'
 ) -> List[Any]:
     """
     Add a specification mask or line to an existing antenna pattern plot.
@@ -817,14 +815,11 @@ def add_spec_mask(
         line_width: Width of the mask line
         fill_alpha: Alpha transparency for the filled region
         label: Label for the mask line in the legend
-        auto_interpolate: If True, automatically interpolate the mask to match x-axis limits
-        interpolation_method: Method for interpolation ('linear', 'nearest', 'cubic', etc.)
         
     Returns:
         List of artists added to the plot (can be used for legend entries)
         
     Notes:
-        - If auto_interpolate is True, the mask will be extended to the current x-axis limits
         - For a proper envelope mask with segments, provide all corner points in the mask
     """
     from scipy import interpolate
@@ -839,36 +834,6 @@ def add_spec_mask(
     
     if len(x_points) < 2:
         raise ValueError("At least two points are required to define a spec mask")
-    
-    # Auto-interpolation to match current x-axis limits if requested
-    if auto_interpolate:
-        # Get current x-axis limits
-        x_min, x_max = ax.get_xlim()
-        
-        # Check if we need to extend the mask
-        if x_min < np.min(x_points) or x_max > np.max(x_points):
-            # Create a more dense set of points that spans the full x-axis
-            mask_interp = interpolate.interp1d(
-                x_points, 
-                y_points, 
-                kind=interpolation_method, 
-                bounds_error=False,
-                fill_value="extrapolate"
-            )
-            
-            # Create extended x-axis points
-            x_extended = np.linspace(
-                min(x_min, np.min(x_points)),
-                max(x_max, np.max(x_points)),
-                max(len(x_points) * 5, 100)  # Ensure smooth curve with enough points
-            )
-            
-            # Get interpolated y values
-            y_extended = mask_interp(x_extended)
-            
-            # Replace original points with extended points
-            x_points = x_extended
-            y_points = y_extended
     
     # Set default colors based on mask_type if not provided
     if color is None:
@@ -931,7 +896,6 @@ def add_envelope_spec(
     fill: bool = True,
     fill_alpha: float = 0.2,
     line_width: float = 2.0,
-    auto_interpolate: bool = True
 ) -> Dict[str, List[Any]]:
     """
     Add multiple specification masks to create an envelope specification.
@@ -943,7 +907,6 @@ def add_envelope_spec(
         fill: If True, fill the mask regions
         fill_alpha: Alpha transparency for the filled regions
         line_width: Width of the mask lines
-        auto_interpolate: If True, automatically interpolate the masks to match x-axis limits
         
     Returns:
         Dictionary mapping spec names to lists of artists added to the plot
@@ -1007,7 +970,6 @@ def add_envelope_spec(
             line_width=line_width,
             fill_alpha=fill_alpha,
             label=spec_name,
-            auto_interpolate=auto_interpolate
         )
         
         result_artists[spec_name] = artists
