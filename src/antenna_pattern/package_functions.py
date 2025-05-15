@@ -95,16 +95,20 @@ def difference_patterns(
     """
     Create a new antenna pattern representing the difference between two patterns.
     
-    This function computes the difference between two patterns by subtracting
-    amplitude in dB and phase separately. The patterns must have compatible 
-    dimensions (same theta, phi, and frequency values).
+    This function is particularly useful for calculating residuals between an original
+    pattern and one that has had multipath suppression (e.g., MARS) applied. The
+    result shows what was removed by the suppression algorithm.
+    
+    The difference is calculated using complex field ratios (pattern1/pattern2), which
+    naturally captures both amplitude and phase differences in a physically meaningful way.
     
     Args:
-        pattern1: First AntennaPattern object
-        pattern2: Second AntennaPattern object
+        pattern1: First AntennaPattern object (typically the original pattern)
+        pattern2: Second AntennaPattern object (typically the processed pattern)
             
     Returns:
-        AntennaPattern: A new antenna pattern containing the difference (pattern1 - pattern2)
+        AntennaPattern: A new antenna pattern containing the difference (pattern1/pattern2)
+                        with polarization matching pattern1
         
     Raises:
         ValueError: If patterns have incompatible dimensions
@@ -135,54 +139,22 @@ def difference_patterns(
     e_theta2 = pattern2.data.e_theta.values
     e_phi2 = pattern2.data.e_phi.values
     
-    # Calculate amplitude in dB
-    amp_theta1 = 20 * np.log10(np.abs(e_theta1) + 1e-15)  # Avoid log(0)
-    amp_phi1 = 20 * np.log10(np.abs(e_phi1) + 1e-15)
-    
-    amp_theta2 = 20 * np.log10(np.abs(e_theta2) + 1e-15)
-    amp_phi2 = 20 * np.log10(np.abs(e_phi2) + 1e-15)
-    
-    # Calculate phases (in radians)
-    phase_theta1 = np.angle(e_theta1)
-    phase_phi1 = np.angle(e_phi1)
-    
-    phase_theta2 = np.angle(e_theta2)
-    phase_phi2 = np.angle(e_phi2)
-    
-    # Compute differences
-    amp_theta_diff = amp_theta1 - amp_theta2
-    amp_phi_diff = amp_phi1 - amp_phi2
-    
-    # For phase differences, use complex field ratio approach 
-    # This preserves the true phase relationship between the patterns
-    # and handles phase wrapping naturally
-    
     # Avoid division by zero
     epsilon = 1e-15
     safe_e_theta2 = np.where(np.abs(e_theta2) < epsilon, epsilon, e_theta2)
     safe_e_phi2 = np.where(np.abs(e_phi2) < epsilon, epsilon, e_phi2)
     
     # Compute complex ratios (e1/e2)
-    complex_ratio_theta = e_theta1 / safe_e_theta2
-    complex_ratio_phi = e_phi1 / safe_e_phi2
-    
-    # Extract phase differences from the complex ratios
-    phase_diff_theta = np.angle(complex_ratio_theta)
-    phase_diff_phi = np.angle(complex_ratio_phi)
-    
-    # Convert amplitude differences back to linear scale
-    amp_theta_linear = 10**(amp_theta_diff / 20)
-    amp_phi_linear = 10**(amp_phi_diff / 20)
-    
-    # Reconstruct complex values with difference amplitude and phase
-    e_theta_diff = amp_theta_linear * np.exp(1j * phase_diff_theta)
-    e_phi_diff = amp_phi_linear * np.exp(1j * phase_diff_phi)
+    # This captures both amplitude and phase differences in one operation
+    e_theta_diff = e_theta1 / safe_e_theta2
+    e_phi_diff = e_phi1 / safe_e_phi2
     
     # Create metadata for the difference pattern
     metadata = {
         'source': 'difference_pattern',
         'pattern1_polarization': pattern1.polarization,
         'pattern2_polarization': pattern2.polarization,
+        'difference_method': 'complex_ratio',
         'operations': []
     }
     
@@ -192,13 +164,15 @@ def difference_patterns(
     if hasattr(pattern2, 'metadata') and pattern2.metadata:
         metadata['pattern2_metadata'] = pattern2.metadata
     
-    # Create a new pattern with the difference data
-    return AntennaPattern(
+    # Create a new pattern with the difference data and explicitly set polarization
+    result_pattern = AntennaPattern(
         theta=theta1,
         phi=phi1,
         frequency=freq1,
         e_theta=e_theta_diff,
         e_phi=e_phi_diff,
-        polarization=pattern1.polarization,
+        polarization=pattern1.polarization,  # Explicitly use pattern1's polarization
         metadata=metadata
     )
+    
+    return result_pattern
