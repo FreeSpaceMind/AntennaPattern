@@ -722,14 +722,8 @@ def plot_pattern_statistics(
     
     # For RMS, we need to square values, mean, then sqrt
     # If dealing with dB, convert to linear first
-    if value_type == 'gain':
-        # Convert to linear, calculate RMS, then back to dB
-        linear_data = 10**(all_data/10)
-        rms_linear = np.sqrt(np.mean(linear_data**2, axis=0))
-        rms_data = 10 * np.log10(rms_linear)
-    else:
-        # For phase and axial ratio, calculate RMS directly
-        rms_data = np.sqrt(np.mean(all_data**2, axis=0))
+    rms_data = np.sqrt(np.mean(all_data**2, axis=0))
+
     
     # Calculate percentiles if needed
     lower_percentile = np.percentile(all_data, percentile_range[0], axis=0)
