@@ -366,6 +366,7 @@ def read_ffd(file_path: Union[str, Path]):
     theta_start, theta_stop, theta_points = map(float, theta_info[:3])
     theta_points = np.round(theta_points).astype(int)
     phi_start, phi_stop, phi_points = map(float, phi_info[:3])
+    phi_points = np.round(phi_points).astype(int)
     num_frequencies = int(freq_info[1])
 
     theta = np.linspace(theta_start, theta_stop, theta_points)
