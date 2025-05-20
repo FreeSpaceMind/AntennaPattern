@@ -363,8 +363,8 @@ def read_ffd(file_path: Union[str, Path]):
     if len(theta_info) < 3 or len(phi_info) < 3 or len(freq_info) < 2:
         raise ValueError("Invalid FFD file header format")
 
-    theta_start, theta_stop, theta_points = map(int, theta_info[:3])
-    phi_start, phi_stop, phi_points = map(int, phi_info[:3])
+    theta_start, theta_stop, theta_points = map(float, theta_info[:3])
+    phi_start, phi_stop, phi_points = map(float, phi_info[:3])
     num_frequencies = int(freq_info[1])
 
     theta = np.linspace(theta_start, theta_stop, theta_points)

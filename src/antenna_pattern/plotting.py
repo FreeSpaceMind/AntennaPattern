@@ -721,7 +721,6 @@ def plot_pattern_statistics(
     max_data = np.max(all_data, axis=0)
     
     # For RMS, we need to square values, mean, then sqrt
-    # If dealing with dB, convert to linear first
     rms_data = np.sqrt(np.mean(all_data**2, axis=0))
 
     
