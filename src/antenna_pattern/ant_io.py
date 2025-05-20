@@ -364,6 +364,7 @@ def read_ffd(file_path: Union[str, Path]):
         raise ValueError("Invalid FFD file header format")
 
     theta_start, theta_stop, theta_points = map(float, theta_info[:3])
+    theta_points = np.round(theta_points).astype(int)
     phi_start, phi_stop, phi_points = map(float, phi_info[:3])
     num_frequencies = int(freq_info[1])
 
