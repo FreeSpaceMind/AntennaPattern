@@ -426,15 +426,13 @@ def read_ffd(file_path: Union[str, Path]):
     e_theta_final = np.zeros((len(frequency_np), len(theta), len(phi)), dtype=complex)
     e_phi_final = np.zeros((len(frequency_np), len(theta), len(phi)), dtype=complex)
     
-    # FFD file format may store data in a different order
-    pattern_points = len(theta) * len(phi)
     
-    # For each frequency
     for freq_idx in range(len(frequency_np)):
         # Process each theta/phi combination for this frequency
-        for phi_idx in range(len(phi)):
-            for theta_idx in range(len(theta)):
-                data_idx = phi_idx * len(theta) + theta_idx
+        for theta_idx in range(len(theta)):
+            for phi_idx in range(len(phi)):
+                # Reversed indexing formula
+                data_idx = theta_idx * len(phi) + phi_idx
                 
                 if data_idx < len(e_theta_np[freq_idx]):
                     e_theta_final[freq_idx, theta_idx, phi_idx] = e_theta_np[freq_idx][data_idx]
