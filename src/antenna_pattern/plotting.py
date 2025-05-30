@@ -1096,7 +1096,8 @@ def plot_phase_slope_vs_frequency(pattern, theta: float = 0.0, phi: float = 0.0,
     frequencies = pattern.frequencies
     
     # Get unwrapped phase data at the specified point (all frequencies)
-    phase_data = pattern.get_phase(component, unwrapped=True)[:, theta_idx, phi_idx]
+    # This returns phase in degrees
+    phase_data_deg = pattern.get_phase(component, unwrapped=True)[:, theta_idx, phi_idx]
     
     # Calculate electrical length and group delay at valid frequencies (need derivatives)
     electrical_lengths = []
@@ -1104,37 +1105,41 @@ def plot_phase_slope_vs_frequency(pattern, theta: float = 0.0, phi: float = 0.0,
     valid_frequencies = []
     
     if len(frequencies) >= 3:
-        # Use 3-point window for derivative calculation
-        phase_rad = np.radians(phase_data)
+        # Convert phase to radians for derivative calculation
+        phase_data_rad = np.radians(phase_data_deg)
         
+        # Use simple 3-point central difference for interior points
         for i in range(1, len(frequencies) - 1):
-            # Use 3-point finite difference
-            df_left = frequencies[i] - frequencies[i-1]
-            df_right = frequencies[i+1] - frequencies[i]
-            dphi_left = phase_rad[i] - phase_rad[i-1]
-            dphi_right = phase_rad[i+1] - phase_rad[i]
+            # Central difference: (f[i+1] - f[i-1]) / (2*h)
+            df = frequencies[i+1] - frequencies[i-1]  # Total frequency span
+            dphi = phase_data_rad[i+1] - phase_data_rad[i-1]  # Total phase change in radians
             
-            # Calculate slopes on each side
-            slope_left = dphi_left / df_left
-            slope_right = dphi_right / df_right
+            # Phase slope in rad/Hz
+            phase_slope = dphi / df
             
-            # Average the slopes (simpler and more robust)
-            slope = (slope_left + slope_right) / 2
-            
-            # Convert to electrical length in degrees (flip sign)
-            electrical_length_deg = -(slope * frequencies[i] * (180 / np.pi))
+            # Electrical length in degrees at this frequency
+            # Formula: electrical_length_deg = phase_slope * frequency * (180/π)
+            # Flip sign to make it positive for typical antennas
+            electrical_length_deg = -phase_slope * frequencies[i] * (180 / np.pi)
             electrical_lengths.append(electrical_length_deg)
             
-            # Group delay in ns: τ = -dφ/df where φ is in radians, f is in Hz
-            # slope is in rad/Hz, so group delay in seconds is -slope
-            # Convert to nanoseconds
-            group_delay = -slope * 1e9
-            group_delays.append(group_delay)
+            # Group delay in nanoseconds
+            # Formula: τ = -dφ/df where φ is in radians, f is in Hz
+            # Result is in seconds, convert to ns
+            group_delay_ns = -phase_slope * 1e9
+            group_delays.append(group_delay_ns)
             
             valid_frequencies.append(frequencies[i])
     
+    # Debug: Print some values to check
+    if electrical_lengths and group_delays:
+        print(f"Sample electrical length: {electrical_lengths[0]:.1f} degrees")
+        print(f"Sample group delay: {group_delays[0]:.3f} ns")
+        print(f"Expected ratio (elec_length/frequency/360): {electrical_lengths[0]/(valid_frequencies[0]/1e6)/360:.3f}")
+        print(f"Actual group delay: {group_delays[0]:.3f} ns")
+    
     # Create primary plot for phase
-    line1 = ax.plot(frequencies / 1e6, phase_data, 'b-o', markersize=4, 
+    line1 = ax.plot(frequencies / 1e6, phase_data_deg, 'b-o', markersize=4, 
                     label='Phase')
     ax.set_xlabel('Frequency (MHz)')
     ax.set_ylabel('Phase (degrees)', color='b')
