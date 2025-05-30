@@ -330,7 +330,7 @@ def get_phase_length(pattern, frequency: float, theta: float = 0.0, phi: float =
     phase_slope = coeffs[0]  # radians/Hz
     
     # Convert to electrical length in degrees: L = (dφ/df) * frequency
-    electrical_length = np.degrees(-phase_slope*frequency)
+    electrical_length = np.degrees(phase_slope*frequency)
     
     return electrical_length
 
