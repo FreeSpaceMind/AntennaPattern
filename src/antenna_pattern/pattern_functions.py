@@ -219,6 +219,30 @@ def apply_mars(pattern_obj, maximum_radial_extent: float) -> None:
     e_theta = pattern_obj.data.e_theta.values.copy()
     e_phi = pattern_obj.data.e_phi.values.copy()
     
+    # Store original boresight phases for each frequency to preserve phase relationships
+    theta_boresight_idx = np.argmin(np.abs(theta))
+    phi_first_idx = 0  # First phi cut
+    
+    original_phases = []
+    for f_idx in range(len(frequency)):
+        # Get co-pol component phase at boresight for first phi cut
+        if pattern_obj.polarization in ['rhcp', 'lhcp']:
+            e_r, e_l = polarization_tp2rl(phi[phi_first_idx], 
+                                        e_theta[f_idx, theta_boresight_idx, phi_first_idx], 
+                                        e_phi[f_idx, theta_boresight_idx, phi_first_idx])
+            ref_field = e_r if pattern_obj.polarization == 'rhcp' else e_l
+        elif pattern_obj.polarization in ['x', 'y']:
+            e_x, e_y = polarization_tp2xy(phi[phi_first_idx], 
+                                        e_theta[f_idx, theta_boresight_idx, phi_first_idx], 
+                                        e_phi[f_idx, theta_boresight_idx, phi_first_idx])
+            ref_field = e_x if pattern_obj.polarization == 'x' else e_y
+        elif pattern_obj.polarization == 'theta':
+            ref_field = e_theta[f_idx, theta_boresight_idx, phi_first_idx]
+        else:  # phi
+            ref_field = e_phi[f_idx, theta_boresight_idx, phi_first_idx]
+            
+        original_phases.append(np.angle(ref_field))
+
     # Initialize outputs
     e_theta_new = np.empty_like(e_theta)
     e_phi_new = np.empty_like(e_phi)
@@ -272,6 +296,30 @@ def apply_mars(pattern_obj, maximum_radial_extent: float) -> None:
         # Compute final field components
         e_phi_new[f_idx, :, :] = 2 * 1j * wavenumber * CMC_2_sum
         e_theta_new[f_idx, :, :] = -2 * wavenumber * CMC_1_sum
+
+        # After MARS reconstruction, get the new boresight phase
+        if pattern_obj.polarization in ['rhcp', 'lhcp']:
+            e_r_new, e_l_new = polarization_tp2rl(phi[phi_first_idx], 
+                                                e_theta_new[f_idx, theta_boresight_idx, phi_first_idx], 
+                                                e_phi_new[f_idx, theta_boresight_idx, phi_first_idx])
+            new_ref_field = e_r_new if pattern_obj.polarization == 'rhcp' else e_l_new
+        elif pattern_obj.polarization in ['x', 'y']:
+            e_x_new, e_y_new = polarization_tp2xy(phi[phi_first_idx], 
+                                                e_theta_new[f_idx, theta_boresight_idx, phi_first_idx], 
+                                                e_phi_new[f_idx, theta_boresight_idx, phi_first_idx])
+            new_ref_field = e_x_new if pattern_obj.polarization == 'x' else e_y_new
+        elif pattern_obj.polarization == 'theta':
+            new_ref_field = e_theta_new[f_idx, theta_boresight_idx, phi_first_idx]
+        else:  # phi
+            new_ref_field = e_phi_new[f_idx, theta_boresight_idx, phi_first_idx]
+        
+        # Calculate phase correction to restore original phase relationship
+        new_phase = np.angle(new_ref_field)
+        phase_correction = np.exp(1j * (original_phases[f_idx] - new_phase))
+        
+        # Apply phase correction to entire pattern for this frequency
+        e_theta_new[f_idx] *= phase_correction
+        e_phi_new[f_idx] *= phase_correction
     
     # Flip the theta axis because of coordinate system difference from reference
     e_theta_flipped = np.flip(e_theta_new, axis=1)
