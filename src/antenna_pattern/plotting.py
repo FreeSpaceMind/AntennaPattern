@@ -16,6 +16,7 @@ def plot_pattern_cut(
     show_cross_pol: bool = True,
     value_type: Literal['gain', 'phase', 'axial_ratio'] = 'gain',
     unwrap_phase: bool = True,
+    normalize_phase: bool = True,
     ax: Optional[plt.Axes] = None,
     fig_size: Tuple[float, float] = (10, 6),
     title: Optional[str] = None
@@ -30,6 +31,7 @@ def plot_pattern_cut(
         show_cross_pol: If True, plot both co-pol and cross-pol components (ignored for axial_ratio)
         value_type: Type of value to plot ('gain', 'phase', or 'axial_ratio')
         unwrap_phase: If True and value_type is 'phase', unwrap phase to avoid 2π discontinuities
+        normalize_phase: Phase normalization for phase plots
         ax: Optional matplotlib axes to plot on
         fig_size: Figure size as (width, height) in inches
         title: Optional title for the plot
@@ -96,6 +98,30 @@ def plot_pattern_cut(
         data_cx = pattern.get_phase('e_cx', unwrapped=unwrap_phase) if show_cross_pol else None
         y_label = 'Phase (degrees)'
         plot_prefix = 'Phase'
+
+        # Apply phase normalization if requested
+        if normalize_phase is not False and value_type == 'phase':
+            # reference point: boresight (theta=0) of first phi angle
+            ref_theta_idx = np.argmin(np.abs(theta_angles))
+            ref_phi_idx = 0
+            
+            # Normalize co-pol phase
+            data_co_normalized = data_co.copy()
+            for freq_idx in frequency_indices:
+                for phi_idx in phi_indices:
+                    ref_phase = data_co[freq_idx, ref_theta_idx, ref_phi_idx]
+                    data_co_normalized[freq_idx, :, phi_idx] -= ref_phase
+            data_co = data_co_normalized
+            
+            # Normalize cross-pol phase if present
+            if data_cx is not None:
+                data_cx_normalized = data_cx.copy()
+                for freq_idx in frequency_indices:
+                    for phi_idx in phi_indices:
+                        ref_phase = data_cx[freq_idx, ref_theta_idx, ref_phi_idx]
+                        data_cx_normalized[freq_idx, :, phi_idx] -= ref_phase
+                data_cx = data_cx_normalized
+
     else:  # Default to gain
         data_co = pattern.get_gain_db('e_co')
         data_cx = pattern.get_gain_db('e_cx') if show_cross_pol else None
@@ -228,6 +254,7 @@ def plot_multiple_patterns(
     show_cross_pol: bool = False,
     value_type: str = 'gain',
     unwrap_phase: bool = True,
+    normalize_phase: bool = True,
     title: str = None,
     ax = None,
     fig_size: tuple = (10, 6)
@@ -326,6 +353,24 @@ def plot_multiple_patterns(
             co_pol_data = pattern.get_phase('e_co', unwrapped=unwrap_phase)[freq_idx]
             if show_cross_pol:
                 cx_pol_data = pattern.get_phase('e_cx', unwrapped=unwrap_phase)[freq_idx]
+
+            # Apply phase normalization if requested
+            if normalize_phase is not False:
+                # boresight (theta=0) and first phi angle
+                ref_theta_idx = np.argmin(np.abs(theta_angles))
+                ref_phi_idx = 0
+                
+                # Get reference phase at the specified point
+                ref_phase_co = co_pol_data[ref_theta_idx, ref_phi_idx]
+                
+                # Normalize co-pol data
+                co_pol_data = co_pol_data - ref_phase_co
+                
+                # Normalize cross-pol data if present
+                if show_cross_pol:
+                    ref_phase_cx = cx_pol_data[ref_theta_idx, ref_phi_idx]
+                    cx_pol_data = cx_pol_data - ref_phase_cx
+
         elif value_type == 'axial_ratio':
             co_pol_data = pattern.get_axial_ratio()[freq_idx]
             show_cross_pol = False  # No cross-pol for axial ratio
