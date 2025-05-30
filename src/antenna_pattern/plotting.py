@@ -7,7 +7,8 @@ from typing import Optional, Union, List, Tuple, Literal, Any, Dict
 import logging
 
 from .pattern import AntennaPattern
-from .utilities import find_nearest
+from .analysis import get_group_delay, get_phase_length
+from .utilities import find_nearest, lightspeed
 
 def plot_pattern_cut(
     pattern: AntennaPattern,
@@ -1057,3 +1058,216 @@ def add_envelope_spec(
         result_artists[spec_name] = artists
     
     return result_artists
+
+def plot_phase_delay_pattern(pattern, frequency: float, component: str = 'e_co',
+                           phi: Optional[Union[float, list]] = None,
+                           delay_type: str = 'both',
+                           ax: Optional[plt.Axes] = None,
+                           fig_size: Tuple[float, float] = (12, 8)) -> plt.Figure:
+    """
+    Plot phase length and/or group delay patterns across theta angles.
+    
+    Args:
+        pattern: AntennaPattern object
+        frequency: Frequency in Hz for the delay calculation
+        component: Field component to analyze ('e_co', 'e_cx', 'e_theta', 'e_phi')
+        phi: Phi angle(s) to plot (degrees). If None, uses all phi angles
+        delay_type: Type of delay to plot ('phase_length', 'group_delay', or 'both')
+        ax: Optional matplotlib axes to plot on
+        fig_size: Figure size as (width, height) in inches
+        
+    Returns:
+        matplotlib.Figure: The created figure object
+    """
+    if delay_type not in ['phase_length', 'group_delay', 'both']:
+        raise ValueError("delay_type must be 'phase_length', 'group_delay', or 'both'")
+    
+    if len(pattern.frequencies) < 2:
+        raise ValueError("Pattern must have at least 2 frequencies to calculate delays")
+    
+    # Handle phi selection
+    if phi is None:
+        phi_indices = list(range(len(pattern.phi_angles)))
+        selected_phi = pattern.phi_angles
+    elif np.isscalar(phi):
+        phi_val, phi_idx = find_nearest(pattern.phi_angles, phi)
+        phi_indices = [phi_idx]
+        selected_phi = [phi_val]
+    else:
+        phi_indices = []
+        selected_phi = []
+        for p in phi:
+            phi_val, phi_idx = find_nearest(pattern.phi_angles, p)
+            phi_indices.append(phi_idx)
+            selected_phi.append(phi_val)
+    
+    # Create subplots if plotting both types
+    if delay_type == 'both':
+        if ax is not None:
+            raise ValueError("Cannot specify ax when plotting both delay types")
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=fig_size, sharex=True)
+    else:
+        if ax is None:
+            fig, ax = plt.subplots(figsize=fig_size)
+        else:
+            fig = ax.figure
+            ax1 = ax2 = ax
+    
+    theta_angles = pattern.theta_angles
+    frequencies = pattern.frequencies
+    
+    # Calculate delays for each theta and phi
+    for i, phi_idx in enumerate(phi_indices):
+        phi_val = selected_phi[i]
+        
+        phase_lengths = []
+        group_delays = []
+        
+        for theta in theta_angles:
+            try:
+                if delay_type in ['phase_length', 'both']:
+                    phase_len = get_phase_length(pattern, frequency, theta, phi_val, component)
+                    phase_lengths.append(phase_len)
+                
+                if delay_type in ['group_delay', 'both']:
+                    group_del = get_group_delay(pattern, frequency, theta, phi_val, component)
+                    group_delays.append(group_del * 1e9)  # Convert to ns for plotting
+                    
+            except (ValueError, np.linalg.LinAlgError):
+                # Handle edge cases where calculation fails
+                if delay_type in ['phase_length', 'both']:
+                    phase_lengths.append(np.nan)
+                if delay_type in ['group_delay', 'both']:
+                    group_delays.append(np.nan)
+        
+        # Plot phase length
+        if delay_type in ['phase_length', 'both']:
+            target_ax = ax1 if delay_type == 'both' else ax
+            target_ax.plot(theta_angles, phase_lengths, 
+                         label=f'φ={phi_val:.1f}°', marker='o', markersize=3)
+            target_ax.set_ylabel('Phase Length (m)')
+            target_ax.grid(True)
+            target_ax.legend()
+            
+        # Plot group delay
+        if delay_type in ['group_delay', 'both']:
+            target_ax = ax2 if delay_type == 'both' else ax
+            target_ax.plot(theta_angles, group_delays, 
+                         label=f'φ={phi_val:.1f}°', marker='s', markersize=3)
+            target_ax.set_ylabel('Group Delay (ns)')
+            target_ax.grid(True)
+            target_ax.legend()
+    
+    # Set common x-label
+    if delay_type == 'both':
+        ax2.set_xlabel('Theta (degrees)')
+        fig.suptitle(f'Phase Length and Group Delay Patterns at {frequency/1e6:.1f} MHz')
+    else:
+        ax.set_xlabel('Theta (degrees)')
+        delay_name = 'Phase Length' if delay_type == 'phase_length' else 'Group Delay'
+        ax.set_title(f'{delay_name} Pattern at {frequency/1e6:.1f} MHz')
+    
+    fig.tight_layout()
+    return fig
+
+def plot_phase_slope_vs_frequency(pattern, theta: float = 0.0, phi: float = 0.0,
+                                 component: str = 'e_co',
+                                 ax: Optional[plt.Axes] = None,
+                                 fig_size: Tuple[float, float] = (10, 6)) -> plt.Figure:
+    """
+    Plot phase slope (dφ/df) versus frequency for a specific point in the pattern.
+    
+    This shows how the phase slope changes across the frequency band, which can
+    indicate frequency-dependent effects in the antenna.
+    
+    Args:
+        pattern: AntennaPattern object
+        theta: Theta angle in degrees (default: 0.0 - boresight)
+        phi: Phi angle in degrees (default: 0.0)
+        component: Field component to analyze ('e_co', 'e_cx', 'e_theta', 'e_phi')
+        ax: Optional matplotlib axes to plot on
+        fig_size: Figure size as (width, height) in inches
+        
+    Returns:
+        matplotlib.Figure: The created figure object
+    """
+    if len(pattern.frequencies) < 3:
+        raise ValueError("Pattern must have at least 3 frequencies to calculate phase slope vs frequency")
+    
+    # Create figure if not provided
+    if ax is None:
+        fig, ax = plt.subplots(figsize=fig_size)
+    else:
+        fig = ax.figure
+    
+    # Find nearest angles
+    theta_val, theta_idx = find_nearest(pattern.theta_angles, theta)
+    phi_val, phi_idx = find_nearest(pattern.phi_angles, phi)
+    
+    frequencies = pattern.frequencies
+    
+    # Get unwrapped phase data at the specified point
+    phase_data = pattern.get_phase(component, unwrapped=True)[:, theta_idx, phi_idx]
+    phase_rad = np.radians(phase_data)
+    
+    # Calculate phase slope at each frequency using a sliding window
+    phase_slopes = []
+    valid_frequencies = []
+    
+    # Use 3-point window for derivative calculation
+    for i in range(1, len(frequencies) - 1):
+        # Use 3-point finite difference
+        df_left = frequencies[i] - frequencies[i-1]
+        df_right = frequencies[i+1] - frequencies[i]
+        dphi_left = phase_rad[i] - phase_rad[i-1]
+        dphi_right = phase_rad[i+1] - phase_rad[i]
+        
+        # Weighted average of left and right derivatives
+        total_df = df_left + df_right
+        slope = (dphi_left * df_right + dphi_right * df_left) / (df_left * df_right + df_right * df_left)
+        
+        phase_slopes.append(slope)
+        valid_frequencies.append(frequencies[i])
+    
+    # Convert to numpy arrays
+    phase_slopes = np.array(phase_slopes)
+    valid_frequencies = np.array(valid_frequencies)
+    
+    # Convert phase slope to electrical length and group delay for secondary y-axes
+    electrical_lengths = (phase_slopes / (2 * np.pi)) * lightspeed
+    group_delays = -phase_slopes * 1e9  # Convert to ns
+    
+    # Create primary plot
+    line1 = ax.plot(valid_frequencies / 1e6, phase_slopes, 'b-o', markersize=4, 
+                    label='Phase Slope')
+    ax.set_xlabel('Frequency (MHz)')
+    ax.set_ylabel('Phase Slope (rad/Hz)', color='b')
+    ax.tick_params(axis='y', labelcolor='b')
+    ax.grid(True, alpha=0.3)
+    
+    # Create secondary y-axis for electrical length
+    ax2 = ax.twinx()
+    line2 = ax2.plot(valid_frequencies / 1e6, electrical_lengths, 'r-s', markersize=4,
+                     label='Electrical Length')
+    ax2.set_ylabel('Electrical Length (m)', color='r')
+    ax2.tick_params(axis='y', labelcolor='r')
+    
+    # Create third y-axis for group delay
+    ax3 = ax.twinx()
+    ax3.spines['right'].set_position(('outward', 60))
+    line3 = ax3.plot(valid_frequencies / 1e6, group_delays, 'g-^', markersize=4,
+                     label='Group Delay')
+    ax3.set_ylabel('Group Delay (ns)', color='g')
+    ax3.tick_params(axis='y', labelcolor='g')
+    
+    # Add title and legend
+    ax.set_title(f'Phase Slope vs Frequency at θ={theta_val:.1f}°, φ={phi_val:.1f}°\n'
+                f'Component: {component}')
+    
+    # Combine legends
+    lines = line1 + line2 + line3
+    labels = [l.get_label() for l in lines]
+    ax.legend(lines, labels, loc='upper left')
+    
+    fig.tight_layout()
+    return fig

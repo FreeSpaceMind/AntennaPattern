@@ -37,7 +37,9 @@ from .pattern_functions import (
 from .analysis import (
     calculate_phase_center,
     principal_plane_phase_center,
-    get_axial_ratio
+    get_axial_ratio,
+    get_phase_length,
+    get_group_delay
 )
 from .utilities import (
     find_nearest,
@@ -57,7 +59,9 @@ from .plotting import (
     plot_pattern_difference,
     plot_pattern_statistics,
     add_spec_mask,
-    add_envelope_spec
+    add_envelope_spec,
+    plot_phase_delay_pattern,
+    plot_phase_slope_vs_frequency
 )
 
 from .package_functions import (
@@ -92,6 +96,8 @@ __all__ = [
     'calculate_phase_center',
     'principal_plane_phase_center',
     'get_axial_ratio',
+    'get_phase_length',
+    'get_group_delay',
     'find_nearest',
     'frequency_to_wavelength',
     'wavelength_to_frequency',
@@ -108,6 +114,8 @@ __all__ = [
     'plot_pattern_statistics',
     'add_spec_mask',
     'add_envelope_spec',
+    'plot_phase_delay_pattern',
+    'plot_phase_slope_vs_frequency',
     'average_patterns',
     'difference_patterns'
 ]
