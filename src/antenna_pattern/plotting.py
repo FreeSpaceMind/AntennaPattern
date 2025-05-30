@@ -1114,15 +1114,21 @@ def plot_phase_slope_vs_frequency(pattern, theta: float = 0.0, phi: float = 0.0,
             dphi_left = phase_rad[i] - phase_rad[i-1]
             dphi_right = phase_rad[i+1] - phase_rad[i]
             
-            # Weighted average of left and right derivatives
-            slope = (dphi_left * df_right + dphi_right * df_left) / (df_left * df_right + df_right * df_left)
+            # Calculate slopes on each side
+            slope_left = dphi_left / df_left
+            slope_right = dphi_right / df_right
+            
+            # Average the slopes (simpler and more robust)
+            slope = (slope_left + slope_right) / 2
             
             # Convert to electrical length in degrees (flip sign)
-            electrical_length_deg = (slope * frequencies[i] * (180 / np.pi))
+            electrical_length_deg = -(slope * frequencies[i] * (180 / np.pi))
             electrical_lengths.append(electrical_length_deg)
             
-            # Group delay in ns
-            group_delay = slope * 1e9
+            # Group delay in ns: τ = -dφ/df where φ is in radians, f is in Hz
+            # slope is in rad/Hz, so group delay in seconds is -slope
+            # Convert to nanoseconds
+            group_delay = -slope * 1e9
             group_delays.append(group_delay)
             
             valid_frequencies.append(frequencies[i])
