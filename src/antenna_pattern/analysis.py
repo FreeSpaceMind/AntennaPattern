@@ -330,7 +330,7 @@ def get_phase_length(pattern, frequency: float, theta: float = 0.0, phi: float =
     phase_slope = coeffs[0]  # radians/Hz
     
     # Convert to electrical length in degrees: L = (dφ/df) * frequency
-    electrical_length = np.degrees(phase_slope*frequency)
+    electrical_length = -phase_slope/(2*np.pi)*frequency*360
     
     return electrical_length
 
@@ -387,7 +387,9 @@ def get_group_delay(pattern, frequency: float, theta: float = 0.0, phi: float = 
     coeffs = np.polyfit(freq_window, phase_window, 1)
     phase_slope = coeffs[0]  # radians/Hz
     
-    # Group delay is negative phase slope
-    group_delay = -phase_slope  # seconds
+    # Group delay in seconds
+    # Formula: τ = -dφ/dω where φ is in radians, ω is in rad/s
+    # Since ω = 2πf, we have dφ/dω = (dφ/df) / (2π)
+    group_delay = -phase_slope /(2*np.pi)
     
     return group_delay

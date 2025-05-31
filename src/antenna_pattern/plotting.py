@@ -1118,25 +1118,17 @@ def plot_phase_slope_vs_frequency(pattern, theta: float = 0.0, phi: float = 0.0,
             phase_slope = dphi / df
             
             # Electrical length in degrees at this frequency
-            # Formula: electrical_length_deg = phase_slope * frequency * (180/π)
-            # Flip sign to make it positive for typical antennas
-            electrical_length_deg = -phase_slope * frequencies[i] * (180 / np.pi)
+            electrical_length_deg = -(phase_slope / (2 * np.pi))  * frequencies[i] * 360
             electrical_lengths.append(electrical_length_deg)
             
             # Group delay in nanoseconds
-            # Formula: τ = -dφ/df where φ is in radians, f is in Hz
+            # Formula: τ = -dφ/dω where φ is in radians, ω is in rad/s
+            # Since ω = 2πf, we have dφ/dω = (dφ/df) / (2π)
             # Result is in seconds, convert to ns
-            group_delay_ns = -phase_slope * 1e9
+            group_delay_ns = -(phase_slope / (2 * np.pi)) * 1e9
             group_delays.append(group_delay_ns)
             
             valid_frequencies.append(frequencies[i])
-    
-    # Debug: Print some values to check
-    if electrical_lengths and group_delays:
-        print(f"Sample electrical length: {electrical_lengths[0]:.1f} degrees")
-        print(f"Sample group delay: {group_delays[0]:.3f} ns")
-        print(f"Expected ratio (elec_length/frequency/360): {electrical_lengths[0]/(valid_frequencies[0]/1e6)/360:.3f}")
-        print(f"Actual group delay: {group_delays[0]:.3f} ns")
     
     # Create primary plot for phase
     line1 = ax.plot(frequencies / 1e6, phase_data_deg, 'b-o', markersize=4, 
