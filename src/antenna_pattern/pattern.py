@@ -20,8 +20,7 @@ from .polarization import (
     polarization_tp2xy, polarization_tp2rl
 )
 from .analysis import (
-    calculate_phase_center, get_axial_ratio, 
-    get_phase_length, get_group_delay,
+    calculate_phase_center, get_axial_ratio
     )
 
 # Configure logging
@@ -664,50 +663,3 @@ class AntennaPattern:
         """
         # Delegate to the pattern_functions implementation
         mirror_pattern(self)
-
-    def get_phase_length(self, frequency: float, theta: float = 0.0, phi: float = 0.0, 
-                        component: str = 'e_co') -> float:
-        """
-        Calculate the electrical phase length of the antenna at a specific point.
-        
-        This function computes the phase slope with respect to frequency and converts
-        it to an electrical length representing the total path length from the input
-        port to the specified observation point.
-        
-        Args:
-            frequency: Frequency in Hz at which to calculate phase length
-            theta: Theta angle in degrees (default: 0.0 - boresight)
-            phi: Phi angle in degrees (default: 0.0)
-            component: Field component to analyze ('e_co', 'e_cx', 'e_theta', 'e_phi')
-            
-        Returns:
-            float: Electrical phase length in meters
-            
-        Raises:
-            ValueError: If pattern doesn't have multiple frequencies for slope calculation
-            ValueError: If specified angles are outside pattern coverage
-        """
-        return get_phase_length(self, frequency, theta, phi, component)
-
-    def get_group_delay(self, frequency: float, theta: float = 0.0, phi: float = 0.0,
-                    component: str = 'e_co') -> float:
-        """
-        Calculate the group delay of the antenna at a specific point.
-        
-        Group delay is the negative derivative of phase with respect to frequency:
-        τ_group = -dφ/df
-        
-        Args:
-            frequency: Frequency in Hz at which to calculate group delay
-            theta: Theta angle in degrees (default: 0.0 - boresight)
-            phi: Phi angle in degrees (default: 0.0)
-            component: Field component to analyze ('e_co', 'e_cx', 'e_theta', 'e_phi')
-            
-        Returns:
-            float: Group delay in seconds
-            
-        Raises:
-            ValueError: If pattern doesn't have multiple frequencies for slope calculation
-            ValueError: If specified angles are outside pattern coverage
-        """
-        return get_group_delay(self, frequency, theta, phi, component)
