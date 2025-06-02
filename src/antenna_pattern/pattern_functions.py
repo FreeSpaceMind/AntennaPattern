@@ -662,7 +662,7 @@ def unwrap_phase(phase: np.ndarray) -> np.ndarray:
     Returns:
         Unwrapped phase array
     """
-    return np.unwrap(phase)
+    return np.unwrap(phase, axis=1)
 
 def scale_amplitude(values: np.ndarray, scale_db: Union[float, np.ndarray]) -> np.ndarray:
     """
