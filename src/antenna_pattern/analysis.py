@@ -82,17 +82,8 @@ def calculate_phase_center(pattern, theta_angle: float, frequency: Optional[floa
         # Extract the region of interest (+/- theta_angle)
         roi_phase = translated_phase[idx_n:idx_p+1, :]
         
-        # Initialize array to hold unwrapped phase for each phi cut
-        unwrapped_phases = np.zeros_like(roi_phase)
-        
-        # Unwrap phase along theta for each phi cut
-        for phi_idx in range(roi_phase.shape[1]):
-            # Extract the 1D array for this phi cut
-            phi_cut = roi_phase[:, phi_idx]
-            # Unwrap it - since it's now 1D, axis=0 is correct
-            unwrapped_phi_cut = unwrap_phase(phi_cut, axis=0)
-            # Store the result
-            unwrapped_phases[:, phi_idx] = unwrapped_phi_cut
+        # unwrap phase
+        unwrapped_phases = unwrap_phase(roi_phase, axis=0)
         
         # Calculate flatness metric (overall deviation from zero across whole region)
         theta_indices = np.arange(unwrapped_phases.shape[0])
