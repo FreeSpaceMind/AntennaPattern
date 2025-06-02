@@ -670,20 +670,27 @@ def unwrap_phase(phase: np.ndarray, axis=1, central=True) -> np.ndarray:
         center_idx = phase.shape[axis] // 2
         
         # Split the array at the center
-        indices_before = tuple(slice(None) if i != axis else slice(None, center_idx + 1) 
-                              for i in range(phase.ndim))
-        indices_after = tuple(slice(None) if i != axis else slice(center_idx, None) 
+        indices_left = tuple(slice(None) if i != axis else slice(None, center_idx + 1) 
+                            for i in range(phase.ndim))
+        indices_right = tuple(slice(None) if i != axis else slice(center_idx, None) 
                              for i in range(phase.ndim))
         
-        # Unwrap each half separately
-        phase_before = np.unwrap(phase[indices_before], axis=axis)
-        phase_after = np.unwrap(phase[indices_after], axis=axis)
+        phase_left = phase[indices_left]
+        phase_right = phase[indices_right]
         
-        # Concatenate along the axis, removing the duplicate center point
-        indices_after_no_center = tuple(slice(None) if i != axis else slice(1, None) 
+        # For the right side, unwrap normally from center outward
+        phase_right_unwrapped = np.unwrap(phase_right, axis=axis)
+        
+        # For the left side, flip along the axis, unwrap, then flip back
+        phase_left_flipped = np.flip(phase_left, axis=axis)
+        phase_left_unwrapped_flipped = np.unwrap(phase_left_flipped, axis=axis)
+        phase_left_unwrapped = np.flip(phase_left_unwrapped_flipped, axis=axis)
+        
+        # Concatenate, removing the duplicate center point from the right side
+        indices_right_no_center = tuple(slice(None) if i != axis else slice(1, None) 
                                        for i in range(phase.ndim))
         
-        return np.concatenate([phase_before, phase_after[indices_after_no_center]], axis=axis)
+        return np.concatenate([phase_left_unwrapped, phase_right_unwrapped[indices_right_no_center]], axis=axis)
     
     return np.unwrap(phase, axis=axis)
 
