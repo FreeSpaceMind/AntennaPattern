@@ -90,7 +90,7 @@ def calculate_phase_center(pattern, theta_angle: float, frequency: Optional[floa
             # Extract the 1D array for this phi cut
             phi_cut = roi_phase[:, phi_idx]
             # Unwrap it - since it's now 1D, axis=0 is correct
-            unwrapped_phi_cut = unwrap_phase(phi_cut)
+            unwrapped_phi_cut = unwrap_phase(phi_cut, axis=0)
             # Store the result
             unwrapped_phases[:, phi_idx] = unwrapped_phi_cut
         

@@ -652,17 +652,18 @@ def translate_phase_pattern(pattern_obj, translation, normalize=True) -> None:
             'normalize': normalize
         })
 
-def unwrap_phase(phase: np.ndarray) -> np.ndarray:
+def unwrap_phase(phase: np.ndarray, axis=1) -> np.ndarray:
     """
     phase unwrapping with adjustable discontinuity threshold.
     
     Args:
         phase: Array of phase values in radians
+        axis: for default 3D pattern, axis = 1. May be changed if pattern dimensions changes.
     
     Returns:
         Unwrapped phase array
     """
-    return np.unwrap(phase, axis=1)
+    return np.unwrap(phase, axis=axis)
 
 def scale_amplitude(values: np.ndarray, scale_db: Union[float, np.ndarray]) -> np.ndarray:
     """
