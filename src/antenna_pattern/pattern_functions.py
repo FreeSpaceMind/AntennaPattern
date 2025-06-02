@@ -652,17 +652,39 @@ def translate_phase_pattern(pattern_obj, translation, normalize=True) -> None:
             'normalize': normalize
         })
 
-def unwrap_phase(phase: np.ndarray, axis=1) -> np.ndarray:
+def unwrap_phase(phase: np.ndarray, axis=1, central=True) -> np.ndarray:
     """
     phase unwrapping with adjustable discontinuity threshold.
     
     Args:
         phase: Array of phase values in radians
         axis: for default 3D pattern, axis = 1. May be changed if pattern dimensions changes.
+        central: if True, will unwrap from the center of the axis rather than the edge
     
     Returns:
         Unwrapped phase array
     """
+    
+    if central:
+        # Get the center index of the specified axis
+        center_idx = phase.shape[axis] // 2
+        
+        # Split the array at the center
+        indices_before = tuple(slice(None) if i != axis else slice(None, center_idx + 1) 
+                              for i in range(phase.ndim))
+        indices_after = tuple(slice(None) if i != axis else slice(center_idx, None) 
+                             for i in range(phase.ndim))
+        
+        # Unwrap each half separately
+        phase_before = np.unwrap(phase[indices_before], axis=axis)
+        phase_after = np.unwrap(phase[indices_after], axis=axis)
+        
+        # Concatenate along the axis, removing the duplicate center point
+        indices_after_no_center = tuple(slice(None) if i != axis else slice(1, None) 
+                                       for i in range(phase.ndim))
+        
+        return np.concatenate([phase_before, phase_after[indices_after_no_center]], axis=axis)
+    
     return np.unwrap(phase, axis=axis)
 
 def scale_amplitude(values: np.ndarray, scale_db: Union[float, np.ndarray]) -> np.ndarray:
