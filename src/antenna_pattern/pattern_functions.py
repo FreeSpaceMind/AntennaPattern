@@ -652,18 +652,17 @@ def translate_phase_pattern(pattern_obj, translation, normalize=True) -> None:
             'normalize': normalize
         })
 
-def unwrap_phase(phase: np.ndarray, discont: float = np.pi) -> np.ndarray:
+def unwrap_phase(phase: np.ndarray) -> np.ndarray:
     """
     phase unwrapping with adjustable discontinuity threshold.
     
     Args:
         phase: Array of phase values in radians
-        discont: Size of the discontinuity for unwrapping (default: π)
     
     Returns:
         Unwrapped phase array
     """
-    return np.unwrap(phase, discont=discont, axis=0)
+    return np.unwrap(phase)
 
 def scale_amplitude(values: np.ndarray, scale_db: Union[float, np.ndarray]) -> np.ndarray:
     """
