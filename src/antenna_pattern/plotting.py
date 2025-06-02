@@ -7,7 +7,6 @@ from typing import Optional, Union, List, Tuple, Literal, Any, Dict
 import logging
 
 from .pattern import AntennaPattern
-from .analysis import get_group_delay, get_phase_length
 from .utilities import find_nearest, lightspeed
 
 def plot_pattern_cut(
