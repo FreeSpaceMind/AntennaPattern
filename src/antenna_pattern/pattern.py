@@ -431,14 +431,7 @@ class AntennaPattern:
         phase = np.angle(self.data[component])
         
         if unwrapped:
-            # Unwrap along theta dimension to remove discontinuities
-            phase = xr.apply_ufunc(
-                unwrap_phase,
-                phase,
-                input_core_dims=[["theta"]],
-                output_core_dims=[["theta"]],
-                vectorize=True
-            )
+            phase = unwrap_phase(phase)
         
         return np.degrees(phase)
     
