@@ -12,7 +12,14 @@ __email__ = 'justinwlong1@gmail.com'
 
 # Import key classes and functions to make them available at the package level
 from .pattern import AntennaPattern
-from .ant_io import read_cut, read_ffd, load_pattern_npz, save_pattern_npz
+from .ant_io import (
+    read_cut, 
+    read_ffd, 
+    load_pattern_npz, 
+    save_pattern_npz,
+    write_cut,
+    write_ffd
+)
 from .polarization import (
     polarization_tp2xy,
     polarization_xy2tp,
@@ -73,6 +80,8 @@ __all__ = [
     'read_ffd',
     'load_pattern_npz',
     'save_pattern_npz',
+    'write_cut',
+    'write_ffd',
     'polarization_tp2xy',
     'polarization_xy2tp',
     'polarization_tp2rl',

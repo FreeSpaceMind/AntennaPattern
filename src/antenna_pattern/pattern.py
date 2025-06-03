@@ -663,3 +663,34 @@ class AntennaPattern:
         """
         # Delegate to the pattern_functions implementation
         mirror_pattern(self)
+
+    def write_ffd(self, file_path: Union[str, Path]) -> None:
+        """
+        Write the antenna pattern to HFSS far field data format (.ffd).
+        
+        Args:
+            file_path: Path to save the file to
+            
+        Raises:
+            OSError: If file cannot be written
+        """
+        from .ant_io import write_ffd
+        write_ffd(self, file_path)
+
+    def write_cut(self, file_path: Union[str, Path], polarization_format: int = 1) -> None:
+        """
+        Write the antenna pattern to GRASP CUT format.
+        
+        Args:
+            file_path: Path to save the file to
+            polarization_format: Output polarization format:
+                1 = theta/phi (spherical)
+                2 = RHCP/LHCP (circular)
+                3 = X/Y (Ludwig-3 linear)
+                
+        Raises:
+            OSError: If file cannot be written
+            ValueError: If polarization_format is invalid
+        """
+        from .ant_io import write_cut
+        write_cut(self, file_path)
