@@ -482,8 +482,9 @@ def write_ffd(pattern, file_path: Union[str, Path]) -> None:
             f.write(f"Frequency {freq}\n")
             
             # Write field data for all theta/phi combinations
-            for phi_idx in range(len(phi)):
-                for theta_idx in range(len(theta)):
+            # FFD format: theta is outer loop, phi is inner loop (opposite of what I had)
+            for theta_idx in range(len(theta)):
+                for phi_idx in range(len(phi)):
                     # Convert to HFSS units (multiply by sqrt(60))
                     eth = e_theta[freq_idx, theta_idx, phi_idx] * np.sqrt(60)
                     eph = e_phi[freq_idx, theta_idx, phi_idx] * np.sqrt(60)
