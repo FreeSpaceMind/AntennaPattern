@@ -694,3 +694,18 @@ class AntennaPattern:
         """
         from .ant_io import write_cut
         write_cut(self, file_path)
+
+    def save_pattern_npz(self, file_path: Union[str, Path], metadata: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Save an antenna pattern to NPZ format for efficient loading.
+        
+        Args:
+            pattern: AntennaPattern object to save
+            file_path: Path to save the file to
+            metadata: Optional metadata to include
+            
+        Raises:
+            OSError: If file cannot be written
+        """
+        from .ant_io import save_pattern_npz
+        save_pattern_npz(self, file_path, metadata)
