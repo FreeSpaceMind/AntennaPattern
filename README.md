@@ -1,5 +1,7 @@
 # Antenna Pattern Library
 
+** Note: The examples and documentation for this package are pretty out-of-date, I'm slowly working on bringing it back to date **
+
 A comprehensive toolkit for antenna radiation pattern analysis including:
 
 - Reading and writing antenna patterns from various file formats

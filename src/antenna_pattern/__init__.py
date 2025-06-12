@@ -12,7 +12,14 @@ __email__ = 'justinwlong1@gmail.com'
 
 # Import key classes and functions to make them available at the package level
 from .pattern import AntennaPattern
-from .ant_io import read_cut, read_ffd, load_pattern_npz, save_pattern_npz
+from .ant_io import (
+    read_cut, 
+    read_ffd, 
+    load_pattern_npz, 
+    save_pattern_npz,
+    write_cut,
+    write_ffd
+)
 from .polarization import (
     polarization_tp2xy,
     polarization_xy2tp,
@@ -37,9 +44,7 @@ from .pattern_functions import (
 from .analysis import (
     calculate_phase_center,
     principal_plane_phase_center,
-    get_axial_ratio,
-    get_phase_length,
-    get_group_delay
+    get_axial_ratio
 )
 from .utilities import (
     find_nearest,
@@ -75,6 +80,8 @@ __all__ = [
     'read_ffd',
     'load_pattern_npz',
     'save_pattern_npz',
+    'write_cut',
+    'write_ffd',
     'polarization_tp2xy',
     'polarization_xy2tp',
     'polarization_tp2rl',
@@ -95,8 +102,6 @@ __all__ = [
     'calculate_phase_center',
     'principal_plane_phase_center',
     'get_axial_ratio',
-    'get_phase_length',
-    'get_group_delay',
     'find_nearest',
     'frequency_to_wavelength',
     'wavelength_to_frequency',
