@@ -4,8 +4,8 @@ Core class for antenna pattern representation and manipulation.
 import numpy as np
 import xarray as xr
 from typing import Optional, Union, Tuple, Dict, Any, Set, Generator
-import logging
 from pathlib import Path
+import logging
 from contextlib import contextmanager
 
 from .utilities import find_nearest
@@ -13,8 +13,7 @@ from .polarization import (
     polarization_tp2xy, polarization_tp2rl
 )
 from .analysis import (
-    calculate_phase_center, get_axial_ratio, 
-    get_phase_length, get_group_delay,
+    calculate_phase_center, get_axial_ratio
     )
 
 # Configure logging
@@ -438,14 +437,7 @@ class AntennaPattern:
         phase = np.angle(self.data[component])
         
         if unwrapped:
-            # Unwrap along theta dimension to remove discontinuities
-            phase = xr.apply_ufunc(
-                unwrap_phase,
-                phase,
-                input_core_dims=[["theta"]],
-                output_core_dims=[["theta"]],
-                vectorize=True
-            )
+            phase = unwrap_phase(phase)
         
         return np.degrees(phase)
     
@@ -689,49 +681,48 @@ class AntennaPattern:
         # Delegate to the pattern_functions implementation
         mirror_pattern(self)
 
-    def get_phase_length(self, frequency: float, theta: float = 0.0, phi: float = 0.0, 
-                        component: str = 'e_co') -> float:
+    def write_ffd(self, file_path: Union[str, Path]) -> None:
         """
-        Calculate the electrical phase length of the antenna at a specific point.
-        
-        This function computes the phase slope with respect to frequency and converts
-        it to an electrical length representing the total path length from the input
-        port to the specified observation point.
+        Write the antenna pattern to HFSS far field data format (.ffd).
         
         Args:
-            frequency: Frequency in Hz at which to calculate phase length
-            theta: Theta angle in degrees (default: 0.0 - boresight)
-            phi: Phi angle in degrees (default: 0.0)
-            component: Field component to analyze ('e_co', 'e_cx', 'e_theta', 'e_phi')
-            
-        Returns:
-            float: Electrical phase length in meters
+            file_path: Path to save the file to
             
         Raises:
-            ValueError: If pattern doesn't have multiple frequencies for slope calculation
-            ValueError: If specified angles are outside pattern coverage
+            OSError: If file cannot be written
         """
-        return get_phase_length(self, frequency, theta, phi, component)
+        from .ant_io import write_ffd
+        write_ffd(self, file_path)
 
-    def get_group_delay(self, frequency: float, theta: float = 0.0, phi: float = 0.0,
-                    component: str = 'e_co') -> float:
+    def write_cut(self, file_path: Union[str, Path], polarization_format: int = 1) -> None:
         """
-        Calculate the group delay of the antenna at a specific point.
-        
-        Group delay is the negative derivative of phase with respect to frequency:
-        τ_group = -dφ/df
+        Write the antenna pattern to GRASP CUT format.
         
         Args:
-            frequency: Frequency in Hz at which to calculate group delay
-            theta: Theta angle in degrees (default: 0.0 - boresight)
-            phi: Phi angle in degrees (default: 0.0)
-            component: Field component to analyze ('e_co', 'e_cx', 'e_theta', 'e_phi')
-            
-        Returns:
-            float: Group delay in seconds
+            file_path: Path to save the file to
+            polarization_format: Output polarization format:
+                1 = theta/phi (spherical)
+                2 = RHCP/LHCP (circular)
+                3 = X/Y (Ludwig-3 linear)
+                
+        Raises:
+            OSError: If file cannot be written
+            ValueError: If polarization_format is invalid
+        """
+        from .ant_io import write_cut
+        write_cut(self, file_path)
+
+    def save_pattern_npz(self, file_path: Union[str, Path], metadata: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Save an antenna pattern to NPZ format for efficient loading.
+        
+        Args:
+            pattern: AntennaPattern object to save
+            file_path: Path to save the file to
+            metadata: Optional metadata to include
             
         Raises:
-            ValueError: If pattern doesn't have multiple frequencies for slope calculation
-            ValueError: If specified angles are outside pattern coverage
+            OSError: If file cannot be written
         """
-        return get_group_delay(self, frequency, theta, phi, component)
+        from .ant_io import save_pattern_npz
+        save_pattern_npz(self, file_path, metadata)
