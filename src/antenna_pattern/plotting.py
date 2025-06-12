@@ -4,11 +4,9 @@ Plotting functions for antenna radiation patterns.
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Optional, Union, List, Tuple, Literal, Any, Dict
-import logging
 
 from .pattern import AntennaPattern
-from .analysis import get_group_delay, get_phase_length
-from .utilities import find_nearest, lightspeed
+from .utilities import find_nearest
 
 def plot_pattern_cut(
     pattern: AntennaPattern,

@@ -1,7 +1,5 @@
 """
 Utility module for creating and visualizing antenna patterns for the examples.
-
-This replaces the older create_horn_pattern.py with the new synthetic pattern generation.
 """
 import os
 import sys

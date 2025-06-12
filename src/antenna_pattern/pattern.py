@@ -5,16 +5,8 @@ import numpy as np
 import xarray as xr
 from typing import Optional, Union, Tuple, Dict, Any, Set, Generator
 import logging
-from pathlib import Path
 from contextlib import contextmanager
 
-from .pattern_functions import(
-    unwrap_phase, swap_polarization_axes, apply_mars, 
-    normalize_phase, change_polarization, translate,
-    scale_pattern, transform_coordinates, mirror_pattern,
-    normalize_at_boresight, shift_theta_origin,
-    shift_phi_origin
-)
 from .utilities import find_nearest
 from .polarization import (
     polarization_tp2xy, polarization_tp2rl
@@ -248,6 +240,8 @@ class AntennaPattern:
         Raises:
             ValueError: If the new polarization is invalid
         """
+        from .pattern_functions import change_polarization
+
         # Delegate to the pattern_functions implementation
         change_polarization(self, new_polarization)
     
@@ -264,6 +258,8 @@ class AntennaPattern:
         Raises:
             ValueError: If translation has incorrect shape
         """
+        from .pattern_functions import translate
+
         # Delegate to the pattern_functions implementation
         translate(self, translation, normalize)
     
@@ -353,6 +349,8 @@ class AntennaPattern:
             reference_theta: Reference theta angle in degrees (default: 0)
             reference_phi: Reference phi angle in degrees (default: 0)
         """
+        from .pattern_functions import normalize_phase
+
         # Delegate to the pattern_functions implementation
         normalize_phase(self, reference_theta, reference_phi)
 
@@ -365,6 +363,8 @@ class AntennaPattern:
         Raises:
             ValueError: If the pattern doesn't have a theta=0 point
         """
+        from .pattern_functions import normalize_at_boresight
+
         # Delegate to the pattern_functions implementation
         normalize_at_boresight(self)
 
@@ -379,6 +379,8 @@ class AntennaPattern:
         Args:
             maximum_radial_extent: Maximum radial extent of the antenna in meters
         """
+        from .pattern_functions import apply_mars
+
         # Delegate to the pattern_functions implementation
         apply_mars(self, maximum_radial_extent)
     
@@ -386,6 +388,8 @@ class AntennaPattern:
         """
         Swap vertical and horizontal polarization ports.
         """
+        from .pattern_functions import swap_polarization_axes
+
         # Delegate to the pattern_functions implementation
         swap_polarization_axes(self)
     
@@ -424,6 +428,8 @@ class AntennaPattern:
         Raises:
             KeyError: If component does not exist
         """
+        from .pattern_functions import unwrap_phase
+
         if component not in self.data:
             raise KeyError(f"Component {component} not found in pattern data. "
                           f"Available: {list(self.data.data_vars.keys())}")
@@ -493,6 +499,8 @@ class AntennaPattern:
         Raises:
             ValueError: If input arrays have incompatible dimensions
         """
+        from .pattern_functions import scale_pattern
+
         # Delegate to the pattern_functions implementation
         scale_pattern(self, scale_db, freq_scale, phi_scale)
     
@@ -512,6 +520,8 @@ class AntennaPattern:
         Raises:
             ValueError: If format is not 'sided' or 'central'
         """
+        from .pattern_functions import transform_coordinates
+
         # Delegate to the pattern_functions implementation
         transform_coordinates(self, format)
 
@@ -532,6 +542,8 @@ class AntennaPattern:
             - This performs interpolation along the theta axis for each phi cut
             - Original theta grid points are preserved
         """
+        from .pattern_functions import shift_theta_origin
+
         # Delegate to the pattern_functions implementation
         shift_theta_origin(self, theta_offset)
 
@@ -553,6 +565,8 @@ class AntennaPattern:
             - Original phi grid points are preserved
             - Takes into account the periodicity of phi (0° = 360°)
         """
+        from .pattern_functions import shift_phi_origin
+
         # Delegate to the pattern_functions implementation
         shift_phi_origin(self, phi_offset)
 
@@ -669,6 +683,8 @@ class AntennaPattern:
             If the pattern does not include theta=0, the function will raise a ValueError.
             The pattern should have theta values in [-180, 180] range.
         """
+        from .pattern_functions import mirror_pattern
+        
         # Delegate to the pattern_functions implementation
         mirror_pattern(self)
 

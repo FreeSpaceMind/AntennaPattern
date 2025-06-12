@@ -6,7 +6,7 @@ These functions contained here to shorten the AntennaPattern definition file (pa
 import numpy as np
 import xarray as xr
 from typing import Tuple, Union, Optional, List, Any, Callable
-from scipy.interpolate import interp1d, LinearNDInterpolator
+from scipy.interpolate import interp1d
 
 from .utilities import lightspeed, frequency_to_wavelength
 from .polarization import polarization_tp2xy, polarization_tp2rl, polarization_xy2tp
