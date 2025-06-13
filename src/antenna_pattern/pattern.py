@@ -15,11 +15,12 @@ from .polarization import (
 from .analysis import (
     calculate_phase_center, get_axial_ratio
     )
+from .pattern_operations import PatternOperationsMixin
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-class AntennaPattern:
+class AntennaPattern(PatternOperationsMixin):
     """
     A class to represent antenna far field patterns.
     
@@ -230,38 +231,7 @@ class AntennaPattern:
         if self.metadata is not None:
             self.metadata['polarization'] = standard_pol
     
-    def change_polarization(self, new_polarization: str) -> None:
-        """
-        Change the polarization of the antenna pattern.
-        
-        Args:
-            new_polarization: New polarization type to use
-            
-        Raises:
-            ValueError: If the new polarization is invalid
-        """
-        from .pattern_functions import change_polarization
-
-        # Delegate to the pattern_functions implementation
-        change_polarization(self, new_polarization)
     
-    def translate(self, translation: np.ndarray, normalize: bool = True) -> None:
-        """
-        Shifts the antenna phase pattern to place the origin of the coordinate 
-        system at the location defined by the translation.
-        
-        Args:
-            translation: [x, y, z] translation vector in meters. Can be 1D (applied to
-                all frequencies) or 2D with shape (num_frequencies, 3).
-            normalize: if true, normalize the translated phase pattern to zero degrees
-            
-        Raises:
-            ValueError: If translation has incorrect shape
-        """
-        from .pattern_functions import translate
-
-        # Delegate to the pattern_functions implementation
-        translate(self, translation, normalize)
     
     def find_phase_center(self, theta_angle: float, frequency: Optional[float] = None, 
                         n_iter: int = 10) -> np.ndarray:
@@ -337,61 +307,9 @@ class AntennaPattern:
         
         return translation
     
-    def normalize_phase(self, reference_theta=0, reference_phi=0) -> None:
-        """
-        Normalize the phase of the antenna pattern based on its polarization type.
-        
-        This function sets the phase of the co-polarized component at the reference
-        point (closest to reference_theta, reference_phi) to zero, while preserving
-        the relative phase between components.
-        
-        Args:
-            reference_theta: Reference theta angle in degrees (default: 0)
-            reference_phi: Reference phi angle in degrees (default: 0)
-        """
-        from .pattern_functions import normalize_phase
 
-        # Delegate to the pattern_functions implementation
-        normalize_phase(self, reference_theta, reference_phi)
 
-    def normalize_at_boresight(self) -> None:
-        """
-        Normalize the phase and magnitude of the antenna pattern so that both e_theta 
-        and e_phi components for all phi cuts have the same phase and magnitude at 
-        boresight (theta=0). Normalized to the first phi cut (typically phi =0).
-        
-        Raises:
-            ValueError: If the pattern doesn't have a theta=0 point
-        """
-        from .pattern_functions import normalize_at_boresight
-
-        # Delegate to the pattern_functions implementation
-        normalize_at_boresight(self)
-
-    def apply_mars(self, maximum_radial_extent: float) -> None:
-        """
-        Apply Mathematical Absorber Reflection Suppression technique.
-        
-        The MARS algorithm transforms antenna measurement data to mitigate reflections
-        from the measurement chamber. It is particularly effective for electrically
-        large antennas.
-        
-        Args:
-            maximum_radial_extent: Maximum radial extent of the antenna in meters
-        """
-        from .pattern_functions import apply_mars
-
-        # Delegate to the pattern_functions implementation
-        apply_mars(self, maximum_radial_extent)
     
-    def swap_polarization_axes(self) -> None:
-        """
-        Swap vertical and horizontal polarization ports.
-        """
-        from .pattern_functions import swap_polarization_axes
-
-        # Delegate to the pattern_functions implementation
-        swap_polarization_axes(self)
     
     def get_gain_db(self, component: str = 'e_co') -> xr.DataArray:
         """
@@ -428,7 +346,7 @@ class AntennaPattern:
         Raises:
             KeyError: If component does not exist
         """
-        from .pattern_functions import unwrap_phase
+        from .pattern_operations import unwrap_phase
 
         if component not in self.data:
             raise KeyError(f"Component {component} not found in pattern data. "
@@ -466,102 +384,9 @@ class AntennaPattern:
 
         return get_axial_ratio(self)
     
-    def scale_pattern(self, scale_db: Union[float, np.ndarray], 
-                      freq_scale: Optional[np.ndarray] = None,
-                      phi_scale: Optional[np.ndarray] = None) -> None:
-        """
-        Scale the amplitude of the antenna pattern by the input value in dB.
-        
-        This method supports several input formats:
-        1. A scalar value: Apply the same scaling to all frequencies and angles
-        2. A 1D array matching frequency length: Apply frequency-dependent scaling
-        3. A 1D array with custom frequencies: Interpolate to pattern frequencies
-        4. A 2D array with scaling values for freq/phi combinations
-        
-        Args:
-            scale_db: Scaling values in dB. Can be:
-                - float: Single value applied to all frequencies and angles
-                - 1D array[freq]: Values for each frequency in pattern
-                - 2D array[freq, phi]: Values for each frequency/phi combination
-            freq_scale: Optional frequency vector in Hz when scale_db doesn't match
-                pattern frequency points. Required if scale_db is 1D and doesn't 
-                match pattern frequencies, or if scale_db is 2D.
-            phi_scale: Optional phi angle vector in degrees when scale_db is 2D and 
-                doesn't match pattern phi points.
-                
-        Raises:
-            ValueError: If input arrays have incompatible dimensions
-        """
-        from .pattern_functions import scale_pattern
-
-        # Delegate to the pattern_functions implementation
-        scale_pattern(self, scale_db, freq_scale, phi_scale)
     
-    def transform_coordinates(self, format: str = 'sided') -> None:
-        """
-        Transform pattern coordinates to conform to a specified theta/phi convention.
-        
-        This function rearranges the existing pattern data to match one of two standard
-        coordinate conventions without interpolation:
-        
-        - 'sided': theta 0:180, phi 0:360 (spherical convention)
-        - 'central': theta -180:180, phi 0:180 (more common for antenna patterns)
-        
-        Args:
-            format: Target coordinate format ('sided' or 'central')
-            
-        Raises:
-            ValueError: If format is not 'sided' or 'central'
-        """
-        from .pattern_functions import transform_coordinates
 
-        # Delegate to the pattern_functions implementation
-        transform_coordinates(self, format)
 
-    def shift_theta_origin(self, theta_offset: float) -> None:
-        """
-        Shifts the origin of the theta coordinate axis for all phi cuts.
-        
-        This is useful for aligning measurement data when the mechanical 
-        antenna rotation axis doesn't align with the desired coordinate 
-        system (e.g., antenna boresight).
-        
-        Args:
-            theta_offset: Angle in degrees to shift the theta origin.
-                        Positive values move theta=0 to the right (positive theta),
-                        negative values move theta=0 to the left (negative theta).
-                        
-        Notes:
-            - This performs interpolation along the theta axis for each phi cut
-            - Original theta grid points are preserved
-        """
-        from .pattern_functions import shift_theta_origin
-
-        # Delegate to the pattern_functions implementation
-        shift_theta_origin(self, theta_offset)
-
-    def shift_phi_origin(self, phi_offset: float) -> None:
-        """
-        Shifts the origin of the phi coordinate axis for the pattern.
-        
-        This is useful for aligning measurement data when the mechanical 
-        antenna rotation reference doesn't align with the desired coordinate
-        system (e.g., principal planes).
-        
-        Args:
-            phi_offset: Angle in degrees to shift the phi origin.
-                    Positive values rotate phi clockwise,
-                    negative values rotate phi counterclockwise.
-                    
-        Notes:
-            - This performs interpolation along the phi axis for each theta value
-            - Original phi grid points are preserved
-            - Takes into account the periodicity of phi (0° = 360°)
-        """
-        from .pattern_functions import shift_phi_origin
-
-        # Delegate to the pattern_functions implementation
-        shift_phi_origin(self, phi_offset)
 
     def split_patterns(self) -> Tuple['AntennaPattern', 'AntennaPattern']:
         """
@@ -676,10 +501,8 @@ class AntennaPattern:
             If the pattern does not include theta=0, the function will raise a ValueError.
             The pattern should have theta values in [-180, 180] range.
         """
-        from .pattern_functions import mirror_pattern
-        
-        # Delegate to the pattern_functions implementation
-        mirror_pattern(self)
+        # Call the mixin method
+        self.mirror_pattern()
 
     def write_ffd(self, file_path: Union[str, Path]) -> None:
         """

@@ -8,7 +8,7 @@ from typing import Dict, Tuple, Optional, List, Union
 import xarray as xr
 
 from .utilities import find_nearest, frequency_to_wavelength
-from .pattern_functions import unwrap_phase, phase_pattern_translate
+from .pattern_operations import unwrap_phase, phase_pattern_translate
 from .polarization import polarization_tp2rl
 
 # Configure logging

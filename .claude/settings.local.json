@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(find:*)",
+      "Bash(python -m pytest tests -v)",
+      "Bash(python3 -m pytest tests -v)",
+      "Bash(python3:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": false
+}

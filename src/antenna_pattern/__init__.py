@@ -27,19 +27,13 @@ from .polarization import (
     polarization_rl2xy,
     polarization_rl2tp
 )
-from .pattern_functions import (
+from .pattern_operations import (
     unwrap_phase,
-    normalize_phase,
-    translate_phase_pattern,
     phase_pattern_translate,
     scale_amplitude,
     transform_tp2uvw,
     transform_uvw2tp,
-    isometric_rotation,
-    mirror_pattern,
-    normalize_at_boresight,
-    shift_theta_origin,
-    shift_phi_origin
+    isometric_rotation
 )
 from .analysis import (
     calculate_phase_center,
@@ -88,17 +82,11 @@ __all__ = [
     'polarization_rl2xy',
     'polarization_rl2tp',
     'unwrap_phase',
-    'normalize_phase',
-    'translate_phase_pattern',
     'phase_pattern_translate',
     'scale_amplitude',
     'transform_tp2uvw',
     'transform_uvw2tp',
     'isometric_rotation',
-    'mirror_pattern',
-    'normalize_at_boresight',
-    'shift_theta_origin',
-    'shift_phi_origin',
     'calculate_phase_center',
     'principal_plane_phase_center',
     'get_axial_ratio',
