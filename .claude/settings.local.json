@@ -6,7 +6,11 @@
       "Bash(find:*)",
       "Bash(python -m pytest tests -v)",
       "Bash(python3 -m pytest tests -v)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(mkdir:*)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python test:*)",
+      "Bash(black:*)"
     ]
   },
   "enableAllProjectMcpServers": false

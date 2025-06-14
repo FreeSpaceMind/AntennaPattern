@@ -8,9 +8,13 @@ import xarray as xr
 from typing import Tuple, Union, Optional, List, Any, Callable
 from scipy.interpolate import interp1d
 
-from .utilities import lightspeed, frequency_to_wavelength
+from .utilities import lightspeed, frequency_to_wavelength, find_nearest
 from .polarization import polarization_tp2xy, polarization_tp2rl, polarization_xy2tp
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .pattern import AntennaPattern
 
 class PatternOperationsMixin:
     """Mixin class providing operations for antenna patterns."""
@@ -1053,6 +1057,163 @@ class PatternOperationsMixin:
                 'type': 'shift_phi_origin',
                 'phi_offset': float(phi_offset)
             })
+
+    def subsample(self, 
+                  theta_range: Optional[Tuple[float, float]] = None,
+                  theta_step: Optional[float] = None, 
+                  phi_range: Optional[Tuple[float, float]] = None,
+                  phi_step: Optional[float] = None) -> 'AntennaPattern':
+        """
+        Create a subsampled version of the pattern by selecting nearest available points.
+        
+        Args:
+            theta_range: Optional (min, max) theta range in degrees. If None, use full range.
+            theta_step: Optional theta step size in degrees. If None, use original spacing.
+            phi_range: Optional (min, max) phi range in degrees. If None, use full range.  
+            phi_step: Optional phi step size in degrees. If None, use original spacing.
+            
+        Returns:
+            AntennaPattern: New pattern with reduced resolution
+            
+        Example:
+            # Reduce to theta -150:2:150, phi 0:15:360
+            reduced = pattern.subsample(
+                theta_range=(-150, 150), 
+                theta_step=2.0,
+                phi_range=(0, 360),
+                phi_step=15.0
+            )
+        """
+        # Get original coordinates
+        orig_theta = self.theta_angles
+        orig_phi = self.phi_angles
+        orig_freq = self.frequencies
+        
+        # Determine target theta array
+        if theta_range is None:
+            theta_min, theta_max = orig_theta.min(), orig_theta.max()
+        else:
+            theta_min, theta_max = theta_range
+            # Validate range is within original data
+            if theta_min < orig_theta.min() or theta_max > orig_theta.max():
+                available_range = (orig_theta.min(), orig_theta.max())
+                raise ValueError(f"Requested theta range {theta_range} exceeds available range {available_range}")
+        
+        if theta_step is None:
+            # Use original theta angles within the range
+            target_theta = orig_theta[(orig_theta >= theta_min) & (orig_theta <= theta_max)]
+        else:
+            # Create new theta array with specified step
+            target_theta = np.arange(theta_min, theta_max + theta_step/2, theta_step)
+        
+        # Determine target phi array
+        if phi_range is None:
+            phi_min, phi_max = orig_phi.min(), orig_phi.max()
+        else:
+            phi_min, phi_max = phi_range
+            # Validate range is within original data (with wraparound consideration)
+            if phi_max - phi_min > 360:
+                raise ValueError("Phi range cannot exceed 360 degrees")
+        
+        if phi_step is None:
+            # Use original phi angles within the range
+            if phi_range is None:
+                target_phi = orig_phi
+            else:
+                # Handle wraparound for phi angles
+                if phi_min < orig_phi.min() or phi_max > orig_phi.max():
+                    # Check if range wraps around 0/360
+                    phi_wrapped = orig_phi.copy()
+                    if phi_min < 0:
+                        phi_wrapped = np.concatenate([phi_wrapped - 360, phi_wrapped])
+                    if phi_max > 360:
+                        phi_wrapped = np.concatenate([phi_wrapped, phi_wrapped + 360])
+                    
+                    target_phi = phi_wrapped[(phi_wrapped >= phi_min) & (phi_wrapped <= phi_max)]
+                    target_phi = np.mod(target_phi, 360)  # Normalize back to 0-360
+                    target_phi = np.unique(target_phi)  # Remove duplicates
+                else:
+                    target_phi = orig_phi[(orig_phi >= phi_min) & (orig_phi <= phi_max)]
+        else:
+            # Create new phi array with specified step
+            target_phi = np.arange(phi_min, phi_max + phi_step/2, phi_step)
+            target_phi = np.mod(target_phi, 360)  # Normalize to 0-360
+        
+        # Find nearest indices for each target angle
+        theta_indices = []
+        actual_theta = []
+        for target_t in target_theta:
+            _, idx = find_nearest(orig_theta, target_t)
+            theta_indices.append(idx)
+            actual_theta.append(orig_theta[idx])
+        
+        phi_indices = []
+        actual_phi = []
+        for target_p in target_phi:
+            # Handle wraparound for phi
+            phi_diffs = np.abs(orig_phi - target_p)
+            phi_diffs_wrapped = np.minimum(phi_diffs, 360 - phi_diffs)
+            idx = np.argmin(phi_diffs_wrapped)
+            phi_indices.append(idx)
+            actual_phi.append(orig_phi[idx])
+        
+        # Convert to numpy arrays
+        theta_indices = np.array(theta_indices)
+        phi_indices = np.array(phi_indices)
+        actual_theta = np.array(actual_theta)
+        actual_phi = np.array(actual_phi)
+        
+        # Extract data using fancy indexing
+        # Create index grids for 3D array indexing [freq, theta, phi]
+        freq_grid = np.arange(len(orig_freq))[:, np.newaxis, np.newaxis]
+        theta_grid = theta_indices[np.newaxis, :, np.newaxis]
+        phi_grid = phi_indices[np.newaxis, np.newaxis, :]
+        
+        # Extract field components
+        new_e_theta = self.data.e_theta.values[freq_grid, theta_grid, phi_grid]
+        new_e_phi = self.data.e_phi.values[freq_grid, theta_grid, phi_grid]
+        
+        # Create new xarray Dataset
+        new_data = xr.Dataset(
+            data_vars={
+                'e_theta': (['frequency', 'theta', 'phi'], new_e_theta),
+                'e_phi': (['frequency', 'theta', 'phi'], new_e_phi),
+            },
+            coords={
+                'theta': actual_theta,
+                'phi': actual_phi,
+                'frequency': orig_freq,
+            }
+        )
+        
+        # Create new AntennaPattern instance using the same type as self
+        new_pattern = type(self).__new__(type(self))
+        new_pattern.data = new_data
+        new_pattern.polarization = self.polarization
+        
+        # Copy metadata and add operation record
+        if hasattr(self, 'metadata') and self.metadata is not None:
+            new_pattern.metadata = self.metadata.copy()
+        else:
+            new_pattern.metadata = {}
+        
+        if 'operations' not in new_pattern.metadata:
+            new_pattern.metadata['operations'] = []
+        
+        new_pattern.metadata['operations'].append({
+            'type': 'subsample',
+            'theta_range': theta_range,
+            'theta_step': theta_step,
+            'phi_range': phi_range,
+            'phi_step': phi_step,
+            'original_shape': [len(orig_freq), len(orig_theta), len(orig_phi)],
+            'new_shape': [len(orig_freq), len(actual_theta), len(actual_phi)]
+        })
+        
+        # Initialize derived components
+        new_pattern.assign_polarization(self.polarization)
+        
+        return new_pattern
 
 
 # Standalone utility functions that don't operate on patterns directly
