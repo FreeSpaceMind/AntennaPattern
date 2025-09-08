@@ -20,6 +20,7 @@ setup(
         'scipy>=1.7.0',
         'xarray>=0.19.0',
         'matplotlib>=3.4.0',  # For visualizations
+        'PyQt6>=6.4.0',       # For GUI
     ],
     extras_require={
         'dev': [
@@ -43,4 +44,9 @@ setup(
         'Programming Language :: Python :: 3.10',
     ],
     keywords='antenna, electromagnetics, pattern, radiation, analysis',
+    entry_points={
+        'console_scripts': [
+            'antenna-pattern-gui=antenna_pattern.gui.run_gui:main',
+        ],
+    },
 )

@@ -113,6 +113,87 @@ def load_pattern_npz(file_path: Union[str, Path]) -> Tuple:
         
         logger.info(f"Pattern loaded from {file_path}")
         return pattern, metadata
+    
+def write_cut(pattern, file_path: Union[str, Path], polarization_format: int = 1) -> None:
+    """
+    Write an antenna pattern to GRASP CUT format.
+    
+    Args:
+        pattern: AntennaPattern object to save
+        file_path: Path to save the file to
+        polarization_format: Output polarization format:
+            1 = theta/phi (spherical)
+            2 = RHCP/LHCP (circular)
+            3 = X/Y (Ludwig-3 linear)
+            
+    Raises:
+        OSError: If file cannot be written
+        ValueError: If polarization_format is invalid
+    """
+    file_path = Path(file_path)
+    
+    # Ensure .cut extension
+    if file_path.suffix.lower() != '.cut':
+        file_path = file_path.with_suffix('.cut')
+    
+    if polarization_format not in [1, 2, 3]:
+        raise ValueError("polarization_format must be 1 (theta/phi), 2 (RHCP/LHCP), or 3 (X/Y)")
+    
+    # Get pattern data
+    theta = pattern.theta_angles
+    phi = pattern.phi_angles
+    frequencies = pattern.frequencies
+    e_theta = pattern.data.e_theta.values
+    e_phi = pattern.data.e_phi.values
+    
+    with open(file_path, 'w') as f:
+        # Write data for each frequency
+        for freq_idx, freq in enumerate(frequencies):
+            # Write data for each phi cut
+            for phi_idx, phi_val in enumerate(phi):
+                # Write text description line for this cut
+                f.write(f"{freq/1e6:.3f} MHz, Phi = {phi_val:.1f} deg\n")
+                
+                # Write cut header: theta_start, theta_step, num_theta, phi, icomp, icut, ncomp
+                theta_start = theta[0]
+                theta_step = theta[1] - theta[0] if len(theta) > 1 else 1.0
+                num_theta = len(theta)
+                icut = 1  # Standard polar cut (phi fixed, theta varying)
+                ncomp = 2  # Two field components
+                
+                f.write(f"{theta_start:.2f} {theta_step:.6f} {num_theta} {phi_val:.2f} {polarization_format} {icut} {ncomp}\n")
+                
+                # Convert field components based on polarization format
+                for theta_idx in range(len(theta)):
+                    if polarization_format == 1:
+                        # Theta/phi format
+                        comp1 = e_theta[freq_idx, theta_idx, phi_idx]
+                        comp2 = e_phi[freq_idx, theta_idx, phi_idx]
+                        
+                    elif polarization_format == 2:
+                        # RHCP/LHCP format
+                        from .polarization import polarization_tp2rl
+                        e_r, e_l = polarization_tp2rl(
+                            phi_val,
+                            e_theta[freq_idx, theta_idx, phi_idx:phi_idx+1],
+                            e_phi[freq_idx, theta_idx, phi_idx:phi_idx+1]
+                        )
+                        comp1 = e_r[0]  # RHCP
+                        comp2 = e_l[0]  # LHCP
+                        
+                    elif polarization_format == 3:
+                        # X/Y format
+                        from .polarization import polarization_tp2xy
+                        e_x, e_y = polarization_tp2xy(
+                            phi_val,
+                            e_theta[freq_idx, theta_idx, phi_idx:phi_idx+1],
+                            e_phi[freq_idx, theta_idx, phi_idx:phi_idx+1]
+                        )
+                        comp1 = e_x[0]  # X component
+                        comp2 = e_y[0]  # Y component
+                    
+                    # Write complex components
+                    f.write(f"{comp1.real:.6e} {comp1.imag:.6e} {comp2.real:.6e} {comp2.imag:.6e}\n")
 
 
 def read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end: float):
@@ -129,6 +210,9 @@ def read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end:
     Returns:
         AntennaPattern: The imported antenna pattern
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    from .polarization import polarization_rl2tp, polarization_xy2tp
     
     # Validate inputs
     file_path = Path(file_path)
@@ -178,9 +262,9 @@ def read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end:
                 if line_index >= total_lines:
                     break
                     
-                # This should be a header line
+                # This should be a header line (numeric data)
                 header_parts = lines[line_index].strip().split()
-                if len(header_parts) >= 5:
+                if len(header_parts) >= 7:  # Updated from 5 to 7
                     header_count += 1
                     phi_values.add(float(header_parts[3]))
                 
@@ -197,7 +281,6 @@ def read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end:
             estimated_freq_count = header_count // estimated_phi_count
     
     # Main parsing - optimized for speed
-    title_flag = False
     header_flag = True
     first_flag = True
     data_counter = 0
@@ -205,23 +288,18 @@ def read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end:
     line_data_b = []
     
     while line_index < total_lines:
-        # Skip initial line
-        if line_index == 0:
-            line_index += 1
-            continue
-            
         data_str = lines[line_index]
         line_index += 1
         
         if "MHz" in data_str:
-            # New frequency section begins
+            # This is a description line for a new cut
             header_flag = True
             continue
             
         if header_flag:
             # Parse header efficiently
             header_parts = data_str.strip().split()
-            if len(header_parts) < 5:
+            if len(header_parts) < 7:  # Updated from 5 to 7
                 continue
                 
             theta_length = int(header_parts[2])
@@ -236,8 +314,16 @@ def read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end:
                     theta_length
                 )
                 icomp = int(header_parts[4])
+                icut = int(header_parts[5])   # ICUT parameter (should be 1)
+                ncomp = int(header_parts[6])  # NCOMP parameter (should be 2)
+                
                 if icomp not in [1, 2, 3]:
                     raise ValueError(f"Invalid polarization format (ICOMP): {icomp}")
+                if icut != 1:
+                    logger.warning(f"Unexpected ICUT value: {icut}. Expected 1 (standard polar cut)")
+                if ncomp != 2:
+                    logger.warning(f"Unexpected NCOMP value: {ncomp}. Expected 2 (two field components)")
+                    
                 first_flag = False
             
             # Preallocate data arrays for this section
@@ -326,7 +412,6 @@ def read_cut(file_path: Union[str, Path], frequency_start: float, frequency_end:
         e_theta=e_theta,
         e_phi=e_phi
     )
-
 
 def read_ffd(file_path: Union[str, Path]):
     """
@@ -490,86 +575,3 @@ def write_ffd(pattern, file_path: Union[str, Path]) -> None:
                     eph = e_phi[freq_idx, theta_idx, phi_idx] * np.sqrt(60)
                     
                     f.write(f"{eth.real:.6e} {eth.imag:.6e} {eph.real:.6e} {eph.imag:.6e}\n")
-
-
-def write_cut(pattern, file_path: Union[str, Path], polarization_format: int = 1) -> None:
-    """
-    Write an antenna pattern to GRASP CUT format.
-    
-    Args:
-        pattern: AntennaPattern object to save
-        file_path: Path to save the file to
-        polarization_format: Output polarization format:
-            1 = theta/phi (spherical)
-            2 = RHCP/LHCP (circular)
-            3 = X/Y (Ludwig-3 linear)
-            
-    Raises:
-        OSError: If file cannot be written
-        ValueError: If polarization_format is invalid
-    """
-    file_path = Path(file_path)
-    
-    # Ensure .cut extension
-    if file_path.suffix.lower() != '.cut':
-        file_path = file_path.with_suffix('.cut')
-    
-    if polarization_format not in [1, 2, 3]:
-        raise ValueError("polarization_format must be 1 (theta/phi), 2 (RHCP/LHCP), or 3 (X/Y)")
-    
-    # Get pattern data
-    theta = pattern.theta_angles
-    phi = pattern.phi_angles
-    frequencies = pattern.frequencies
-    e_theta = pattern.data.e_theta.values
-    e_phi = pattern.data.e_phi.values
-    
-    with open(file_path, 'w') as f:
-        # Write title line
-        f.write("Antenna Pattern Export\n")
-        
-        # Write data for each frequency
-        for freq_idx, freq in enumerate(frequencies):
-            # Write frequency header
-            f.write(f"{freq/1e6:.3f} MHz\n")
-            
-            # Write data for each phi cut
-            for phi_idx, phi_val in enumerate(phi):
-                # Write cut header: theta_start, theta_step, num_theta, phi, icomp
-                theta_start = theta[0]
-                theta_step = theta[1] - theta[0] if len(theta) > 1 else 1.0
-                num_theta = len(theta)
-                
-                f.write(f"{theta_start:.2f} {theta_step:.6f} {num_theta} {phi_val:.2f} {polarization_format}\n")
-                
-                # Convert field components based on polarization format
-                for theta_idx in range(len(theta)):
-                    if polarization_format == 1:
-                        # Theta/phi format
-                        comp1 = e_theta[freq_idx, theta_idx, phi_idx]
-                        comp2 = e_phi[freq_idx, theta_idx, phi_idx]
-                        
-                    elif polarization_format == 2:
-                        # RHCP/LHCP format
-                        from .polarization import polarization_tp2rl
-                        e_r, e_l = polarization_tp2rl(
-                            phi_val,
-                            e_theta[freq_idx, theta_idx, phi_idx:phi_idx+1],
-                            e_phi[freq_idx, theta_idx, phi_idx:phi_idx+1]
-                        )
-                        comp1 = e_r[0]  # RHCP
-                        comp2 = e_l[0]  # LHCP
-                        
-                    elif polarization_format == 3:
-                        # X/Y format
-                        from .polarization import polarization_tp2xy
-                        e_x, e_y = polarization_tp2xy(
-                            phi_val,
-                            e_theta[freq_idx, theta_idx, phi_idx:phi_idx+1],
-                            e_phi[freq_idx, theta_idx, phi_idx:phi_idx+1]
-                        )
-                        comp1 = e_x[0]  # X component
-                        comp2 = e_y[0]  # Y component
-                    
-                    # Write complex components
-                    f.write(f"{comp1.real:.6e} {comp1.imag:.6e} {comp2.real:.6e} {comp2.imag:.6e}\n")
