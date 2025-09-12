@@ -157,6 +157,23 @@ class AntennaPattern(PatternOperationsMixin):
         )
         
         yield single_freq_pattern
+
+    def copy(self) -> 'AntennaPattern':
+        """
+        Create a deep copy of the antenna pattern.
+        
+        Returns:
+            AntennaPattern: A new AntennaPattern instance with copied data
+        """
+        return AntennaPattern(
+            theta=self.theta_angles.copy(),
+            phi=self.phi_angles.copy(),
+            frequency=self.frequencies.copy(),
+            e_theta=self.data.e_theta.values.copy(),
+            e_phi=self.data.e_phi.values.copy(),
+            polarization=self.polarization,
+            metadata=self.metadata.copy() if self.metadata else None
+        )
     
     def assign_polarization(self, polarization: Optional[str] = None) -> None:
         """

@@ -215,11 +215,16 @@ class MainWindow(QMainWindow):
     def load_pattern(self, pattern, file_path=None):
         """Load a new pattern and update the GUI."""
         self.current_pattern = pattern
+        self.original_pattern = pattern.copy()  # Store original
         self.current_file_path = file_path
+        
+        # Reset checkbox states when loading new pattern
+        self.controls.apply_phase_center_check.setChecked(False)
+        self.controls.apply_mars_check.setChecked(False)
         
         # Update controls with new pattern
         self.controls.update_pattern(pattern)
-        
+
         # Update status bar
         self.update_status_bar()
         
@@ -231,70 +236,73 @@ class MainWindow(QMainWindow):
     
     def on_apply_phase_center(self, x, y, z, frequency):
         """Handle phase center application."""
-        if not self.current_pattern:
+        if not self.original_pattern:
             return
         
         try:
-            # Apply phase center shift using manual coordinates
-            self.statusBar().showMessage("Applying phase center shift...")
-            
-            # Create translation vector from coordinates (already in meters)
-            translation = [x, y, z]
-            
-            # Apply translation directly
-            self.current_pattern.translate(translation, normalize=True)
-            
-            # Update the plot
+            if self.controls.apply_phase_center_check.isChecked():
+                # Apply to original pattern
+                pattern = self.original_pattern.copy()
+                pattern.translate([x, y, z], normalize=True)
+                
+                # Apply MARS if also checked
+                if self.controls.apply_mars_check.isChecked():
+                    max_radial_extent = self.controls.max_radial_extent_spin.value()
+                    pattern.apply_mars(max_radial_extent)
+                
+                self.current_pattern = pattern
+                status_msg = f"Phase center shift applied: [{x*1000:.2f}, {y*1000:.2f}, {z*1000:.2f}] mm"
+            else:
+                # Revert to original (but keep MARS if checked)
+                pattern = self.original_pattern.copy()
+                if self.controls.apply_mars_check.isChecked():
+                    max_radial_extent = self.controls.max_radial_extent_spin.value()
+                    pattern.apply_mars(max_radial_extent)
+                
+                self.current_pattern = pattern
+                status_msg = "Phase center shift removed"
+                
             self.update_plot()
-            
-            # Update status
-            translation_mm = [x*1000, y*1000, z*1000]  # Convert to mm for display
-            self.statusBar().showMessage(
-                f"Phase center shift applied. Translation: "
-                f"[{translation_mm[0]:.2f}, {translation_mm[1]:.2f}, {translation_mm[2]:.2f}] mm"
-            )
-            
-            # Update the phase center result display
-            self.controls.phase_center_result.setText(
-                f"Applied shift: [{translation_mm[0]:.2f}, {translation_mm[1]:.2f}, {translation_mm[2]:.2f}] mm"
-            )
-            
-            # Uncheck the checkbox after applying
-            self.controls.apply_phase_center_check.setChecked(False)
+            self.statusBar().showMessage(status_msg)
             
         except Exception as e:
-            self.show_error(f"Error applying phase center shift: {str(e)}")
-            self.statusBar().showMessage("Ready")
-            # Uncheck the checkbox on error
+            self.show_error(f"Error with phase center: {str(e)}")
             self.controls.apply_phase_center_check.setChecked(False)
     
     def on_apply_mars(self, max_radial_extent):
         """Handle MARS application."""
-        if not self.current_pattern:
+        if not self.original_pattern:
             return
         
         try:
-            # Apply MARS algorithm
-            self.statusBar().showMessage("Applying MARS algorithm...")
-            
-            # Apply MARS in-place
-            self.current_pattern.apply_mars(max_radial_extent)
-            
-            # Update the plot
+            if self.controls.apply_mars_check.isChecked():
+                # Start with original or phase-corrected pattern
+                if self.controls.apply_phase_center_check.isChecked():
+                    x, y, z = self.controls.get_manual_phase_center()
+                    pattern = self.original_pattern.copy()
+                    pattern.translate([x, y, z], normalize=True)
+                else:
+                    pattern = self.original_pattern.copy()
+                
+                pattern.apply_mars(max_radial_extent)
+                self.current_pattern = pattern
+                status_msg = f"MARS applied with max radial extent: {max_radial_extent:.3f} m"
+            else:
+                # Revert to original (but keep phase center if checked)
+                if self.controls.apply_phase_center_check.isChecked():
+                    x, y, z = self.controls.get_manual_phase_center()
+                    pattern = self.original_pattern.copy()
+                    pattern.translate([x, y, z], normalize=True)
+                    self.current_pattern = pattern
+                else:
+                    self.current_pattern = self.original_pattern.copy()
+                status_msg = "MARS removed"
+                
             self.update_plot()
-            
-            # Update status
-            self.statusBar().showMessage(
-                f"MARS algorithm applied with max radial extent: {max_radial_extent:.3f} m"
-            )
-            
-            # Uncheck the checkbox after applying
-            self.controls.apply_mars_check.setChecked(False)
+            self.statusBar().showMessage(status_msg)
             
         except Exception as e:
-            self.show_error(f"Error applying MARS: {str(e)}")
-            self.statusBar().showMessage("Ready")
-            # Uncheck the checkbox on error
+            self.show_error(f"Error with MARS: {str(e)}")
             self.controls.apply_mars_check.setChecked(False)
     
     def import_cut_file(self):

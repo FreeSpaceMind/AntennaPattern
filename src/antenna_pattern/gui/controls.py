@@ -413,7 +413,7 @@ class ControlsWidget(QWidget):
     
     def on_apply_phase_center_toggled(self, checked):
         """Handle apply phase center checkbox toggle."""
-        if not self.current_pattern or not checked:
+        if not self.current_pattern:
             return
             
         frequency = self.get_phase_center_frequency()
@@ -422,10 +422,10 @@ class ControlsWidget(QWidget):
             self.apply_phase_center_signal.emit(
                 phase_center[0], phase_center[1], phase_center[2], frequency
             )
-    
+
     def on_apply_mars_toggled(self, checked):
-        """Handle apply MARS checkbox toggle."""
-        if not self.current_pattern or not checked:
+        """Handle apply MARS checkbox toggle.""" 
+        if not self.current_pattern:
             return
             
         max_radial_extent = self.max_radial_extent_spin.value()
