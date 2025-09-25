@@ -38,7 +38,8 @@ from .pattern_operations import (
 from .analysis import (
     calculate_phase_center,
     principal_plane_phase_center,
-    get_axial_ratio
+    get_axial_ratio,
+    calculate_directivity
 )
 from .utilities import (
     find_nearest,
@@ -90,6 +91,7 @@ __all__ = [
     'calculate_phase_center',
     'principal_plane_phase_center',
     'get_axial_ratio',
+    'calculate_directivity',
     'find_nearest',
     'frequency_to_wavelength',
     'wavelength_to_frequency',

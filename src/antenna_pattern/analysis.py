@@ -250,3 +250,250 @@ def get_axial_ratio(pattern):
     
     # Calculate axial ratio
     return 20 * np.log10((er_mag + el_mag) / np.maximum(np.abs(er_mag - el_mag), min_val))
+
+def calculate_directivity(
+    pattern, 
+    frequency: Optional[float] = None,
+    theta: Optional[float] = None,
+    phi: Optional[float] = None,
+    component: str = 'total',
+    partial_sphere_threshold: float = 0.8,
+    edge_extrapolation_db: float = -10.0,
+    far_sidelobe_level_db: Optional[float] = None
+) -> Union[float, Tuple[float, float, float]]:
+    """
+    Calculate antenna directivity from radiation pattern.
+    
+    Automatically handles both full-sphere and partial-sphere patterns.
+    For partial coverage (e.g., near-field transformed data), uses power 
+    extrapolation to estimate total radiated power.
+    
+    Directivity is calculated as D(θ,φ) = 4π * U(θ,φ) / P_total where:
+    - U(θ,φ) is the radiation intensity at angle (θ,φ)
+    - P_total is the total radiated power integrated over the sphere
+    
+    Args:
+        pattern: AntennaPattern object
+        frequency: Frequency in Hz. If None, uses first frequency
+        theta: Theta angle in degrees for specific direction calculation.
+               If None, calculates peak directivity
+        phi: Phi angle in degrees for specific direction calculation.
+             If None, calculates peak directivity  
+        component: Field component to use ('e_co', 'e_cx', 'e_theta', 'e_phi', or 'total')
+                  - 'total': |E_θ|² + |E_φ|²
+                  - 'e_co'/'e_cx': co-pol or cross-pol components
+                  - 'e_theta'/'e_phi': theta or phi components
+        partial_sphere_threshold: Coverage fraction below which to use partial sphere method
+        edge_extrapolation_db: Additional dB drop for unmeasured regions (used if far_sidelobe_level_db not specified)
+        far_sidelobe_level_db: If specified, assume unmeasured regions are at this level below peak (dB).
+                              This is more accurate than edge extrapolation for antenna patterns.
+                              Typical values: -35 to -50 dB for high-gain antennas.
+    
+    Returns:
+        If theta and phi are specified:
+            float: Directivity in dB at the specified direction
+        If peak directivity is requested (theta=None, phi=None):
+            Tuple[float, float, float]: (peak_directivity_dB, peak_theta_deg, peak_phi_deg)
+    
+    Raises:
+        ValueError: If component is not recognized or pattern data is invalid
+    """
+    
+    # Get data arrays
+    freq_array = pattern.data.frequency.values
+    theta_array = pattern.data.theta.values
+    phi_array = pattern.data.phi.values
+    
+    # Handle frequency selection
+    if frequency is None:
+        freq_idx = 0
+        freq = freq_array[freq_idx]
+    else:
+        freq_val, freq_idx = find_nearest(freq_array, frequency)
+        if isinstance(freq_idx, np.ndarray):
+            freq_idx = freq_idx.item()
+        freq = freq_array[freq_idx]
+    
+    # Check angular coverage to determine method
+    theta_min, theta_max = np.min(theta_array), np.max(theta_array)
+    phi_min, phi_max = np.min(phi_array), np.max(phi_array)
+    
+    # For central coordinates (theta from boresight), calculate solid angle coverage
+    if abs(theta_max) == abs(theta_min):  # Symmetric around boresight
+        cone_half_angle = max(abs(theta_min), abs(theta_max))
+        # Solid angle of cone = 2π(1 - cos(half_angle)) for full azimuth
+        # For partial azimuth, multiply by phi_coverage
+        phi_coverage = (phi_max - phi_min) / 360.0
+        solid_angle_measured = 2 * np.pi * (1 - np.cos(np.deg2rad(cone_half_angle))) * phi_coverage
+    else:
+        # Asymmetric case - approximate
+        solid_angle_measured = np.deg2rad(phi_max - phi_min) * np.deg2rad(theta_max - theta_min)
+    
+    coverage_fraction = solid_angle_measured / (4 * np.pi)
+    
+    # Get field components based on requested component
+    if component == 'total':
+        e_theta_data = pattern.data.e_theta.values[freq_idx, :, :]
+        e_phi_data = pattern.data.e_phi.values[freq_idx, :, :]
+        radiation_intensity = np.abs(e_theta_data)**2 + np.abs(e_phi_data)**2
+    elif component == 'e_co':
+        e_co_data = pattern.data.e_co.values[freq_idx, :, :]
+        radiation_intensity = np.abs(e_co_data)**2
+    elif component == 'e_cx':
+        e_cx_data = pattern.data.e_cx.values[freq_idx, :, :]
+        radiation_intensity = np.abs(e_cx_data)**2
+    elif component == 'e_theta':
+        e_theta_data = pattern.data.e_theta.values[freq_idx, :, :]
+        radiation_intensity = np.abs(e_theta_data)**2
+    elif component == 'e_phi':
+        e_phi_data = pattern.data.e_phi.values[freq_idx, :, :]
+        radiation_intensity = np.abs(e_phi_data)**2
+    else:
+        raise ValueError(f"Unknown component '{component}'. "
+                        "Must be 'total', 'e_co', 'e_cx', 'e_theta', or 'e_phi'")
+    
+    # Convert angles to radians for integration
+    theta_rad = np.deg2rad(theta_array)
+    phi_rad = np.deg2rad(phi_array)
+    
+    # Create meshgrid for integration
+    theta_mesh, phi_mesh = np.meshgrid(theta_rad, phi_rad, indexing='ij')
+    
+    # Use appropriate area element - for central coordinates with theta from boresight
+    # Area element is sin(|theta|) since theta can be negative
+    area_element = np.sin(np.abs(theta_mesh))
+    
+    integrand = radiation_intensity * area_element
+    
+    # Perform numerical integration using trapezoid rule
+    dtheta = theta_rad[1] - theta_rad[0] if len(theta_rad) > 1 else 0
+    dphi = phi_rad[1] - phi_rad[0] if len(phi_rad) > 1 else 0
+    
+    # Handle single point case
+    if len(theta_rad) == 1 or len(phi_rad) == 1:
+        logger.warning("Pattern has only one theta or phi point - directivity calculation may be inaccurate")
+        measured_power = np.sum(integrand) * dtheta * dphi
+    else:
+        measured_power = np.trapezoid(np.trapezoid(integrand, phi_rad, axis=1), theta_rad, axis=0)
+    
+    # Determine if we need partial sphere method
+    use_partial_sphere = (coverage_fraction < partial_sphere_threshold) or (measured_power <= 0)
+    
+    if use_partial_sphere:
+        logger.info(f"Using partial sphere method (coverage: {coverage_fraction:.1%})")
+        logger.info(f"Measured solid angle: {solid_angle_measured:.3f} steradians")
+        logger.info(f"Angular sampling: Δθ={np.diff(theta_array)[0]:.1f}°, Δφ={np.diff(phi_array)[0]:.1f}°")
+        
+        # Check if sampling might be too coarse
+        peak_intensity = np.max(radiation_intensity)
+        peak_idx = np.unravel_index(np.argmax(radiation_intensity), radiation_intensity.shape)
+        
+        # Estimate beamwidth by finding -3dB points
+        intensity_db = 10 * np.log10(np.maximum(radiation_intensity, peak_intensity * 1e-10))
+        peak_db = 10 * np.log10(peak_intensity)
+        
+        # Check theta beamwidth around peak
+        phi_cut = intensity_db[peak_idx[0], :]
+        phi_3db_indices = np.where(phi_cut >= peak_db - 3)[0]
+        phi_beamwidth = len(phi_3db_indices) * np.abs(np.diff(phi_array)[0]) if len(phi_array) > 1 else 0
+        
+        # Check phi beamwidth around peak (theta direction)
+        theta_cut = intensity_db[:, peak_idx[1]]
+        theta_3db_indices = np.where(theta_cut >= peak_db - 3)[0]
+        theta_beamwidth = len(theta_3db_indices) * np.abs(np.diff(theta_array)[0]) if len(theta_array) > 1 else 0
+        
+        logger.info(f"Estimated beamwidths: θ~{theta_beamwidth:.1f}°, φ~{phi_beamwidth:.1f}°")
+        
+        # Warn if sampling might be too coarse
+        if len(theta_array) > 1 and theta_beamwidth > 0:
+            theta_samples_per_beamwidth = theta_beamwidth / np.abs(np.diff(theta_array)[0])
+            if theta_samples_per_beamwidth < 3:
+                logger.warning(f"Theta sampling may be too coarse: {theta_samples_per_beamwidth:.1f} samples per beamwidth")
+        
+        if len(phi_array) > 1 and phi_beamwidth > 0:
+            phi_samples_per_beamwidth = phi_beamwidth / np.abs(np.diff(phi_array)[0])  
+            if phi_samples_per_beamwidth < 3:
+                logger.warning(f"Phi sampling may be too coarse: {phi_samples_per_beamwidth:.1f} samples per beamwidth")
+        
+        # Estimate power in unmeasured regions
+        if far_sidelobe_level_db is not None:
+            # Use far sidelobe assumption - more accurate for antenna patterns
+            peak_intensity = np.max(radiation_intensity)
+            far_sidelobe_intensity = peak_intensity * (10 ** (far_sidelobe_level_db / 10))
+            
+            # Calculate unmeasured solid angle
+            total_solid_angle = 4 * np.pi
+            unmeasured_solid_angle = max(0, total_solid_angle - solid_angle_measured)
+            
+            unmeasured_power = far_sidelobe_intensity * unmeasured_solid_angle
+            total_power = measured_power + unmeasured_power
+            
+            logger.info(f"Using far sidelobe assumption: {far_sidelobe_level_db} dB below peak")
+            logger.info(f"Far sidelobe intensity: {far_sidelobe_intensity:.2e}")
+            logger.info(f"Unmeasured power: {unmeasured_power:.2e}")
+        else:
+            # Use edge extrapolation method (original approach)
+            edge_values = []
+            # Theta edges
+            if len(theta_rad) > 1:
+                edge_values.extend([radiation_intensity[0, :], radiation_intensity[-1, :]])
+            # Phi edges  
+            if len(phi_rad) > 1:
+                edge_values.extend([radiation_intensity[:, 0], radiation_intensity[:, -1]])
+            
+            if edge_values:
+                edge_power_linear = np.mean([np.mean(edge) for edge in edge_values])
+                # Apply additional drop-off for unmeasured regions
+                unmeasured_power_linear = edge_power_linear * (10**(edge_extrapolation_db/10))
+                
+                # Calculate unmeasured solid angle
+                total_solid_angle = 4 * np.pi
+                unmeasured_solid_angle = max(0, total_solid_angle - solid_angle_measured)
+                
+                unmeasured_power = unmeasured_power_linear * unmeasured_solid_angle
+                total_power = measured_power + unmeasured_power
+                
+                logger.info(f"Using edge extrapolation with {edge_extrapolation_db} dB additional drop-off")
+            else:
+                total_power = measured_power
+                logger.warning("Could not estimate edge values - using measured power only")
+        
+        # Log power fractions
+        if total_power > measured_power:
+            logger.info(f"Measured power fraction: {measured_power/total_power:.1%}")
+            logger.info(f"Total power: {total_power:.2e} (measured: {measured_power:.2e})")
+    else:
+        logger.info(f"Using full sphere method (coverage: {coverage_fraction:.1%})")
+        total_power = measured_power
+    
+    # Avoid division by zero
+    if total_power <= 0:
+        logger.warning("Total radiated power is zero or negative - check pattern data")
+        total_power = 1e-15
+    
+    # Calculate directivity pattern: D(θ,φ) = 4π * U(θ,φ) / P_total
+    directivity_linear = 4 * np.pi * radiation_intensity / total_power
+    
+    # Convert to dB
+    directivity_db = 10 * np.log10(np.maximum(directivity_linear, 1e-15))
+    
+    if theta is not None and phi is not None:
+        # Calculate directivity at specific direction
+        theta_val, theta_idx = find_nearest(theta_array, theta)
+        phi_val, phi_idx = find_nearest(phi_array, phi)
+        
+        if isinstance(theta_idx, np.ndarray):
+            theta_idx = theta_idx.item()
+        if isinstance(phi_idx, np.ndarray):
+            phi_idx = phi_idx.item()
+        
+        return directivity_db[theta_idx, phi_idx]
+    
+    else:
+        # Find peak directivity and its location
+        max_idx = np.unravel_index(np.argmax(directivity_db), directivity_db.shape)
+        peak_directivity = directivity_db[max_idx]
+        peak_theta = theta_array[max_idx[0]]
+        peak_phi = phi_array[max_idx[1]]
+        
+        return float(peak_directivity), float(peak_theta), float(peak_phi)

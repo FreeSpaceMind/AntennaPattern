@@ -530,8 +530,6 @@ class PatternOperationsMixin:
             translation: [x, y, z] translation vector in meters
             normalize: if true, normalize the translated phase pattern to zero degrees
         """
-        from .polarization import phase_pattern_translate
-        
         # Get underlying numpy arrays
         frequency = self.data.frequency.values
         theta = self.data.theta.values

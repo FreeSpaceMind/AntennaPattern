@@ -432,7 +432,7 @@ class AntennaPattern(PatternOperationsMixin):
         phi = self.phi_angles
         phi_range = np.max(phi) - np.min(phi)
         
-        if phi_range <= 180:
+        if phi_range < 180:
             raise ValueError("Pattern phi range is not greater than 180 degrees")
         
         # Extract data
