@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         """Setup the main UI layout."""
         self.setWindowTitle("Antenna Pattern Analyzer")
-        self.setGeometry(100, 100, 1400, 800)
+        self.setGeometry(100, 100, 1500, 900)  # Larger window
         
         # Create central widget and main layout
         central_widget = QWidget()
@@ -53,8 +53,8 @@ class MainWindow(QMainWindow):
         # Connect new processing signals
         self.controls.apply_phase_center_signal.connect(self.on_apply_phase_center)
         self.controls.apply_mars_signal.connect(self.on_apply_mars)
-        self.controls.setMaximumWidth(350)  # Increased width for new controls
-        self.controls.setMinimumWidth(300)
+        self.controls.setMaximumWidth(400)  # Wider for collapsible sections
+        self.controls.setMinimumWidth(350)
         
         # Create plot widget (right side)
         self.plot_widget = PlotWidget()
@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.plot_widget)
         
         # Set splitter proportions (controls smaller, plot larger)
-        splitter.setSizes([300, 1100])
+        splitter.setSizes([350, 1150])
         
         # Add splitter to main layout
         main_layout = QHBoxLayout()
@@ -181,6 +181,11 @@ class MainWindow(QMainWindow):
         polarization = self.controls.get_polarization()
         value_type = self.controls.get_value_type()
         show_cross_pol = self.controls.get_show_cross_pol()
+        plot_format = self.controls.get_plot_format()  # NEW
+        component = self.controls.get_component() if hasattr(self.controls, 'get_component') else 'e_co'
+        
+        # Update control visibility based on plot format
+        self.controls.update_controls_for_plot_format()  # NEW
         
         # Convert to format expected by plot function
         freq_list = frequencies if len(frequencies) > 1 else (frequencies[0] if frequencies else None)
@@ -203,13 +208,15 @@ class MainWindow(QMainWindow):
                 self.show_error(f"Error changing polarization: {str(e)}")
                 return
         
-        # Update plot
+        # Update plot with new parameters
         self.plot_widget.update_plot(
             pattern=plot_pattern,
             frequencies=freq_list,
             phi_angles=phi_list,
             value_type=value_type,
-            show_cross_pol=show_cross_pol
+            show_cross_pol=show_cross_pol,
+            plot_format=plot_format,  # NEW
+            component=component
         )
     
     def load_pattern(self, pattern, file_path=None):

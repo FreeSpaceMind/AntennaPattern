@@ -60,7 +60,8 @@ from .plotting import (
     plot_pattern_statistics,
     add_spec_mask,
     add_envelope_spec,
-    plot_phase_slope_vs_frequency
+    plot_phase_slope_vs_frequency,
+    plot_pattern_2d_polar
 )
 
 from .package_functions import (
@@ -109,6 +110,7 @@ __all__ = [
     'add_spec_mask',
     'add_envelope_spec',
     'plot_phase_slope_vs_frequency',
+    'plot_pattern_2d_polar',
     'average_patterns',
     'difference_patterns'
 ]

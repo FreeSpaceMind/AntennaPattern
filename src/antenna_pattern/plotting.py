@@ -1168,3 +1168,202 @@ def plot_phase_slope_vs_frequency(pattern, theta: float = 0.0, phi: float = 0.0,
     
     fig.tight_layout()
     return fig
+
+def plot_pattern_2d_polar(
+    pattern: AntennaPattern,
+    frequency: Optional[float] = None,
+    component: str = 'e_co',
+    value_type: Literal['gain', 'phase', 'axial_ratio'] = 'gain',
+    unwrap_phase: bool = True,
+    ax: Optional[plt.Axes] = None,
+    fig_size: Tuple[float, float] = (8, 8),
+    title: Optional[str] = None,
+    colorbar: bool = True,
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
+    cmap: str = 'viridis'
+) -> Tuple[plt.Figure, Optional[Any]]:
+    """
+    Create a 2D color plot of the antenna pattern using polar projection.
+    
+    Automatically detects if pattern data is in 'central' format (common for antenna
+    measurements) and temporarily converts to 'sided' format for proper 2D polar 
+    visualization covering the full sphere.
+    
+    In the polar projection:
+    - Theta becomes the radial coordinate (distance from center)  
+    - Phi becomes the angular coordinate
+    - Boresight (theta=0°) is at the center
+    
+    Args:
+        pattern: AntennaPattern object
+        frequency: Specific frequency to plot in Hz, or None to use first frequency
+        component: Field component ('e_co', 'e_cx', 'e_theta', 'e_phi')
+        value_type: Type of value to plot ('gain', 'phase', or 'axial_ratio')
+        unwrap_phase: If True and value_type is 'phase', unwrap phase discontinuities
+        ax: Optional matplotlib axes with polar projection, or None to create new
+        fig_size: Figure size as (width, height) in inches  
+        title: Optional title for the plot
+        colorbar: If True, add colorbar to the plot
+        vmin: Minimum value for color scale (auto if None)
+        vmax: Maximum value for color scale (auto if None)
+        cmap: Colormap name for the plot
+        
+    Returns:
+        Tuple[matplotlib.Figure, colorbar]: The created figure and colorbar objects
+        
+    Raises:
+        ValueError: If component or value_type is invalid
+    """
+    # Validate inputs
+    valid_components = ['e_co', 'e_cx', 'e_theta', 'e_phi']
+    if component not in valid_components:
+        raise ValueError(f"Invalid component: {component}. Must be one of {valid_components}")
+    
+    valid_value_types = ['gain', 'phase', 'axial_ratio']  
+    if value_type not in valid_value_types:
+        raise ValueError(f"Invalid value_type: {value_type}. Must be one of {valid_value_types}")
+    
+    # Special case: axial ratio only works with co/cx components
+    if value_type == 'axial_ratio' and component not in ['e_co', 'e_cx']:
+        raise ValueError("Axial ratio plotting requires component to be 'e_co' or 'e_cx'")
+    
+    # Create a working copy of the pattern to avoid modifying the original
+    plot_pattern = pattern.copy()
+    
+    # Detect coordinate format and convert to sided for 2D polar plot
+    theta_angles = plot_pattern.theta_angles
+    phi_angles = plot_pattern.phi_angles
+    
+    theta_min, theta_max = np.min(theta_angles), np.max(theta_angles)
+    phi_min, phi_max = np.min(phi_angles), np.max(phi_angles)
+    
+    # Check if data is in central format (common for antenna measurements)
+    is_central = (theta_min < 0 or phi_max < 300)  # Simple heuristic for central data
+    is_sided = (theta_min >= 0 and theta_max <= 180 and phi_min >= 0 and phi_max > 300)
+    
+    print(f"Pattern coordinate format detected:")
+    print(f"  Theta range: {theta_min:.1f}° to {theta_max:.1f}°")
+    print(f"  Phi range: {phi_min:.1f}° to {phi_max:.1f}°")
+    
+    # Convert to sided format for proper 2D visualization if needed
+    if not is_sided:
+        print("  Converting to sided format (0-180°, 0-360°) for 2D polar plot")
+        try:
+            plot_pattern.transform_coordinates('sided')
+            theta_angles = plot_pattern.theta_angles
+            phi_angles = plot_pattern.phi_angles
+            print(f"  Converted - Theta: {np.min(theta_angles):.1f}° to {np.max(theta_angles):.1f}°")
+            print(f"  Converted - Phi: {np.min(phi_angles):.1f}° to {np.max(phi_angles):.1f}°")
+        except Exception as e:
+            print(f"  Warning: Could not convert coordinates: {e}")
+            print("  Plotting with original coordinates")
+    
+    # Handle frequency selection
+    frequencies = plot_pattern.frequencies
+    if frequency is None:
+        freq_idx = 0
+        selected_frequency = frequencies[0]
+    else:
+        selected_frequency, freq_idx = find_nearest(frequencies, frequency)
+    
+    # Create coordinate meshgrids
+    phi_rad = np.deg2rad(phi_angles)  # Convert phi to radians for polar plot
+    theta_mesh, phi_mesh = np.meshgrid(theta_angles, phi_rad, indexing='ij')
+    
+    # Extract data based on value_type and component
+    if value_type == 'axial_ratio':
+        # Get axial ratio data [freq, theta, phi] 
+        data_3d = plot_pattern.get_axial_ratio()
+        plot_data = data_3d[freq_idx, :, :]
+        units = 'dB'
+        default_title = f'Axial Ratio at {selected_frequency/1e9:.2f} GHz'
+    elif value_type == 'gain':
+        # Get gain data in dB
+        data_3d = plot_pattern.get_gain_db(component)
+        plot_data = data_3d[freq_idx, :, :]
+        units = 'dB'
+        comp_label = component.replace('_', '-').upper()
+        default_title = f'{comp_label} Gain at {selected_frequency/1e9:.2f} GHz'
+    elif value_type == 'phase':
+        # Get phase data in degrees
+        data_3d = plot_pattern.get_phase(component, unwrapped=unwrap_phase)
+        plot_data = data_3d[freq_idx, :, :]
+        units = 'degrees'
+        comp_label = component.replace('_', '-').upper()
+        default_title = f'{comp_label} Phase at {selected_frequency/1e9:.2f} GHz'
+    
+    # Create figure and axes if not provided
+    if ax is None:
+        fig, ax = plt.subplots(figsize=fig_size, subplot_kw=dict(projection='polar'))
+    else:
+        fig = ax.figure
+        if ax.name != 'polar':
+            raise ValueError("Provided axes must have polar projection")
+    
+    # Create the polar color plot
+    # Note: pcolormesh expects (phi, theta) order for polar coordinates
+    im = ax.pcolormesh(phi_mesh.T, theta_mesh.T, plot_data.T, 
+                       cmap=cmap, vmin=vmin, vmax=vmax, shading='auto')
+    
+    # Configure polar plot
+    ax.set_theta_zero_location('N')  # Put phi=0 at top
+    ax.set_theta_direction(-1)       # Clockwise phi direction (standard antenna convention)
+    
+    # Set radial axis label and limits
+    ax.set_ylabel('Theta (degrees)', labelpad=30)
+    ax.set_ylim(0, np.max(theta_angles))
+    
+    # Set angular axis ticks (phi in degrees)
+    ax.set_thetagrids(np.arange(0, 360, 45))
+    
+    # Add title
+    if title is None:
+        title = default_title
+    ax.set_title(title, pad=20)
+    
+    # Add colorbar
+    cbar = None
+    if colorbar:
+        cbar = plt.colorbar(im, ax=ax, shrink=0.8, pad=0.1)
+        cbar.set_label(f'{value_type.capitalize()} ({units})')
+    
+    # Adjust layout
+    plt.tight_layout()
+    
+    return fig, cbar
+
+def detect_coordinate_format(pattern: AntennaPattern) -> str:
+    """
+    Detect whether pattern data is in 'central' or 'sided' coordinate format.
+    
+    Args:
+        pattern: AntennaPattern object
+        
+    Returns:
+        str: 'central', 'sided', or 'unknown'
+    """
+    theta_angles = pattern.theta_angles
+    phi_angles = pattern.phi_angles
+    
+    theta_min, theta_max = np.min(theta_angles), np.max(theta_angles)
+    phi_min, phi_max = np.min(phi_angles), np.max(phi_angles)
+    
+    # Check for sided format: theta 0:180, phi 0:360
+    is_sided = (theta_min >= -5 and theta_max <= 185 and 
+                phi_min >= -5 and phi_max >= 355)
+    
+    # Check for central format: theta around ±180, phi 0:180
+    is_central = (theta_min < -5 and theta_max > 175 and
+                  phi_min >= -5 and phi_max <= 185)
+    
+    # Alternative central: theta 0:180, phi limited range
+    is_central_alt = (theta_min >= -5 and theta_max <= 185 and
+                      phi_min >= -5 and phi_max <= 185)
+    
+    if is_sided:
+        return 'sided'
+    elif is_central or is_central_alt:
+        return 'central'
+    else:
+        return 'unknown'
