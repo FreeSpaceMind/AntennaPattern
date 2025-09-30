@@ -63,6 +63,12 @@ class PlotWidget(QWidget):
         self.legend_colorbar_check.setChecked(True)
         self.legend_colorbar_check.toggled.connect(self.update_plot_formatting)
         format_layout.addWidget(self.legend_colorbar_check)
+
+        # Normalize Checkbox
+        self.normalize_check = QCheckBox("Normalize")
+        self.normalize_check.setChecked(False)
+        self.normalize_check.toggled.connect(self.replot_current_data)
+        format_layout.addWidget(self.normalize_check)
         
         # X-axis/Phi limits
         self.x_phi_label = QLabel("X-axis:")
@@ -139,8 +145,22 @@ class PlotWidget(QWidget):
     
     def update_plot(self, pattern, frequencies=None, phi_angles=None, 
                 polarization=None, value_type='gain', show_cross_pol=True, 
-                plot_format='1d_cut', component='e_co'):
+                plot_format='1d_cut', component='e_co', statistics_enabled=False,
+                show_range=True, statistic_type='mean', percentile_range=(25, 75)):
         """Update the plot with new parameters."""
+
+        # Store parameters for replotting when formatting changes
+        self._last_plot_params = {
+            'pattern': pattern,
+            'frequencies': frequencies,
+            'phi_angles': phi_angles,
+            'polarization': polarization,
+            'value_type': value_type,
+            'show_cross_pol': show_cross_pol,
+            'plot_format': plot_format,
+            'component': component
+        }
+
         if pattern is None:
             return
             
@@ -148,6 +168,7 @@ class PlotWidget(QWidget):
         
         format_changed = (self.current_plot_format != plot_format)
         self.current_plot_format = plot_format
+        normalize = self.normalize_check.isChecked()
         
         # Update control labels and visibility if format changed
         if format_changed:
@@ -177,13 +198,14 @@ class PlotWidget(QWidget):
                     frequency=freq,
                     component=component,
                     value_type=value_type.lower(),
+                    normalize=normalize,  # Add this
                     ax=ax,
                     title=None,
                     colorbar=self.legend_colorbar_check.isChecked(),
                     vmin=vmin,
                     vmax=vmax
                 )
-                
+
                 # Store colorbar reference
                 self.current_colorbar = cbar
                 
@@ -194,15 +216,33 @@ class PlotWidget(QWidget):
                 # Create 1D cut plot
                 ax = self.figure.add_subplot(111)
                 
-                plot_pattern_cut(
-                    pattern=pattern,
-                    frequency=frequencies,
-                    phi=phi_angles,
-                    show_cross_pol=show_cross_pol,
-                    value_type=value_type.lower(),
-                    ax=ax,
-                    title=None
-                )
+                if statistics_enabled:
+                    # Plot statistics instead of normal cuts
+                    from ..plotting import plot_pattern_statistics
+                    
+                    plot_pattern_statistics(
+                        pattern=pattern,
+                        statistic_over='phi',  # Default to statistics over phi
+                        frequency=frequencies if isinstance(frequencies, (int, float)) else frequencies[0] if frequencies else None,
+                        component=component,
+                        value_type=value_type.lower(),
+                        statistic=statistic_type,
+                        percentile_range=percentile_range,
+                        show_range=show_range,
+                        ax=ax,
+                        title=None
+                    )
+                else:
+                    # Normal plot
+                    plot_pattern_cut(
+                        pattern=pattern,
+                        frequency=frequencies,
+                        phi=phi_angles,
+                        show_cross_pol=show_cross_pol,
+                        value_type=value_type.lower(),
+                        ax=ax,
+                        title=None
+                    )
                 
                 # Clear colorbar reference for 1D plots
                 self.current_colorbar = None
@@ -414,6 +454,12 @@ class PlotWidget(QWidget):
                     ax.set_ylim(new_min, new_max)
             except ValueError:
                 pass
+
+    def replot_current_data(self):
+        """Replot the current data with updated settings (like normalization)."""
+        if hasattr(self, '_last_plot_params'):
+            # Replot with the same parameters as last time
+            self.update_plot(**self._last_plot_params)
             
     def update_plot_formatting(self):
         """Update plot formatting without replotting data."""

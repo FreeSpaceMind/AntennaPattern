@@ -15,7 +15,7 @@ def plot_pattern_cut(
     show_cross_pol: bool = True,
     value_type: Literal['gain', 'phase', 'axial_ratio'] = 'gain',
     unwrap_phase: bool = True,
-    normalize_phase: bool = True,
+    normalize: bool = False,  # Add this
     ax: Optional[plt.Axes] = None,
     fig_size: Tuple[float, float] = (10, 6),
     title: Optional[str] = None
@@ -30,7 +30,6 @@ def plot_pattern_cut(
         show_cross_pol: If True, plot both co-pol and cross-pol components (ignored for axial_ratio)
         value_type: Type of value to plot ('gain', 'phase', or 'axial_ratio')
         unwrap_phase: If True and value_type is 'phase', unwrap phase to avoid 2π discontinuities
-        normalize_phase: Phase normalization for phase plots
         ax: Optional matplotlib axes to plot on
         fig_size: Figure size as (width, height) in inches
         title: Optional title for the plot
@@ -98,34 +97,28 @@ def plot_pattern_cut(
         y_label = 'Phase (degrees)'
         plot_prefix = 'Phase'
 
-        # Apply phase normalization if requested
-        if normalize_phase is not False and value_type == 'phase':
-            # reference point: boresight (theta=0) of first phi angle
-            ref_theta_idx = np.argmin(np.abs(theta_angles))
-            ref_phi_idx = 0
-            
-            # Normalize co-pol phase
-            data_co_normalized = data_co.copy()
-            for freq_idx in frequency_indices:
-                for phi_idx in phi_indices:
-                    ref_phase = data_co[freq_idx, ref_theta_idx, ref_phi_idx]
-                    data_co_normalized[freq_idx, :, phi_idx] -= ref_phase
-            data_co = data_co_normalized
-            
-            # Normalize cross-pol phase if present
-            if data_cx is not None:
-                data_cx_normalized = data_cx.copy()
-                for freq_idx in frequency_indices:
-                    for phi_idx in phi_indices:
-                        ref_phase = data_cx[freq_idx, ref_theta_idx, ref_phi_idx]
-                        data_cx_normalized[freq_idx, :, phi_idx] -= ref_phase
-                data_cx = data_cx_normalized
-
     else:  # Default to gain
         data_co = pattern.get_gain_db('e_co')
         data_cx = pattern.get_gain_db('e_cx') if show_cross_pol else None
         y_label = 'Gain (dBi)'
         plot_prefix = 'Gain'
+
+    # normalize if requested
+    if normalize and value_type == 'gain':
+        # Normalize peak gain to zero
+        peak_value = np.max(data_co[frequency_indices, :, :][:, :, phi_indices])
+        data_co = data_co - peak_value
+        if data_cx is not None:
+            data_cx = data_cx - peak_value
+    elif normalize and value_type == 'phase':
+        # Normalize first cut's phase to zero
+        if phi_indices:
+            ref_phi_idx = phi_indices[0]
+            ref_freq_idx = frequency_indices[0]
+            ref_phase = data_co[ref_freq_idx, 0, ref_phi_idx]  # First theta point
+            data_co = data_co - ref_phase
+            if data_cx is not None:
+                data_cx = data_cx - ref_phase
     
     # Determine total number of lines to plot
     num_lines = len(frequency_indices) * len(phi_indices) * (2 if show_cross_pol else 1)
@@ -1175,6 +1168,7 @@ def plot_pattern_2d_polar(
     component: str = 'e_co',
     value_type: Literal['gain', 'phase', 'axial_ratio'] = 'gain',
     unwrap_phase: bool = True,
+    normalize: bool = False,  # Add this
     ax: Optional[plt.Axes] = None,
     fig_size: Tuple[float, float] = (8, 8),
     title: Optional[str] = None,
@@ -1292,6 +1286,14 @@ def plot_pattern_2d_polar(
         units = 'degrees'
         comp_label = component.replace('_', '-').upper()
         default_title = f'{comp_label} Phase at {selected_frequency/1e9:.2f} GHz'
+
+    # apply normalization if requested 
+    if normalize and value_type == 'gain':
+        peak_value = np.max(plot_data)
+        plot_data = plot_data - peak_value
+    elif normalize and value_type == 'phase':
+        ref_phase = plot_data[0, 0]  # First theta, first phi point
+        plot_data = plot_data - ref_phase
     
     # Create figure and axes if not provided
     if ax is None:

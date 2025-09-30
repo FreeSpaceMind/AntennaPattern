@@ -181,8 +181,14 @@ class MainWindow(QMainWindow):
         polarization = self.controls.get_polarization()
         value_type = self.controls.get_value_type()
         show_cross_pol = self.controls.get_show_cross_pol()
-        plot_format = self.controls.get_plot_format()  # NEW
+        plot_format = self.controls.get_plot_format()
         component = self.controls.get_component() if hasattr(self.controls, 'get_component') else 'e_co'
+        
+        # Get statistics parameters
+        statistics_enabled = self.controls.get_statistics_enabled()
+        show_range = self.controls.get_show_range()
+        statistic_type = self.controls.get_statistic_type()
+        percentile_range = self.controls.get_percentile_range()
         
         # Update control visibility based on plot format
         self.controls.update_controls_for_plot_format()  # NEW
@@ -215,8 +221,12 @@ class MainWindow(QMainWindow):
             phi_angles=phi_list,
             value_type=value_type,
             show_cross_pol=show_cross_pol,
-            plot_format=plot_format,  # NEW
-            component=component
+            plot_format=plot_format,
+            component=component,
+            statistics_enabled=statistics_enabled,
+            show_range=show_range,
+            statistic_type=statistic_type,
+            percentile_range=percentile_range
         )
     
     def load_pattern(self, pattern, file_path=None):

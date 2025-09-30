@@ -274,7 +274,61 @@ class ControlsWidget(QWidget):
         processing_group.addWidget(self.apply_mars_check)
         
         scroll_layout.addWidget(processing_group)
-        
+
+        # Statistics section (collapsible)
+        stats_group = CollapsibleGroupBox("Plot Statistics")
+
+        # Enable statistics checkbox
+        self.enable_statistics = QCheckBox("Enable Statistics Plot")
+        self.enable_statistics.setChecked(False)
+        self.enable_statistics.toggled.connect(self.parameters_changed.emit)
+        stats_group.addWidget(self.enable_statistics)
+
+        # Show range checkbox
+        self.show_range = QCheckBox("Show Min/Max Range")
+        self.show_range.setChecked(True)
+        self.show_range.toggled.connect(self.parameters_changed.emit)
+        stats_group.addWidget(self.show_range)
+
+        # Statistic type dropdown
+        statistic_layout = QHBoxLayout()
+        statistic_layout.addWidget(QLabel("Statistic:"))
+        self.statistic_combo = QComboBox()
+        self.statistic_combo.addItems(["mean", "median", "rms", "percentile", "std"])
+        self.statistic_combo.setCurrentText("mean")
+        self.statistic_combo.currentTextChanged.connect(self.parameters_changed.emit)
+        self.statistic_combo.currentTextChanged.connect(self.on_statistic_changed)
+        statistic_layout.addWidget(self.statistic_combo)
+        stats_group.addLayout(statistic_layout)
+
+        # Percentile range inputs
+        percentile_layout = QHBoxLayout()
+        percentile_layout.addWidget(QLabel("Percentile Range:"))
+        self.percentile_lower_spin = QDoubleSpinBox()
+        self.percentile_lower_spin.setRange(0.0, 100.0)
+        self.percentile_lower_spin.setValue(25.0)
+        self.percentile_lower_spin.setSuffix("%")
+        self.percentile_lower_spin.valueChanged.connect(self.parameters_changed.emit)
+        percentile_layout.addWidget(self.percentile_lower_spin)
+
+        percentile_layout.addWidget(QLabel("to"))
+
+        self.percentile_upper_spin = QDoubleSpinBox()
+        self.percentile_upper_spin.setRange(0.0, 100.0)
+        self.percentile_upper_spin.setValue(75.0)
+        self.percentile_upper_spin.setSuffix("%")
+        self.percentile_upper_spin.valueChanged.connect(self.parameters_changed.emit)
+        percentile_layout.addWidget(self.percentile_upper_spin)
+        stats_group.addLayout(percentile_layout)
+
+        # Initially hide percentile controls
+        self.percentile_lower_spin.setVisible(False)
+        self.percentile_upper_spin.setVisible(False)
+        percentile_layout.itemAt(0).widget().setVisible(False)  # "Percentile Range:" label
+        percentile_layout.itemAt(2).widget().setVisible(False)  # "to" label
+
+        scroll_layout.addWidget(stats_group)
+                
         # Add stretch to push everything to top
         scroll_layout.addStretch()
         
@@ -512,11 +566,6 @@ class ControlsWidget(QWidget):
         self.show_cross_pol.setEnabled(not is_2d)
         if is_2d:
             self.show_cross_pol.setChecked(False)
-        
-        # REMOVE THIS SECTION (no more component combo):
-        # # Enable/disable component selection based on plot format
-        # if hasattr(self, 'component_combo'):
-        #     self.component_combo.setEnabled(is_2d)
             
         # For 2D plots, limit frequency selection to single frequency
         if is_2d:
@@ -525,42 +574,25 @@ class ControlsWidget(QWidget):
             if len(selected_items) > 1:
                 self.frequency_list.clearSelection()
                 selected_items[0].setSelected(True) 
+                
+        # Statistics only available for 1D plots
+        is_1d = (self.get_plot_format() == '1d_cut')
+        if hasattr(self, 'enable_statistics'):
+            # Find and show/hide the entire statistics group
+            # Statistics controls should only be visible for 1D plots
+            stats_widgets = [
+                self.enable_statistics, self.show_range, 
+                self.statistic_combo, self.percentile_lower_spin, 
+                self.percentile_upper_spin
+            ]
+            
+            for widget in stats_widgets:
+                widget.setVisible(is_1d)
 
     def get_plot_format(self):
         """Get selected plot format."""
         format_text = self.plot_format_combo.currentText()
         return "2d_polar" if "2D Polar" in format_text else "1d_cut"
-
-    def on_plot_format_changed(self):
-        """Handle plot format change from dropdown."""
-        current_format = self.get_plot_format()
-        
-        # Update control enabling immediately
-        self.update_controls_for_plot_format()
-        
-        # Emit signal to trigger plot update
-        self.parameters_changed.emit()
-
-    def update_controls_for_plot_format(self):
-        """Update control visibility based on plot format."""
-        is_2d = self.get_plot_format() == "2d_polar"
-        
-        # For 2D plots, cross-pol doesn't make sense, so disable it
-        self.show_cross_pol.setEnabled(not is_2d)
-        if is_2d:
-            self.show_cross_pol.setChecked(False)
-        
-        # Enable/disable component selection based on plot format
-        if hasattr(self, 'component_combo'):
-            self.component_combo.setEnabled(is_2d)
-            
-        # For 2D plots, limit frequency selection to single frequency
-        if is_2d:
-            # If multiple frequencies selected, keep only the first one
-            selected_items = self.frequency_list.selectedItems()
-            if len(selected_items) > 1:
-                self.frequency_list.clearSelection()
-                selected_items[0].setSelected(True)
 
     def get_component(self):
         """Get field component based on selected polarization."""
@@ -605,3 +637,43 @@ class ControlsWidget(QWidget):
         }
         
         return pol_map.get(pol_text, None)
+    
+    def on_statistic_changed(self):
+        """Handle statistic type change to show/hide percentile controls."""
+        is_percentile = self.statistic_combo.currentText() == "percentile"
+        
+        # Show/hide percentile controls
+        self.percentile_lower_spin.setVisible(is_percentile)
+        self.percentile_upper_spin.setVisible(is_percentile)
+        
+        # Find the percentile layout and show/hide labels
+        for i in range(self.layout().count()):
+            item = self.layout().itemAt(i)
+            if hasattr(item, 'layout'):
+                layout = item.layout()
+                if layout and layout.count() >= 4:
+                    # Check if this looks like our percentile layout
+                    label_item = layout.itemAt(0)
+                    if (label_item and label_item.widget() and 
+                        hasattr(label_item.widget(), 'text') and 
+                        "Percentile Range:" in label_item.widget().text()):
+                        
+                        label_item.widget().setVisible(is_percentile)
+                        layout.itemAt(2).widget().setVisible(is_percentile)  # "to" label
+                        break
+
+    def get_statistics_enabled(self):
+        """Get whether statistics plotting is enabled."""
+        return self.enable_statistics.isChecked()
+
+    def get_show_range(self):
+        """Get show range setting."""
+        return self.show_range.isChecked()
+
+    def get_statistic_type(self):
+        """Get selected statistic type."""
+        return self.statistic_combo.currentText()
+
+    def get_percentile_range(self):
+        """Get percentile range as tuple."""
+        return (self.percentile_lower_spin.value(), self.percentile_upper_spin.value())
