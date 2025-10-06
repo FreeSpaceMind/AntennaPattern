@@ -374,3 +374,77 @@ def create_synthetic_pattern(
     
     return e_theta, e_phi
 
+def create_gaussian_beam(
+    frequencies: np.ndarray,
+    theta_angles: np.ndarray,
+    phi_angles: np.ndarray,
+    edge_taper_db: Union[float, np.ndarray] = -12.0,
+    subtended_angle_deg: float = 10.0,
+    polarization: str = 'linear',
+    peak_gain_dbi: Union[float, np.ndarray] = 20.0
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Create a Gaussian beam pattern suitable for reflector feed modeling.
+    
+    Creates a rotationally symmetric Gaussian beam based on edge taper
+    at a specified subtended angle.
+    
+    Args:
+        frequencies: Array of frequencies in Hz
+        theta_angles: Array of theta angles in degrees
+        phi_angles: Array of phi angles in degrees
+        edge_taper_db: Edge taper in dB at subtended angle (negative value)
+        subtended_angle_deg: Angle from boresight where edge taper is specified
+        polarization: 'linear', 'rhcp', or 'lhcp'
+        peak_gain_dbi: Peak gain in dBi
+        
+    Returns:
+        Tuple of (e_theta, e_phi) complex arrays with shape [freq, theta, phi]
+    """
+    # Convert inputs to arrays if needed
+    if np.isscalar(peak_gain_dbi):
+        peak_gain_dbi = np.full(len(frequencies), peak_gain_dbi)
+    if np.isscalar(edge_taper_db):
+        edge_taper_db = np.full(len(frequencies), edge_taper_db)
+    
+    # Initialize arrays
+    e_theta = np.zeros((len(frequencies), len(theta_angles), len(phi_angles)), dtype=complex)
+    e_phi = np.zeros((len(frequencies), len(theta_angles), len(phi_angles)), dtype=complex)
+    
+    # Calculate Gaussian parameter from edge taper
+    # E(θ) = E_0 * exp(-(θ/θ_0)^2)
+    # At subtended angle: edge_taper_dB = 20*log10(exp(-(θ_sub/θ_0)^2))
+    # Solving: θ_0 = θ_sub / sqrt(-ln(10^(edge_taper_dB/20)))
+    
+    for freq_idx, freq in enumerate(frequencies):
+        # Calculate Gaussian width parameter
+        taper_linear = 10**(edge_taper_db[freq_idx] / 20.0)
+        theta_0 = subtended_angle_deg / np.sqrt(-np.log(taper_linear))
+        
+        # Convert peak gain to field amplitude
+        peak_amplitude = np.sqrt(10**(peak_gain_dbi[freq_idx] / 10.0))
+        
+        # Generate pattern for each angle
+        for theta_idx, theta_val in enumerate(theta_angles):
+            # Gaussian amplitude pattern (rotationally symmetric)
+            amplitude = peak_amplitude * np.exp(-(theta_val / theta_0)**2)
+            
+            # Add a floor to prevent numerical issues at large angles
+            # Typical far sidelobe level for feeds is -40 to -50 dB
+            floor_amplitude = peak_amplitude * 10**(-45.0 / 20.0)  # -45 dB floor
+            amplitude = np.maximum(amplitude, floor_amplitude)
+            
+            # Apply to all phi (symmetric)
+            if polarization == 'linear':
+                e_theta[freq_idx, theta_idx, :] = amplitude
+                e_phi[freq_idx, theta_idx, :] = 0.0
+            elif polarization == 'rhcp':
+                e_theta[freq_idx, theta_idx, :] = amplitude / np.sqrt(2)
+                e_phi[freq_idx, theta_idx, :] = -1j * amplitude / np.sqrt(2)
+            elif polarization == 'lhcp':
+                e_theta[freq_idx, theta_idx, :] = amplitude / np.sqrt(2)
+                e_phi[freq_idx, theta_idx, :] = 1j * amplitude / np.sqrt(2)
+            else:
+                raise ValueError(f"Invalid polarization: {polarization}")
+    
+    return e_theta, e_phi

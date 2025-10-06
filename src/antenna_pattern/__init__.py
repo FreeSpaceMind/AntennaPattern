@@ -51,7 +51,8 @@ from .utilities import (
     db_to_linear,
     linear_to_db,
     interpolate_crossing,
-    create_synthetic_pattern
+    create_synthetic_pattern,
+    create_gaussian_beam
 )
 from .plotting import (
     plot_pattern_cut,
@@ -103,6 +104,7 @@ __all__ = [
     'linear_to_db',
     'interpolate_crossing',
     'create_synthetic_pattern',
+    'create_gaussian_beam',
     'plot_pattern_cut',
     'plot_multiple_patterns',
     'plot_pattern_difference',
