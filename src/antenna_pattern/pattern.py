@@ -566,3 +566,239 @@ class AntennaPattern(PatternOperationsMixin):
         """
         from .ant_io import save_pattern_npz
         save_pattern_npz(self, file_path, metadata)
+
+
+    def calculate_spherical_modes(self, radius: Optional[float] = None, 
+                                 frequency: Optional[float] = None,
+                                 adaptive: bool = True,
+                                 power_threshold: float = 0.99,
+                                 convergence_threshold: float = 0.01,
+                                 max_iterations: int = 10) -> Dict[str, Any]:
+        """
+        Calculate spherical wave expansion Q-mode coefficients from the far-field pattern.
+        
+        This method computes the spherical mode coefficients that represent the antenna's
+        radiation pattern. These coefficients can be used to calculate the field at any
+        point in space, including in the near field.
+        
+        The spherical wave expansion represents the field as:
+        E = k√(2ζ) Σ Σ Σ Q_smn F_smn(r,θ,φ)
+        
+        where Q_smn are the complex mode coefficients and F_smn are the vector spherical
+        wave functions.
+        
+        Args:
+            radius: Initial radius of the minimum sphere (meters). If None and adaptive=True,
+                   starts with 5 wavelengths. If adaptive=False, this must be provided.
+            frequency: Frequency to use (Hz). If None, uses first frequency in pattern.
+            adaptive: If True, automatically determines optimal radius and truncates modes
+                     to retain power_threshold of total power (default: True)
+            power_threshold: When adaptive=True, fraction of power to retain (default: 0.99)
+            convergence_threshold: When adaptive=True, max fraction of power in highest 
+                                  modes for convergence (default: 0.01)
+            max_iterations: When adaptive=True, maximum radius increase iterations (default: 10)
+            
+        Returns:
+            Dictionary containing:
+                - 'Q_coefficients': Complex array [s, m, n] of mode coefficients
+                - 'M': Maximum azimuthal mode index (after truncation if adaptive)
+                - 'N': Polar mode index (after truncation if adaptive)
+                - 'N_full': Full polar mode index before truncation (if adaptive)
+                - 'frequency': Frequency used (Hz)
+                - 'wavelength': Wavelength (m)
+                - 'radius': Sphere radius (m) - final radius if adaptive
+                - 'mode_power': Total power in the modes (W)
+                - 'k': Wavenumber (rad/m)
+                - 'converged': Whether calculation converged (if adaptive)
+                - 'iterations': Number of iterations (if adaptive)
+                
+        Notes:
+            - The pattern sampling must satisfy Nyquist criteria for accurate results:
+              Δθ ≤ 180°/N and Δφ ≤ 180°/(M+1)
+            - Results are also stored in self.swe dictionary indexed by frequency
+            - Adaptive mode (default) automatically finds optimal radius and truncates
+              modes to minimize computation while retaining 99% of radiated power
+              
+        Example:
+            ```python
+            # Automatic radius determination (recommended)
+            swe_data = pattern.calculate_spherical_modes()
+            print(f"Used radius: {swe_data['radius']:.4f} m")
+            print(f"Modes: N={swe_data['N']}, M={swe_data['M']}")
+            
+            # Manual radius specification
+            swe_data = pattern.calculate_spherical_modes(
+                radius=0.05, adaptive=False
+            )
+            
+            # Custom power threshold
+            swe_data = pattern.calculate_spherical_modes(
+                power_threshold=0.995  # Retain 99.5% of power
+            )
+            ```
+            
+        References:
+            Hansen, J.E. (Ed.), "Spherical Near-Field Antenna Measurements",
+            Peter Peregrinus Ltd., London, 1988.
+            TICRA GRASP Manual, Section 4.7 "Spherical Wave Expansion"
+        """
+        from .spherical_expansion import (
+            calculate_q_coefficients_adaptive, 
+            calculate_q_coefficients,
+            add_swe_to_pattern
+        )
+        
+        # Find frequency index
+        if frequency is None:
+            freq_idx = 0
+        else:
+            from .utilities import find_nearest
+            _, freq_idx = find_nearest(self.frequencies, frequency)
+        
+        # Calculate coefficients
+        if adaptive:
+            swe_data = calculate_q_coefficients_adaptive(
+                self, 
+                initial_radius=radius,
+                frequency_index=freq_idx,
+                power_threshold=power_threshold,
+                convergence_threshold=convergence_threshold,
+                max_iterations=max_iterations
+            )
+        else:
+            if radius is None:
+                raise ValueError("radius must be provided when adaptive=False")
+            swe_data = calculate_q_coefficients(
+                self, radius, freq_idx
+            )
+        
+        # Store in pattern object
+        add_swe_to_pattern(self, swe_data)
+        
+        # Update metadata
+        if hasattr(self, 'metadata') and self.metadata is not None:
+            if 'operations' not in self.metadata:
+                self.metadata['operations'] = []
+            
+            metadata_entry = {
+                'type': 'calculate_spherical_modes',
+                'radius': swe_data['radius'],
+                'frequency': swe_data['frequency'],
+                'N': swe_data['N'],
+                'M': swe_data['M'],
+                'mode_power': swe_data['mode_power'],
+                'adaptive': adaptive
+            }
+            
+            if adaptive:
+                metadata_entry.update({
+                    'N_full': swe_data['N_full'],
+                    'converged': swe_data['converged'],
+                    'iterations': swe_data['iterations'],
+                    'power_retained': swe_data['power_retained_fraction']
+                })
+            
+            self.metadata['operations'].append(metadata_entry)
+        
+        return swe_data
+    
+    def evaluate_nearfield_sphere(self, radius: float, 
+                                  theta_points: Optional[np.ndarray] = None,
+                                  phi_points: Optional[np.ndarray] = None,
+                                  frequency: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Evaluate near-field on a spherical surface using stored SWE coefficients.
+        
+        This method requires that calculate_spherical_modes() has been called first.
+        
+        Args:
+            radius: Radius of evaluation sphere in meters
+            theta_points: Theta angles in degrees (if None, uses pattern's theta)
+            phi_points: Phi angles in degrees (if None, uses pattern's phi)
+            frequency: Frequency to use (if None, uses first available SWE frequency)
+            
+        Returns:
+            Dictionary with near-field data (see calculate_nearfield_spherical_surface)
+            
+        Example:
+            ```python
+            # First calculate modes
+            pattern.calculate_spherical_modes()
+            
+            # Then evaluate near-field at 5 cm
+            nearfield = pattern.evaluate_nearfield_sphere(radius=0.05)
+            ```
+        """
+        from .spherical_expansion import calculate_nearfield_spherical_surface
+        
+        # Check if SWE data exists
+        if not hasattr(self, 'swe') or len(self.swe) == 0:
+            raise RuntimeError("No SWE coefficients found. Call calculate_spherical_modes() first.")
+        
+        # Select frequency
+        if frequency is None:
+            # Use first available frequency
+            frequency = list(self.swe.keys())[0]
+        elif frequency not in self.swe:
+            raise ValueError(f"No SWE data for frequency {frequency} Hz. "
+                           f"Available: {list(self.swe.keys())}")
+        
+        swe_data = self.swe[frequency]
+        
+        # Use pattern's grid if not provided
+        if theta_points is None:
+            theta_points = self.theta_angles
+        if phi_points is None:
+            phi_points = self.phi_angles
+        
+        return calculate_nearfield_spherical_surface(
+            swe_data, radius, theta_points, phi_points
+        )
+    
+    def evaluate_nearfield_plane(self, x_points: np.ndarray, y_points: np.ndarray,
+                                z_plane: float,
+                                frequency: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Evaluate near-field on a planar surface using stored SWE coefficients.
+        
+        This method requires that calculate_spherical_modes() has been called first.
+        
+        Args:
+            x_points: X coordinates in meters
+            y_points: Y coordinates in meters  
+            z_plane: Z coordinate of plane in meters
+            frequency: Frequency to use (if None, uses first available SWE frequency)
+            
+        Returns:
+            Dictionary with near-field data (see calculate_nearfield_planar_surface)
+            
+        Example:
+            ```python
+            # First calculate modes
+            pattern.calculate_spherical_modes()
+            
+            # Evaluate on a plane
+            x = np.linspace(-0.1, 0.1, 51)
+            y = np.linspace(-0.1, 0.1, 51)
+            nearfield = pattern.evaluate_nearfield_plane(x, y, z_plane=0.05)
+            ```
+        """
+        from .spherical_expansion import calculate_nearfield_planar_surface
+        
+        # Check if SWE data exists
+        if not hasattr(self, 'swe') or len(self.swe) == 0:
+            raise RuntimeError("No SWE coefficients found. Call calculate_spherical_modes() first.")
+        
+        # Select frequency
+        if frequency is None:
+            # Use first available frequency
+            frequency = list(self.swe.keys())[0]
+        elif frequency not in self.swe:
+            raise ValueError(f"No SWE data for frequency {frequency} Hz. "
+                           f"Available: {list(self.swe.keys())}")
+        
+        swe_data = self.swe[frequency]
+        
+        return calculate_nearfield_planar_surface(
+            swe_data, x_points, y_points, z_plane
+        )
