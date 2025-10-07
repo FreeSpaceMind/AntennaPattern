@@ -50,9 +50,7 @@ from .utilities import (
     freespace_impedance,
     db_to_linear,
     linear_to_db,
-    interpolate_crossing,
-    create_synthetic_pattern,
-    create_gaussian_beam
+    interpolate_crossing
 )
 from .plotting import (
     plot_pattern_cut,

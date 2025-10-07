@@ -247,8 +247,8 @@ class AntennaPattern(PatternOperationsMixin):
         # Update metadata
         if self.metadata is not None:
             self.metadata['polarization'] = standard_pol
-    
-    
+
+        self.clear_cache()
     
     def find_phase_center(self, theta_angle: float, frequency: Optional[float] = None, 
                         n_iter: int = 10) -> np.ndarray:

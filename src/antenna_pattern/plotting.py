@@ -15,7 +15,8 @@ def plot_pattern_cut(
     show_cross_pol: bool = True,
     value_type: Literal['gain', 'phase', 'axial_ratio'] = 'gain',
     unwrap_phase: bool = True,
-    normalize: bool = False,  # Add this
+    normalize: bool = False, 
+    component: str = 'e_co',
     ax: Optional[plt.Axes] = None,
     fig_size: Tuple[float, float] = (10, 6),
     title: Optional[str] = None
@@ -30,6 +31,8 @@ def plot_pattern_cut(
         show_cross_pol: If True, plot both co-pol and cross-pol components (ignored for axial_ratio)
         value_type: Type of value to plot ('gain', 'phase', or 'axial_ratio')
         unwrap_phase: If True and value_type is 'phase', unwrap phase to avoid 2π discontinuities
+        normalize: If True, normalize peak to 0 dB
+        component: Component to plot ('e_co', 'e_cx', 'e_theta', 'e_phi') 
         ax: Optional matplotlib axes to plot on
         fig_size: Figure size as (width, height) in inches
         title: Optional title for the plot
@@ -83,7 +86,26 @@ def plot_pattern_cut(
     
     # Get data arrays based on value_type
     theta_angles = pattern.theta_angles
-    
+
+    # Determine which component to use
+    # For e_co, cross-pol is e_cx; for e_theta, cross-pol is e_phi, etc.
+    if component == 'e_co':
+        main_component = 'e_co'
+        cross_component = 'e_cx'
+    elif component == 'e_cx':
+        main_component = 'e_cx'
+        cross_component = 'e_co'
+    elif component == 'e_theta':
+        main_component = 'e_theta'
+        cross_component = 'e_phi'
+    elif component == 'e_phi':
+        main_component = 'e_phi'
+        cross_component = 'e_theta'
+    else:
+        # Default to co-pol
+        main_component = 'e_co'
+        cross_component = 'e_cx'
+
     # Special case for axial ratio - no cross-pol plotting
     if value_type == 'axial_ratio':
         show_cross_pol = False
@@ -92,14 +114,13 @@ def plot_pattern_cut(
         y_label = 'Axial Ratio (dB)'
         plot_prefix = 'AR'
     elif value_type == 'phase':
-        data_co = pattern.get_phase('e_co', unwrapped=unwrap_phase)
-        data_cx = pattern.get_phase('e_cx', unwrapped=unwrap_phase) if show_cross_pol else None
+        data_co = pattern.get_phase(main_component, unwrapped=unwrap_phase)
+        data_cx = pattern.get_phase(cross_component, unwrapped=unwrap_phase) if show_cross_pol else None
         y_label = 'Phase (degrees)'
         plot_prefix = 'Phase'
-
     else:  # Default to gain
-        data_co = pattern.get_gain_db('e_co')
-        data_cx = pattern.get_gain_db('e_cx') if show_cross_pol else None
+        data_co = pattern.get_gain_db(main_component)
+        data_cx = pattern.get_gain_db(cross_component) if show_cross_pol else None
         y_label = 'Gain (dBi)'
         plot_prefix = 'Gain'
 

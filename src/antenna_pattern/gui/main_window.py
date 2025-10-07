@@ -50,9 +50,11 @@ class MainWindow(QMainWindow):
         # Create controls widget (left side)
         self.controls = ControlsWidget()
         self.controls.parameters_changed.connect(self.on_parameters_changed)
+        
         # Connect new processing signals
         self.controls.apply_phase_center_signal.connect(self.on_apply_phase_center)
         self.controls.apply_mars_signal.connect(self.on_apply_mars)
+        self.controls.processing_tab.polarization_changed.connect(self.on_polarization_changed)
         self.controls.setMaximumWidth(400)  # Wider for collapsible sections
         self.controls.setMinimumWidth(350)
         
@@ -178,11 +180,10 @@ class MainWindow(QMainWindow):
         # Get current parameters from controls
         frequencies = self.controls.get_selected_frequencies()
         phi_angles = self.controls.get_selected_phi_angles()
-        polarization = self.controls.get_polarization()
         value_type = self.controls.get_value_type()
         show_cross_pol = self.controls.get_show_cross_pol()
         plot_format = self.controls.get_plot_format()
-        component = self.controls.get_component() if hasattr(self.controls, 'get_component') else 'e_co'
+        component = self.controls.get_component()
         
         # Get statistics parameters
         statistics_enabled = self.controls.get_statistics_enabled()
@@ -190,33 +191,17 @@ class MainWindow(QMainWindow):
         statistic_type = self.controls.get_statistic_type()
         percentile_range = self.controls.get_percentile_range()
         
-        # Update control visibility based on plot format
-        self.controls.update_controls_for_plot_format()  # NEW
+        # Get near field parameters
+        nearfield_data = self.controls.get_nearfield_data()
+        plot_nearfield = self.controls.get_plot_nearfield()
         
         # Convert to format expected by plot function
         freq_list = frequencies if len(frequencies) > 1 else (frequencies[0] if frequencies else None)
         phi_list = phi_angles if len(phi_angles) > 1 else (phi_angles[0] if phi_angles else None)
         
-        # Get pattern with desired polarization
-        plot_pattern = self.current_pattern
-        if polarization is not None:
-            # Create a copy with different polarization
-            try:
-                plot_pattern = AntennaPattern(
-                    theta=self.current_pattern.theta_angles,
-                    phi=self.current_pattern.phi_angles,
-                    frequency=self.current_pattern.frequencies,
-                    e_theta=self.current_pattern.data.e_theta.values.copy(),
-                    e_phi=self.current_pattern.data.e_phi.values.copy(),
-                    polarization=polarization
-                )
-            except Exception as e:
-                self.show_error(f"Error changing polarization: {str(e)}")
-                return
-        
         # Update plot with new parameters
         self.plot_widget.update_plot(
-            pattern=plot_pattern,
+            pattern=self.current_pattern,
             frequencies=freq_list,
             phi_angles=phi_list,
             value_type=value_type,
@@ -226,7 +211,9 @@ class MainWindow(QMainWindow):
             statistics_enabled=statistics_enabled,
             show_range=show_range,
             statistic_type=statistic_type,
-            percentile_range=percentile_range
+            percentile_range=percentile_range,
+            nearfield_data=nearfield_data,
+            plot_nearfield=plot_nearfield
         )
     
     def load_pattern(self, pattern, file_path=None):
@@ -285,6 +272,23 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.show_error(f"Error with phase center: {str(e)}")
             self.controls.apply_phase_center_check.setChecked(False)
+
+    def on_polarization_changed(self):
+        """Handle polarization change from processing tab."""
+        if self.current_pattern is None:
+            return
+        
+        try:
+            new_polarization = self.controls.get_polarization()
+            
+            # Only change if different from current
+            if new_polarization != self.current_pattern.polarization:
+                # Modify the current pattern's polarization
+                self.current_pattern.assign_polarization(new_polarization)
+                self.update_plot()
+                self.statusBar().showMessage(f"Polarization changed to {new_polarization}")
+        except Exception as e:
+            self.show_error(f"Error changing polarization: {str(e)}")
     
     def on_apply_mars(self, max_radial_extent):
         """Handle MARS application."""

@@ -143,124 +143,135 @@ class PlotWidget(QWidget):
         self.current_colorbar = None
 
     
-    def update_plot(self, pattern, frequencies=None, phi_angles=None, 
-                polarization=None, value_type='gain', show_cross_pol=True, 
-                plot_format='1d_cut', component='e_co', statistics_enabled=False,
-                show_range=True, statistic_type='mean', percentile_range=(25, 75)):
-        """Update the plot with new parameters."""
-
-        # Store parameters for replotting when formatting changes
-        self._last_plot_params = {
-            'pattern': pattern,
-            'frequencies': frequencies,
-            'phi_angles': phi_angles,
-            'polarization': polarization,
-            'value_type': value_type,
-            'show_cross_pol': show_cross_pol,
-            'plot_format': plot_format,
-            'component': component
-        }
-
-        if pattern is None:
-            return
-            
+    def update_plot(self, pattern, frequencies, phi_angles, value_type, 
+                    show_cross_pol, plot_format, component, 
+                    statistics_enabled=False, show_range=True, 
+                    statistic_type='mean', percentile_range=(25, 75),
+                    nearfield_data=None, plot_nearfield=False):  # ADD THESE PARAMS
+        """
+        Update the plot with new data and parameters.
+        
+        Args:
+            pattern: AntennaPattern object
+            frequencies: Frequency or list of frequencies to plot
+            phi_angles: Phi angle or list of phi angles to plot
+            value_type: Type of value to plot ('gain', 'phase', 'axial_ratio')
+            show_cross_pol: Whether to show cross-polarization
+            plot_format: Plot format ('1d_cut', '2d_polar', 'near_field')
+            component: Component to plot ('e_co', 'e_cx', 'e_theta', 'e_phi')
+            statistics_enabled: Whether to plot statistics instead of individual cuts
+            show_range: Whether to show min/max range for statistics
+            statistic_type: Type of statistic ('mean', 'median', 'rms', 'percentile', 'std')
+            percentile_range: Tuple of (lower, upper) percentiles
+            nearfield_data: Near field data dictionary (optional)
+            plot_nearfield: Whether to plot near field (optional)
+        """
+        import numpy as np
+        from ..plotting import plot_pattern_cut, plot_pattern_2d_polar, plot_pattern_statistics
+        
+        # Store current parameters for formatting updates
         self.current_pattern = pattern
-        
-        format_changed = (self.current_plot_format != plot_format)
+        self.current_frequencies = frequencies
+        self.current_phi_angles = phi_angles
+        self.current_value_type = value_type
+        self.current_show_cross_pol = show_cross_pol
         self.current_plot_format = plot_format
-        normalize = self.normalize_check.isChecked()
+        self.current_component = component
+        self.current_statistics_enabled = statistics_enabled
+        self.current_show_range = show_range
+        self.current_statistic_type = statistic_type
+        self.current_percentile_range = percentile_range
+        self.current_nearfield_data = nearfield_data
+        self.current_plot_nearfield = plot_nearfield
         
-        # Update control labels and visibility if format changed
-        if format_changed:
-            self.update_controls_for_plot_format()
-        
-        # Clear the figure
+        # Clear the current figure
         self.figure.clear()
+        self.ax = self.figure.add_subplot(111)
         
         try:
-            if plot_format == '2d_polar':
-                # Create 2D polar plot
-                ax = self.figure.add_subplot(111, projection='polar')
-                
-                # For 2D plots, use single frequency
-                if isinstance(frequencies, list) and frequencies:
-                    freq = frequencies[0]
-                elif frequencies is not None:
-                    freq = frequencies
+            # Handle near field plotting
+            if plot_format == "near_field":
+                if plot_nearfield and nearfield_data is not None:
+                    self.plot_nearfield(nearfield_data, value_type, component)
                 else:
-                    freq = pattern.frequencies[0]
+                    self.ax.clear()
+                    self.ax.text(0.5, 0.5, 'Calculate Near Field in Analysis tab',
+                                ha='center', va='center', transform=self.ax.transAxes,
+                                fontsize=12)
+                    self.ax.set_xlim(0, 1)
+                    self.ax.set_ylim(0, 1)
+                    self.ax.axis('off')
+                self.canvas.draw()
+                return
+            
+            # Statistics plot
+            if statistics_enabled:
+                # Determine statistic_over based on what's selected
+                if isinstance(phi_angles, list) and len(phi_angles) > 1:
+                    statistic_over = 'phi'
+                    freq_for_stats = frequencies if isinstance(frequencies, (int, float)) else frequencies[0]
+                elif isinstance(frequencies, list) and len(frequencies) > 1:
+                    statistic_over = 'frequency'
+                    freq_for_stats = None
+                else:
+                    # Default to phi if only one of each is selected
+                    statistic_over = 'phi'
+                    freq_for_stats = frequencies if isinstance(frequencies, (int, float)) else frequencies[0]
                 
-                # Get colorbar limits from Z controls
-                vmin, vmax = self.get_colorbar_limits()
-                
-                fig, cbar = plot_pattern_2d_polar(
-                    pattern=pattern,
-                    frequency=freq,
-                    component=component,
-                    value_type=value_type.lower(),
-                    normalize=normalize,  # Add this
-                    ax=ax,
-                    title=None,
-                    colorbar=self.legend_colorbar_check.isChecked(),
-                    vmin=vmin,
-                    vmax=vmax
+                phi_for_stats = None if statistic_over == 'phi' else (
+                    phi_angles if isinstance(phi_angles, (int, float)) else phi_angles[0]
                 )
-
-                # Store colorbar reference
-                self.current_colorbar = cbar
                 
-                # Update toolbar for polar plots
-                self.toolbar.update()
-                
+                plot_pattern_statistics(
+                    pattern=pattern,
+                    statistic_over=statistic_over,
+                    frequency=freq_for_stats,
+                    phi=phi_for_stats,
+                    component=component,
+                    value_type=value_type,
+                    statistic=statistic_type,
+                    percentile_range=percentile_range,
+                    show_range=show_range,
+                    ax=self.ax
+                )
+            
+            # 2D polar plot
+            elif plot_format == "2d_polar":
+                plot_pattern_2d_polar(
+                    pattern=pattern,
+                    frequency=frequencies,
+                    component=component,
+                    value_type=value_type,
+                    ax=self.ax
+                )
+            
+            # 1D cut plot (default)
             else:
-                # Create 1D cut plot
-                ax = self.figure.add_subplot(111)
-                
-                if statistics_enabled:
-                    # Plot statistics instead of normal cuts
-                    from ..plotting import plot_pattern_statistics
-                    
-                    plot_pattern_statistics(
-                        pattern=pattern,
-                        statistic_over='phi',  # Default to statistics over phi
-                        frequency=frequencies if isinstance(frequencies, (int, float)) else frequencies[0] if frequencies else None,
-                        component=component,
-                        value_type=value_type.lower(),
-                        statistic=statistic_type,
-                        percentile_range=percentile_range,
-                        show_range=show_range,
-                        ax=ax,
-                        title=None
-                    )
-                else:
-                    # Normal plot
-                    plot_pattern_cut(
-                        pattern=pattern,
-                        frequency=frequencies,
-                        phi=phi_angles,
-                        show_cross_pol=show_cross_pol,
-                        value_type=value_type.lower(),
-                        ax=ax,
-                        title=None
-                    )
-                
-                # Clear colorbar reference for 1D plots
-                self.current_colorbar = None
-                
-            # Apply formatting after plot creation
-            if len(self.figure.axes) > 0:
-                self.apply_plot_formatting(self.figure.axes[0])
-                
+                plot_pattern_cut(
+                    pattern=pattern,
+                    frequency=frequencies,
+                    phi=phi_angles,
+                    show_cross_pol=show_cross_pol,
+                    value_type=value_type,
+                    component=component,
+                    ax=self.ax
+                )
+            
+            # Apply formatting
+            self.update_plot_formatting()
+            
         except Exception as e:
-            # Show error message on plot
-            ax = self.figure.add_subplot(111)
-            ax.text(0.5, 0.5, f"Plot Error:\n{str(e)}", 
-                ha='center', va='center', transform=ax.transAxes,
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="lightcoral"))
-            ax.set_xlim(0, 1)
-            ax.set_ylim(0, 1)
+            self.ax.clear()
+            self.ax.text(0.5, 0.5, f'Error plotting:\n{str(e)}',
+                        ha='center', va='center', transform=self.ax.transAxes,
+                        fontsize=10, color='red')
+            self.ax.set_xlim(0, 1)
+            self.ax.set_ylim(0, 1)
+            self.ax.axis('off')
+            print(f"Plotting error: {e}")
+            import traceback
+            traceback.print_exc()
         
-        # Refresh canvas
         self.canvas.draw()
 
     def update_controls_for_plot_format(self):
@@ -454,12 +465,24 @@ class PlotWidget(QWidget):
                     ax.set_ylim(new_min, new_max)
             except ValueError:
                 pass
-
     def replot_current_data(self):
-        """Replot the current data with updated settings (like normalization)."""
-        if hasattr(self, '_last_plot_params'):
-            # Replot with the same parameters as last time
-            self.update_plot(**self._last_plot_params)
+        """Replot using stored parameters."""
+        if self.current_pattern is not None:
+            self.update_plot(
+                pattern=self.current_pattern,
+                frequencies=self.current_frequencies,
+                phi_angles=self.current_phi_angles,
+                value_type=self.current_value_type,
+                show_cross_pol=self.current_show_cross_pol,
+                plot_format=self.current_plot_format,
+                component=self.current_component,
+                statistics_enabled=self.current_statistics_enabled,
+                show_range=self.current_show_range,
+                statistic_type=self.current_statistic_type,
+                percentile_range=self.current_percentile_range,
+                nearfield_data=self.current_nearfield_data, 
+                plot_nearfield=self.current_plot_nearfield 
+            )
             
     def update_plot_formatting(self):
         """Update plot formatting without replotting data."""
@@ -532,3 +555,83 @@ class PlotWidget(QWidget):
         self.y_theta_max_edit.setText('')
         self.z_min_edit.setText('')
         self.z_max_edit.setText('')
+
+    def plot_nearfield(self, nf_data, value_type, component):
+        """Plot near field data."""
+        import numpy as np
+        import matplotlib.pyplot as plt
+        
+        self.ax.clear()
+        
+        # Extract field components based on component selection
+        comp_map = {
+            'e_co': 'E_co',
+            'e_cx': 'E_cx', 
+            'e_theta': 'E_theta',
+            'e_phi': 'E_phi'
+        }
+        field_key = comp_map.get(component, 'E_theta')
+        
+        # Handle different field naming conventions
+        if field_key not in nf_data:
+            # Try lowercase versions
+            field_key_lower = field_key.lower()
+            if field_key_lower in nf_data:
+                field_key = field_key_lower
+            else:
+                self.ax.text(0.5, 0.5, f'{field_key} not available in near field data',
+                            ha='center', va='center', transform=self.ax.transAxes)
+                self.canvas.draw()
+                return
+        
+        field_data = nf_data[field_key]
+        
+        # Calculate value based on type
+        if value_type == 'gain':
+            values = 20 * np.log10(np.abs(field_data) + 1e-12)
+            label = 'Magnitude (dB)'
+        elif value_type == 'phase':
+            values = np.angle(field_data, deg=True)
+            label = 'Phase (degrees)'
+        else:
+            values = np.abs(field_data)
+            label = 'Magnitude (V/m)'
+        
+        if nf_data.get('is_spherical', True):
+            # Spherical surface plot
+            theta = nf_data['theta']
+            phi = nf_data['phi']
+            
+            # Create meshgrid
+            PHI, THETA = np.meshgrid(phi, theta)
+            
+            # 2D color plot
+            im = self.ax.pcolormesh(PHI, THETA, values, shading='auto', cmap='viridis')
+            self.ax.set_xlabel('Phi (degrees)')
+            self.ax.set_ylabel('Theta (degrees)')
+            self.ax.set_title(f'Near Field on Sphere - {field_key} - {label}')
+            
+            if self.legend_colorbar_check.isChecked():
+                plt.colorbar(im, ax=self.ax, label=label)
+        else:
+            # Planar surface plot
+            x = nf_data['x']
+            y = nf_data['y']
+            
+            # Create meshgrid
+            X, Y = np.meshgrid(x, y)
+            
+            # 2D color plot
+            im = self.ax.pcolormesh(X, Y, values.T, shading='auto', cmap='viridis')
+            self.ax.set_xlabel('X (m)')
+            self.ax.set_ylabel('Y (m)')
+            self.ax.set_title(f'Near Field on Plane - {field_key} - {label}')
+            self.ax.set_aspect('equal')
+            
+            if self.legend_colorbar_check.isChecked():
+                plt.colorbar(im, ax=self.ax, label=label)
+        
+        if self.grid_check.isChecked():
+            self.ax.grid(True, alpha=0.3)
+        
+        self.figure.tight_layout()
