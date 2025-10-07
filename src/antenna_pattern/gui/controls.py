@@ -8,6 +8,7 @@ from PyQt6.QtCore import pyqtSignal
 from .view_tab import ViewTab
 from .processing_tab import ProcessingTab
 from .analysis_tab import AnalysisTab
+from .swe_worker import SWEWorker
 
 
 class ControlsWidget(QWidget):
@@ -71,24 +72,67 @@ class ControlsWidget(QWidget):
         if not self.current_pattern:
             return
         
+        # Prevent multiple simultaneous calculations
+        if hasattr(self, 'swe_worker') and self.swe_worker.isRunning():
+            return
+        
         try:
+            # Import the worker
+            from .swe_worker import SWEWorker
+            
             # Get parameters
             adaptive = self.analysis_tab.get_swe_adaptive()
             radius = None if adaptive else self.analysis_tab.get_swe_radius()
             frequency = self.analysis_tab.get_swe_frequency()
             
-            # Calculate SWE
-            swe_data = self.current_pattern.calculate_spherical_modes(
-                radius=radius,
-                frequency=frequency,
-                adaptive=adaptive
+            # Update button state
+            self.analysis_tab.calculate_swe_btn.setEnabled(False)
+            self.analysis_tab.calculate_swe_btn.setText("Calculating...")
+            
+            # Create and configure worker thread
+            self.swe_worker = SWEWorker(
+                self.current_pattern,
+                radius,
+                frequency,
+                adaptive
             )
             
-            # Display results
-            self.analysis_tab.display_swe_results(swe_data)
+            # Connect signals
+            self.swe_worker.finished.connect(self.on_swe_finished)
+            self.swe_worker.error.connect(self.on_swe_error)
+            self.swe_worker.progress.connect(self.on_swe_progress)
+            
+            # Start the calculation in background
+            self.swe_worker.start()
             
         except Exception as e:
+            import logging
+            logging.error(f"Error starting SWE calculation: {e}", exc_info=True)
             self.analysis_tab.swe_results.setText(f"Error: {str(e)}")
+            self.analysis_tab.calculate_swe_btn.setEnabled(True)
+            self.analysis_tab.calculate_swe_btn.setText("Calculate SWE Coefficients")
+    
+    def on_swe_finished(self, swe_data):
+        """Handle successful SWE calculation."""
+        # Display results
+        self.analysis_tab.display_swe_results(swe_data)
+        
+        # Re-enable button
+        self.analysis_tab.calculate_swe_btn.setEnabled(True)
+        self.analysis_tab.calculate_swe_btn.setText("Calculate SWE Coefficients")
+    
+    def on_swe_error(self, error_msg):
+        """Handle SWE calculation error."""
+        self.analysis_tab.swe_results.setText(f"Error: {error_msg}")
+        
+        # Re-enable button
+        self.analysis_tab.calculate_swe_btn.setEnabled(True)
+        self.analysis_tab.calculate_swe_btn.setText("Calculate SWE Coefficients")
+    
+    def on_swe_progress(self, message):
+        """Handle SWE calculation progress updates."""
+        # Could update a progress bar or status message here
+        pass
     
     def on_calculate_nearfield(self):
         """Handle near field calculation request."""

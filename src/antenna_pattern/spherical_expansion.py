@@ -41,27 +41,27 @@ def calculate_mode_index_N(k: float, r0: float) -> int:
 def normalized_associated_legendre(n: int, m: int, theta: np.ndarray) -> np.ndarray:
     """
     Calculate normalized associated Legendre polynomial.
-    
-    From equation (4.218):
-    P̄ₙᵐ(cos θ) = √[(2n+1)(n-m)! / (2(n+m)!)] Pₙᵐ(cos θ)
-    
-    Args:
-        n: Polar index
-        m: Azimuthal index (absolute value)
-        theta: Theta angles in radians
-        
-    Returns:
-        Normalized associated Legendre polynomial values
     """
-    cos_theta = np.cos(theta)
+    from scipy.special import gammaln
     
-    # Calculate the standard associated Legendre polynomial
-    # scipy's lpmv uses (m, n, x) ordering
+    # Critical check: |m| must be <= n
+    if abs(m) > n:
+        # Return zeros - this mode doesn't exist
+        return np.zeros_like(theta)
+    
+    cos_theta = np.cos(theta)
+    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+    
     Pnm = lpmv(abs(m), n, cos_theta)
     
-    # Calculate normalization factor
-    from scipy.special import factorial
-    norm = np.sqrt((2*n + 1) * factorial(n - abs(m)) / (2 * factorial(n + abs(m))))
+    # Calculate normalization factor using log-gamma
+    log_norm = 0.5 * (
+        np.log(2*n + 1) + 
+        gammaln(n - abs(m) + 1) - 
+        np.log(2) - 
+        gammaln(n + abs(m) + 1)
+    )
+    norm = np.exp(log_norm)
     
     return norm * Pnm
 
@@ -69,26 +69,39 @@ def normalized_associated_legendre(n: int, m: int, theta: np.ndarray) -> np.ndar
 def normalized_legendre_derivative(n: int, m: int, theta: np.ndarray) -> np.ndarray:
     """
     Calculate derivative of normalized associated Legendre polynomial with respect to θ.
-    
-    dP̄ₙᵐ(cos θ)/dθ
-    
-    Args:
-        n: Polar index
-        m: Azimuthal index
-        theta: Theta angles in radians
-        
-    Returns:
-        Derivative values
     """
-    # Use finite difference for now - can be optimized later with analytical formula
-    dtheta = 1e-6
-    theta_plus = theta + dtheta
-    theta_minus = theta - dtheta
+    # Critical check: |m| must be <= n
+    if abs(m) > n:
+        return np.zeros_like(theta)
     
-    P_plus = normalized_associated_legendre(n, m, theta_plus)
-    P_minus = normalized_associated_legendre(n, m, theta_minus)
+    cos_theta = np.cos(theta)
+    sin_theta = np.sin(theta)
     
-    return (P_plus - P_minus) / (2 * dtheta)
+    # Get current Legendre polynomial
+    Pnm = normalized_associated_legendre(n, m, theta)
+    
+    if n == 0:
+        return np.zeros_like(theta)
+    
+    # Check if we can use the recurrence relation
+    # We need |m| <= (n-1) to compute P_{n-1}^m
+    if abs(m) <= (n - 1):
+        Pnm_minus1 = normalized_associated_legendre(n-1, m, theta)
+        
+        # Avoid division by zero at poles
+        sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
+        
+        # dP/dθ = [n*cos(θ)*P_n^m - (n+|m|)*P_{n-1}^m] / sin(θ)
+        dPnm = (n * cos_theta * Pnm - (n + abs(m)) * Pnm_minus1) / sin_theta_safe
+    else:
+        # For |m| = n, use alternative formula or finite difference
+        # Since P_n^n has a simple form, its derivative is also simple
+        sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
+        
+        # For |m| = n: dP/dθ = n * cos(θ) * P_n^m / sin(θ)
+        dPnm = n * cos_theta * Pnm / sin_theta_safe
+    
+    return dPnm
 
 
 def spherical_hankel_second_kind(n: int, kr: np.ndarray) -> np.ndarray:
@@ -162,6 +175,17 @@ def calculate_vector_expansion_functions(
     Returns:
         Tuple of (F_r, F_theta, F_phi) components
     """
+    # Validate inputs
+    if abs(m) > n:
+        logger.warning(f"Invalid mode: |m|={abs(m)} > n={n}, returning zeros")
+        r = np.atleast_1d(r)
+        theta = np.atleast_1d(theta)
+        phi = np.atleast_1d(phi)
+        r_grid, theta_grid, phi_grid = np.broadcast_arrays(r, theta, phi)
+        return (np.zeros_like(r_grid, dtype=complex), 
+                np.zeros_like(r_grid, dtype=complex), 
+                np.zeros_like(r_grid, dtype=complex))
+
     # Ensure arrays
     r = np.atleast_1d(r)
     theta = np.atleast_1d(theta)
@@ -341,6 +365,10 @@ def calculate_q_coefficients(
             m_max = min(n, M)
             
             for m in range(m_min, m_max + 1):
+                if abs(m) > n:
+                    logger.error(f"Invalid mode detected: s={s}, n={n}, m={m} (|m|>n)")
+                    continue
+
                 # Calculate vector expansion function F_smn at all pattern points
                 # Note: In far field, we evaluate at large radius
                 F_r, F_theta, F_phi = calculate_vector_expansion_functions(
@@ -355,7 +383,7 @@ def calculate_q_coefficients(
                 
                 # Numerical integration using trapezoidal rule
                 # ∫∫ f(θ,φ) sin(θ) dθ dφ
-                Q_smn = np.trapz(np.trapz(integrand, phi_rad, axis=1), theta_rad, axis=0)
+                Q_smn = np.trapezoid(np.trapezoid(integrand, phi_rad, axis=1), theta_rad, axis=0)
                 
                 # Apply normalization
                 Q_smn *= norm_factor

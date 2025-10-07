@@ -250,7 +250,61 @@ class AnalysisTab(QWidget):
         if not self.current_pattern:
             return
         
-        self.calculate_swe_signal.emit()
+        try:
+            # Disable button during calculation
+            self.calculate_swe_btn.setEnabled(False)
+            self.calculate_swe_btn.setText("Calculating...")
+            
+            # Get parameters from UI
+            adaptive = self.swe_adaptive_check.isChecked()
+            
+            # Get radius (only used if not adaptive, or as initial radius if adaptive)
+            radius = self.swe_radius_spin.value() if not adaptive else None
+            
+            # Get frequency index from combo box
+            freq_index = self.swe_freq_combo.currentIndex()
+            if freq_index < 0:
+                freq_index = 0
+            
+            if adaptive:
+                swe_data = self.current_pattern.calculate_spherical_modes(
+                    radius=radius,  # initial radius or None
+                    frequency=self.current_pattern.frequencies[freq_index],
+                    adaptive=True
+                )
+            else:
+                swe_data = self.current_pattern.calculate_spherical_modes(
+                    radius=radius,
+                    frequency=self.current_pattern.frequencies[freq_index],
+                    adaptive=False
+                )
+            
+            # Display results
+            results_text = f"=== SWE Calculation Complete ===\n"
+            results_text += f"Frequency: {swe_data['frequency']/1e9:.3f} GHz\n"
+            results_text += f"Wavelength: {swe_data['wavelength']:.6f} m\n"
+            results_text += f"Radius: {swe_data['radius']:.6f} m ({swe_data['radius']/swe_data['wavelength']:.2f}λ)\n"
+            results_text += f"Modes: N={swe_data['N']}, M={swe_data['M']}\n"
+            
+            if 'N_full' in swe_data:
+                results_text += f"Full modes before truncation: N={swe_data['N_full']}\n"
+            
+            results_text += f"Total mode power: {swe_data['mode_power']:.6e} W\n"
+            
+            if 'converged' in swe_data:
+                results_text += f"Converged: {'Yes' if swe_data['converged'] else 'No'}\n"
+                results_text += f"Iterations: {swe_data.get('iterations', 'N/A')}\n"
+            
+            self.swe_results.setText(results_text)
+            self.swe_calculated = True
+            
+        except Exception as e:
+            self.swe_results.setText(f"Error: {str(e)}")
+            
+        finally:
+            # Re-enable button
+            self.calculate_swe_btn.setEnabled(True)
+            self.calculate_swe_btn.setText("Calculate SWE Coefficients")
     
     def on_surface_type_changed(self, surface_type):
         """Handle surface type change."""
