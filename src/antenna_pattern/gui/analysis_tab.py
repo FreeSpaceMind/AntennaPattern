@@ -16,6 +16,7 @@ class AnalysisTab(QWidget):
     # Signals for analysis operations
     calculate_swe_signal = pyqtSignal()
     calculate_nearfield_signal = pyqtSignal()
+    plot_nearfield_changed = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -192,8 +193,9 @@ class AnalysisTab(QWidget):
         self.plot_nf_check = QCheckBox("Show Near Field in Plot")
         self.plot_nf_check.setChecked(True)
         self.plot_nf_check.setEnabled(False)
+        self.plot_nf_check.toggled.connect(self.plot_nearfield_changed.emit)  # ADD THIS LINE
         nf_group.addWidget(self.plot_nf_check)
-        
+
         # Results display
         self.nf_results = QTextEdit()
         self.nf_results.setReadOnly(True)
@@ -221,7 +223,6 @@ class AnalysisTab(QWidget):
     def update_pattern(self, pattern):
         """Update controls with new pattern."""
         self.current_pattern = pattern
-        self.swe_calculated = False
         self.nearfield_data = None
         
         # Update frequency combo for SWE
@@ -229,15 +230,31 @@ class AnalysisTab(QWidget):
         for freq in pattern.frequencies:
             self.swe_freq_combo.addItem(f"{freq/1e6:.2f} MHz")
         
-        # Enable SWE calculation
-        self.calculate_swe_btn.setEnabled(True)
+        # Check if pattern has loaded SWE data
+        if hasattr(pattern, 'swe') and pattern.swe:
+            self.swe_calculated = True
+            self._display_loaded_swe_data()
+            
+            # Enable near field calculation since SWE data exists
+            self.calculate_nf_btn.setEnabled(True)
+            self.plot_nf_check.setEnabled(True)
+            
+            # Keep SWE calculation button enabled (can recalculate)
+            self.calculate_swe_btn.setEnabled(True)
+        else:
+            self.swe_calculated = False
+            
+            # Enable SWE calculation
+            self.calculate_swe_btn.setEnabled(True)
+            
+            # Disable near field until SWE is calculated
+            self.calculate_nf_btn.setEnabled(False)
+            self.plot_nf_check.setEnabled(False)
+            
+            # Clear results
+            self.swe_results.clear()
         
-        # Disable near field until SWE is calculated
-        self.calculate_nf_btn.setEnabled(False)
-        self.plot_nf_check.setEnabled(False)
-        
-        # Clear results
-        self.swe_results.clear()
+        # Clear near field results
         self.nf_results.clear()
     
     def on_swe_adaptive_toggled(self, checked):
@@ -265,7 +282,14 @@ class AnalysisTab(QWidget):
             return
         
         self.calculate_nearfield_signal.emit()
-    
+
+    def on_plot_nearfield_toggled(self, checked):
+        """Handle plot near field checkbox toggle."""
+        if self.nearfield_data is not None:
+            # Emit signal to parent controls
+            # This requires adding a signal to AnalysisTab
+            pass
+        
     def display_swe_results(self, swe_data):
         """Display SWE calculation results."""
         self.swe_calculated = True
@@ -348,3 +372,37 @@ class AnalysisTab(QWidget):
     def get_plot_nearfield(self):
         """Get plot near field state."""
         return self.plot_nf_check.isChecked() and self.nearfield_data is not None
+    
+    def _display_loaded_swe_data(self):
+        """Display SWE data that was loaded from file."""
+        if not hasattr(self.current_pattern, 'swe') or not self.current_pattern.swe:
+            return
+        
+        num_frequencies = len(self.current_pattern.swe)
+        
+        if num_frequencies == 1:
+            # Single frequency - display detailed info
+            freq = list(self.current_pattern.swe.keys())[0]
+            swe_data = self.current_pattern.swe[freq]
+            
+            result_text = "SWE Coefficients (loaded from file):\n"
+            result_text += f"Frequency: {swe_data['frequency']/1e9:.3f} GHz\n"
+            result_text += f"Radius: {swe_data['radius']:.4f} m\n"
+            result_text += f"Mode indices: M={swe_data['M']}, N={swe_data['N']}\n"
+            result_text += f"Total power: {swe_data['mode_power']:.6e} W\n"
+            
+            if 'converged' in swe_data:
+                result_text += f"Converged: {swe_data['converged']}\n"
+                result_text += f"Iterations: {swe_data['iterations']}\n"
+                result_text += f"Power retained: {swe_data.get('power_retained_fraction', 1.0):.2%}\n"
+        else:
+            # Multiple frequencies - display summary
+            result_text = f"SWE Coefficients (loaded from file):\n"
+            result_text += f"{num_frequencies} frequencies with SWE data:\n\n"
+            
+            for freq, swe_data in self.current_pattern.swe.items():
+                result_text += f"  • {swe_data['frequency']/1e9:.3f} GHz: "
+                result_text += f"M={swe_data['M']}, N={swe_data['N']}, "
+                result_text += f"R={swe_data['radius']:.4f} m\n"
+        
+        self.swe_results.setText(result_text)

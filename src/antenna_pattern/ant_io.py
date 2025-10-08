@@ -54,16 +54,61 @@ def save_pattern_npz(pattern, file_path: Union[str, Path], metadata: Optional[Di
     # Convert metadata to JSON string
     meta_json = json.dumps(meta_dict)
     
+    # Prepare save dictionary
+    save_dict = {
+        'theta': theta,
+        'phi': phi,
+        'frequency': frequency,
+        'e_theta': e_theta,
+        'e_phi': e_phi,
+        'metadata': meta_json
+    }
+    
+    # Check if pattern has spherical wave expansion data
+    if hasattr(pattern, 'swe') and pattern.swe:
+        # Save each frequency's SWE data
+        swe_frequencies = list(pattern.swe.keys())
+        save_dict['swe_frequencies'] = np.array(swe_frequencies)
+        
+        for i, freq in enumerate(swe_frequencies):
+            swe_data = pattern.swe[freq]
+            prefix = f'swe_{i}_'
+            
+            # Save arrays
+            save_dict[f'{prefix}Q_coefficients'] = swe_data['Q_coefficients']
+            save_dict[f'{prefix}power_per_n'] = swe_data['power_per_n']
+            
+            # Save scalar/simple values - convert numpy types to Python types
+            swe_meta = {
+                'M': int(swe_data['M']),
+                'N': int(swe_data['N']),
+                'frequency': float(swe_data['frequency']),
+                'wavelength': float(swe_data['wavelength']),
+                'radius': float(swe_data['radius']),
+                'mode_power': float(swe_data['mode_power']),
+                'k': float(swe_data['k'])
+            }
+            
+            # Add optional adaptive parameters if present
+            for key in ['N_full', 'M_full', 'converged', 'iterations', 'power_retained_fraction']:
+                if key in swe_data:
+                    value = swe_data[key]
+                    # Convert numpy types to native Python types
+                    if isinstance(value, (np.integer, np.int64, np.int32)):
+                        swe_meta[key] = int(value)
+                    elif isinstance(value, (np.floating, np.float64, np.float32)):
+                        swe_meta[key] = float(value)
+                    elif isinstance(value, np.bool_):
+                        swe_meta[key] = bool(value)
+                    else:
+                        swe_meta[key] = value
+            
+            save_dict[f'{prefix}metadata'] = json.dumps(swe_meta)
+        
+        logger.info(f"Saving SWE data for {len(swe_frequencies)} frequency(ies)")
+    
     # Save data to NPZ file
-    np.savez_compressed(
-        file_path,
-        theta=theta,
-        phi=phi,
-        frequency=frequency,
-        e_theta=e_theta,
-        e_phi=e_phi,
-        metadata=meta_json
-    )
+    np.savez_compressed(file_path, **save_dict)
     logger.info(f"Pattern saved to {file_path}")
 
 
@@ -110,6 +155,44 @@ def load_pattern_npz(file_path: Union[str, Path]) -> Tuple:
             e_phi=e_phi,
             polarization=polarization
         )
+        
+        # Check if file contains SWE data
+        if 'swe_frequencies' in data:
+            swe_frequencies = data['swe_frequencies']
+            pattern.swe = {}
+            
+            for i, freq in enumerate(swe_frequencies):
+                prefix = f'swe_{i}_'
+                
+                # Load arrays
+                Q_coefficients = data[f'{prefix}Q_coefficients']
+                power_per_n = data[f'{prefix}power_per_n']
+                
+                # Load metadata
+                swe_meta_json = str(data[f'{prefix}metadata'])
+                swe_meta = json.loads(swe_meta_json)
+                
+                # Reconstruct SWE dictionary
+                swe_dict = {
+                    'Q_coefficients': Q_coefficients,
+                    'power_per_n': power_per_n,
+                    'M': swe_meta['M'],
+                    'N': swe_meta['N'],
+                    'frequency': swe_meta['frequency'],
+                    'wavelength': swe_meta['wavelength'],
+                    'radius': swe_meta['radius'],
+                    'mode_power': swe_meta['mode_power'],
+                    'k': swe_meta['k']
+                }
+                
+                # Add optional adaptive parameters if present
+                for key in ['N_full', 'M_full', 'converged', 'iterations', 'power_retained_fraction']:
+                    if key in swe_meta:
+                        swe_dict[key] = swe_meta[key]
+                
+                pattern.swe[freq] = swe_dict
+            
+            logger.info(f"Loaded SWE data for {len(swe_frequencies)} frequency(ies)")
         
         logger.info(f"Pattern loaded from {file_path}")
         return pattern, metadata

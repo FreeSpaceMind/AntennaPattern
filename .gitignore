@@ -27,6 +27,7 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+*.log
 
 # gitingest file
 digest.txt
@@ -77,3 +78,4 @@ venv.bak/
 # OS-specific files
 .DS_Store
 Thumbs.db
+antenna_pattern.log

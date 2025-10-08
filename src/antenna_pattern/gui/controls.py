@@ -52,6 +52,7 @@ class ControlsWidget(QWidget):
         # to on_polarization_changed, not relayed through parameters_changed
         self.analysis_tab.calculate_swe_signal.connect(self.on_calculate_swe)
         self.analysis_tab.calculate_nearfield_signal.connect(self.on_calculate_nearfield)
+        self.analysis_tab.plot_nearfield_changed.connect(self.parameters_changed.emit)
         
         layout.addWidget(self.tab_widget)
         self.setLayout(layout)
