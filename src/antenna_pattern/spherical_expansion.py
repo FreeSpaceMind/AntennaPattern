@@ -22,6 +22,7 @@ import numpy as np
 from typing import Tuple, Optional, Dict, Any, Union
 from scipy.special import sph_harm, lpmv, spherical_jn, spherical_yn
 import logging
+import math
 
 from .utilities import lightspeed, frequency_to_wavelength
 
@@ -36,7 +37,7 @@ def prepare_pattern_for_swe(
     pattern_obj,
     N: int,
     noise_floor_db: float = -40,
-    downsample_factor: float = 1.3
+    downsample_factor: float = 1.5
 ) -> Tuple:
     """
     Prepare pattern for SWE: extend to full sphere and downsample if oversampled.
@@ -260,9 +261,10 @@ def estimate_antenna_radius_from_pattern(pattern_obj, frequency_index: int = 0) 
 
 def precompute_legendre_fast(N: int, M: int, theta: np.ndarray) -> Dict:
     """
-    Fast Legendre polynomial computation using scipy's optimized sph_harm.
+    Fast Legendre polynomial computation using analytical derivatives.
     
-    This is 5-10x faster than manual computation with recurrence relations.
+    Uses scipy.special.lpmv for direct computation and recurrence relations
+    for exact derivative calculation (no numerical differentiation).
     
     Args:
         N: Maximum polar mode index
@@ -272,41 +274,57 @@ def precompute_legendre_fast(N: int, M: int, theta: np.ndarray) -> Dict:
     Returns:
         Dictionary cache with (n,m): Pnm and (n,m,'deriv'): dPnm/dtheta
     """
+    from scipy.special import lpmv
+    
     logger.info(f"Fast computing Legendre polynomials (N={N}, M={M})...")
     
     cache = {}
-    
-    # Ensure theta is at least 1D
     theta_shape = theta.shape
     theta_flat = theta.ravel()
-    phi_dummy = np.zeros_like(theta_flat)  # Dummy phi array
+    
+    # Pre-compute trig functions
+    cos_theta = np.cos(theta_flat)
+    sin_theta = np.sin(theta_flat)
+    
+    # Avoid division by zero at poles
+    sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
     
     computed = 0
     total = sum(1 for m in range(M+1) for n in range(max(1,m), N+1))
     
     for m in range(M + 1):
+        # Store unnormalized P_{n-1}^m for derivative computation
+        P_prev = None
+        
         for n in range(max(1, m), N + 1):
-            # Compute Y_n^m using scipy's highly optimized function
-            # At phi=0: Y_n^m(theta,0) = sqrt((2n+1)/(4π) * (n-m)!/(n+m)!) * P_n^m(cos θ)
-            Y_nm = sph_harm(m, n, phi_dummy, theta_flat)
+            # Compute unnormalized associated Legendre polynomial
+            P_nm_unnorm = lpmv(m, n, cos_theta)
             
-            # Extract normalized Legendre polynomial
-            # Our normalization: sqrt((2n+1)/2 * (n-m)!/(n+m)!)
-            # sph_harm normalization includes 1/(2π), so multiply by sqrt(2π)
-            Pnm_flat = np.real(Y_nm) * np.sqrt(2.0 * np.pi)
+            # Apply normalization: sqrt((2n+1)/2 * (n-m)!/(n+m)!)
+            norm_factor = np.sqrt((2*n + 1) / 2.0 * 
+                                 math.factorial(n - m) / math.factorial(n + m))
+            Pnm_flat = norm_factor * P_nm_unnorm
             Pnm = Pnm_flat.reshape(theta_shape)
             
-            # Compute derivative using high-order finite differences
-            if theta.ndim == 1:
-                dtheta = np.gradient(theta)
-                dPnm = np.gradient(Pnm, dtheta, edge_order=2)
-            else:
-                # For 2D, compute along theta dimension (axis 0)
-                dtheta = np.gradient(theta, axis=0)
-                dPnm = np.gradient(Pnm, axis=0, edge_order=2) / dtheta
+            # Compute derivative using recurrence relation:
+            # sin(θ) * dP_n^m/dθ = n*cos(θ)*P_n^m - (n+m)*P_{n-1}^m
+            if n > m and P_prev is not None:  # Can use recurrence
+                norm_prev = np.sqrt((2*(n-1) + 1) / 2.0 * 
+                                math.factorial(n - 1 - m) / math.factorial(n - 1 + m))
+                
+                dPnm_flat = ((n * cos_theta * Pnm_flat - 
+                            (n + m) * norm_prev * P_prev) / sin_theta_safe)
+            else:  # n == m or first iteration, use alternative formula
+                # For n=m: sin(θ) * dP_n^n/dθ = n*cos(θ)*P_n^n
+                dPnm_flat = (n * cos_theta * Pnm_flat) / sin_theta_safe
+            
+            dPnm = dPnm_flat.reshape(theta_shape)
             
             cache[(n, m)] = Pnm
             cache[(n, m, 'deriv')] = dPnm
+            
+            # Store for next iteration
+            P_prev = P_nm_unnorm
             
             computed += 1
             if computed % 200 == 0 or computed == total:
@@ -314,8 +332,6 @@ def precompute_legendre_fast(N: int, M: int, theta: np.ndarray) -> Dict:
     
     logger.info(f"OK Cached {len(cache)//2} Legendre polynomial pairs")
     return cache
-
-
 
 
 # ============================================================================
@@ -386,62 +402,61 @@ def calculate_q_coefficients(
     # === MODE COEFFICIENT EXTRACTION ===
     logger.info(f"Extracting mode coefficients...")
     Q_coefficients = np.zeros((2, 2*M + 1, N), dtype=complex)
-    
-    # normalization
+
+    # Pre-compute terms that don't change
     norm_factor = 1.0 / (4 * np.pi)
-    
+    sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
+
     total_modes = 2 * sum(min(2*n+1, 2*M+1) for n in range(1, N+1))
     mode_count = 0
-    
+
     for s in [1, 2]:
         for n in range(1, N + 1):
             m_min = max(-n, -M)
             m_max = min(n, M)
             
+            # Vectorize over all m for this n
+            m_vals = np.arange(m_min, m_max + 1)
+            
             hn = hankel_cache[n]
             dhn_dkr = hankel_cache[(n, 'deriv')]
             
-            for m in range(m_min, m_max + 1):
-                if abs(m) > n:
-                    continue
-                
-                # Get cached Legendre polynomials
-                Pnm = legendre_cache[(n, abs(m))]
-                dPnm_dtheta = legendre_cache[(n, abs(m), 'deriv')]
-                
-                # Phase and normalization
-                if m == 0:
-                    phase_factor = 1.0
-                elif m > 0:
-                    phase_factor = (-1.0) ** m
-                else:  # m < 0
-                    phase_factor = 1.0
-                norm = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
-                exp_imphi = np.exp(1j * m * PHI)
-                sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
-
-                # In calculate_q_coefficients for far-field patterns:
-                if s == 1:
-                    F_theta = -(dPnm_dtheta / sin_theta_safe) * exp_imphi
-                    F_phi = -(1j * m * Pnm / sin_theta_safe) * exp_imphi
-                else:  # s == 2
-                    F_theta = dPnm_dtheta * exp_imphi
-                    F_phi = (1j * m * Pnm / sin_theta_safe) * exp_imphi
-                
-                F_theta = norm * phase_factor * F_theta
-                F_phi = norm * phase_factor * F_phi
-                
-                # Inner product and integration
-                integrand = (e_theta * np.conj(F_theta) + 
-                           e_phi * np.conj(F_phi)) * sin_theta
-                
-                Q_smn = np.trapezoid(np.trapezoid(integrand, phi_rad, axis=1), 
-                                    theta_rad, axis=0)
-                Q_smn *= norm_factor
-                
-                Q_coefficients[s-1, m + M, n-1] = Q_smn
-                
-                mode_count += 1
+            # Get all Legendre polynomials for this n
+            abs_m_vals = np.abs(m_vals)
+            Pnm_list = np.array([legendre_cache[(n, abs_m)] for abs_m in abs_m_vals])  # shape: (len(m_vals), theta_size, phi_size)
+            dPnm_list = np.array([legendre_cache[(n, abs_m, 'deriv')] for abs_m in abs_m_vals])
+            
+            # Phase factors for all m
+            phase_factors = np.where(m_vals > 0, (-1.0) ** m_vals, 1.0)
+            norm = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
+            
+            # Compute exp(1j * m * PHI) for all m at once - shape: (len(m_vals), theta_size, phi_size)
+            exp_imphi = np.exp(1j * m_vals[:, None, None] * PHI[None, :, :])
+            
+            # Compute F_theta and F_phi for all m simultaneously
+            if s == 1:
+                F_theta = -(dPnm_list / sin_theta_safe[None, :, :]) * exp_imphi
+                F_phi = -(1j * m_vals[:, None, None] * Pnm_list / sin_theta_safe[None, :, :]) * exp_imphi
+            else:  # s == 2
+                F_theta = dPnm_list * exp_imphi
+                F_phi = (1j * m_vals[:, None, None] * Pnm_list / sin_theta_safe[None, :, :]) * exp_imphi
+            
+            # Apply normalization and phase
+            F_theta = norm * phase_factors[:, None, None] * F_theta
+            F_phi = norm * phase_factors[:, None, None] * F_phi
+            
+            # Compute all integrands at once - shape: (len(m_vals), theta_size, phi_size)
+            integrand = (e_theta[None, :, :] * np.conj(F_theta) + 
+                        e_phi[None, :, :] * np.conj(F_phi)) * sin_theta[None, :, :]
+            
+            # Integrate for all m at once
+            Q_smn_vals = np.trapezoid(np.trapezoid(integrand, phi_rad, axis=2), 
+                                    theta_rad, axis=1) * norm_factor
+            
+            # Store results
+            Q_coefficients[s-1, m_vals + M, n-1] = Q_smn_vals
+            
+            mode_count += len(m_vals)
             
             if n % 10 == 0 or n == N:
                 logger.info(f"  Processed modes up to n={n} ({mode_count}/{total_modes})")
@@ -793,7 +808,7 @@ def calculate_q_coefficients_adaptive(
     power_threshold: float = 0.99,
     convergence_threshold: float = 0.10,
     max_iterations: int = 3,
-    radius_growth_factor: float = 1.2,
+    radius_growth_factor: float = 1.5,
     noise_floor_db: float = -40
 ) -> Dict[str, Any]:
     """
