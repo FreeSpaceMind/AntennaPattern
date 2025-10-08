@@ -346,7 +346,6 @@ def extract_q_coefficients_fft(
     e_theta: np.ndarray,
     e_phi: np.ndarray,
     legendre_cache: Dict,
-    hankel_cache: Dict,
     M: int,
     N: int,
     k: float,
@@ -357,29 +356,10 @@ def extract_q_coefficients_fft(
     sin_theta: np.ndarray
 ) -> np.ndarray:
     """
-    Fast Q-coefficient extraction using FFT for azimuthal integration.
+    Fast Q-coefficient extraction from FAR-FIELD pattern using FFT.
     
-    This is 5-10x faster than trapezoid integration because:
-    1. FFT computes all m-modes simultaneously in O(N log N)
-    2. We only integrate over theta (not theta AND phi)
-    3. No explicit exp(imφ) computation needed
-    
-    Args:
-        e_theta: Theta component of electric field [n_theta, n_phi]
-        e_phi: Phi component of electric field [n_theta, n_phi]
-        legendre_cache: Precomputed Legendre polynomials
-        hankel_cache: Precomputed Hankel functions
-        M: Maximum azimuthal mode index
-        N: Maximum polar mode index
-        k: Wavenumber
-        radius: Sphere radius
-        theta_rad: Theta angles in radians (1D array)
-        phi_rad: Phi angles in radians (1D array)
-        THETA: Theta meshgrid
-        sin_theta: sin(THETA) meshgrid
-        
-    Returns:
-        Q_coefficients array [2, 2*M+1, N]
+    Note: This extracts from far-field patterns (no Hankel functions needed).
+    The far-field pattern already has the radial dependence factored out.
     """
     n_theta = len(theta_rad)
     n_phi = len(phi_rad)
@@ -387,51 +367,37 @@ def extract_q_coefficients_fft(
     
     Q_coefficients = np.zeros((2, 2*M + 1, N), dtype=complex)
     
-    # ===================================================================
-    # KEY OPTIMIZATION: FFT the fields once to get all azimuthal modes
-    # ===================================================================
+    # FFT the fields once
     logger.info("Computing FFT of field components...")
-    
-    # FFT over phi axis (axis=1)
-    # This gives us the m-th Fourier coefficient at each theta
-    e_theta_fft = np.fft.fft(e_theta, axis=1)  # [n_theta, n_phi]
+    e_theta_fft = np.fft.fft(e_theta, axis=1)
     e_phi_fft = np.fft.fft(e_phi, axis=1)
     
-    # Normalization factors
-    zeta = 376.730313668  # Free space impedance
-    norm_factor = 1.0 / (4 * np.pi * k * np.sqrt(2 * zeta))
+    # Normalization for far-field extraction
+    zeta = 376.730313668
+    norm_factor = np.sqrt(4.0 * np.pi) / (k * np.sqrt(2 * zeta))
     
-    # Phase factors for positive m (needed for Legendre convention)
-    # For negative m, phase_m = 1.0 (as defined in Hansen)
-    
-    # Integration weights
-    dtheta = theta_rad[1] - theta_rad[0] if len(theta_rad) > 1 else 1.0
     dphi = phi_rad[1] - phi_rad[0] if len(phi_rad) > 1 else 1.0
-    
-    # Sin(theta) for integration (1D, varies only with theta)
     sin_theta_1d = sin_theta[:, 0]
     
     logger.info(f"Extracting mode coefficients using FFT...")
     mode_count = 0
     total_modes = 2 * sum(min(2*n+1, 2*M+1) for n in range(1, N+1))
     
-    # ===================================================================
-    # Loop over all modes
-    # ===================================================================
     for s in [1, 2]:
         s_idx = s - 1
         
         for n in range(1, N + 1):
             n_idx = n - 1
             
-            # Get Hankel functions for this n
-            hn = hankel_cache[n]
-            dhn = hankel_cache[(n, 'deriv')]
-            
             # Mode normalization
             norm_n = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
             
-            # Determine m range for this n
+            # Far-field phase factor
+            if s == 1:
+                phase_n = (-1j) ** (n + 1)
+            else:
+                phase_n = (-1j) ** n
+            
             m_min = max(-n, -M)
             m_max = min(n, M)
             
@@ -439,75 +405,54 @@ def extract_q_coefficients_fft(
                 m_idx = m + M
                 abs_m = abs(m)
                 
-                # Get Legendre polynomials (only depend on |m|)
-                Pnm = legendre_cache[(n, abs_m)][:, 0]  # 1D array [n_theta]
+                Pnm = legendre_cache[(n, abs_m)][:, 0]
                 dPnm = legendre_cache[(n, abs_m, 'deriv')][:, 0]
                 
-                # Phase factor for m
                 if m == 0:
                     phase_m = 1.0
                 elif m > 0:
                     phase_m = (-1.0) ** m
-                else:  # m < 0
+                else:
                     phase_m = 1.0
                 
-                # ============================================================
-                # Compute basis functions (no phi dependence!)
-                # ============================================================
                 sin_theta_safe_1d = np.where(np.abs(sin_theta_1d) < 1e-10, 
                                              1e-10, sin_theta_1d)
                 
-                if s == 1:  # TE mode (m'_mn)
-                    # F_theta = -h_n(kr) * dP_nm/dθ / sin(θ) * exp(imφ)
-                    F_theta_basis = -hn * dPnm / sin_theta_safe_1d
-                    # F_phi = -h_n(kr) * im * P_nm / sin(θ) * exp(imφ)
-                    F_phi_basis = -hn * 1j * m * Pnm / sin_theta_safe_1d
-                    
-                else:  # s == 2, TM mode (n'_mn)
-                    # F_theta = (1/kr) * dh_n/d(kr) * dP_nm/dθ * exp(imφ)
-                    F_theta_basis = (1.0 / kr) * dhn * dPnm
-                    # F_phi = (1/kr) * dh_n/d(kr) * im * P_nm / sin(θ) * exp(imφ)
-                    F_phi_basis = (1.0 / kr) * dhn * 1j * m * Pnm / sin_theta_safe_1d
+                # Far-field basis functions (from Davidson eq 2,3)
+                if s == 1:  # TE
+                    K_theta_basis = 1j * m * Pnm / sin_theta_safe_1d
+                    K_phi_basis = -dPnm
+                else:  # TM
+                    K_theta_basis = dPnm
+                    K_phi_basis = 1j * m * Pnm / sin_theta_safe_1d
                 
-                # ============================================================
-                # KEY: Use FFT coefficient directly (no exp(imφ) needed!)
-                # ============================================================
-                # The FFT gives us the integral ∫ field * exp(-imφ) dφ
-                # We need ∫ field * conj(basis*exp(imφ)) dφ
-                #        = ∫ field * basis* * exp(-imφ) dφ
-                # So we use FFT coefficient and conjugate the basis
+                # Apply phase and normalization
+                K_theta_basis = norm_n * phase_m * phase_n * K_theta_basis
+                K_phi_basis = norm_n * phase_m * phase_n * K_phi_basis
                 
-                # Map m to FFT index
-                # FFT output: [0, 1, 2, ..., N/2, -N/2+1, ..., -2, -1]
-                # For m: use m if m>=0, else n_phi+m
+                # Get FFT coefficient
                 if m >= 0:
                     m_fft_idx = m
                 else:
                     m_fft_idx = n_phi + m
                 
-                # Get FFT coefficient at this m for all theta
-                e_theta_m = e_theta_fft[:, m_fft_idx]  # [n_theta]
+                e_theta_m = e_theta_fft[:, m_fft_idx]
                 e_phi_m = e_phi_fft[:, m_fft_idx]
                 
-                # Integrand over theta only (phi already integrated via FFT!)
-                # Note: conjugate the basis functions
+                # Integrate over theta
                 integrand_theta = (
-                    e_theta_m * np.conj(F_theta_basis) + 
-                    e_phi_m * np.conj(F_phi_basis)
+                    e_theta_m * np.conj(K_theta_basis) + 
+                    e_phi_m * np.conj(K_phi_basis)
                 ) * sin_theta_1d
                 
-                # Integrate over theta using trapezoid
                 integral_theta = np.trapezoid(integrand_theta, theta_rad)
                 
-                # Apply all normalization factors
-                # dphi comes from the FFT normalization (already accounts for phi integration)
                 Q_coefficients[s_idx, m_idx, n_idx] = (
-                    norm_factor * norm_n * phase_m * integral_theta * dphi
+                    norm_factor * integral_theta * dphi
                 )
                 
                 mode_count += 1
             
-            # Progress logging
             if n % 10 == 0 or n == N:
                 logger.info(f"  Processed modes up to n={n} ({mode_count}/{total_modes})")
     
@@ -582,7 +527,6 @@ def calculate_q_coefficients(
         e_theta=e_theta,
         e_phi=e_phi,
         legendre_cache=legendre_cache,
-        hankel_cache=hankel_cache,
         M=M,
         N=N,
         k=k,
