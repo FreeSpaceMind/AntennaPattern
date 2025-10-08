@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 def prepare_pattern_for_swe(
     pattern_obj,
     N: int,
-    noise_floor_db: float = -60,
-    downsample_factor: float = 2.0
+    noise_floor_db: float = -40,
+    downsample_factor: float = 1.3
 ) -> Tuple:
     """
     Prepare pattern for SWE: extend to full sphere and downsample if oversampled.
@@ -410,7 +410,12 @@ def calculate_q_coefficients(
                 dPnm_dtheta = legendre_cache[(n, abs(m), 'deriv')]
                 
                 # Phase and normalization
-                phase_factor = 1.0 if m == 0 else (-1.0) ** abs(m)
+                if m == 0:
+                    phase_factor = 1.0
+                elif m > 0:
+                    phase_factor = (-1.0) ** m
+                else:  # m < 0
+                    phase_factor = 1.0
                 norm = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
                 exp_imphi = np.exp(1j * m * PHI)
                 sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
@@ -652,8 +657,10 @@ def calculate_vector_expansion_functions(
     # Phase factor (-m/|m|)^m
     if m == 0:
         phase_factor = 1.0
-    else:
+    elif m > 0:
         phase_factor = (-1.0) ** m
+    else:  # m < 0
+        phase_factor = 1.0
     
     # Normalization
     norm = 1.0 / np.sqrt(2 * np.pi * np.sqrt(n * (n + 1)))
@@ -786,8 +793,8 @@ def calculate_q_coefficients_adaptive(
     power_threshold: float = 0.99,
     convergence_threshold: float = 0.10,
     max_iterations: int = 3,
-    radius_growth_factor: float = 1.5,
-    noise_floor_db: float = -60
+    radius_growth_factor: float = 1.2,
+    noise_floor_db: float = -40
 ) -> Dict[str, Any]:
     """
     TOP-LEVEL FUNCTION: Adaptive SWE with all optimizations.
@@ -798,8 +805,6 @@ def calculate_q_coefficients_adaptive(
     - Fast Legendre computation
     - Adaptive radius selection
     - Mode truncation
-    
-    This is 10-20x faster than original implementation.
     """
     from .utilities import frequency_to_wavelength
     
@@ -1117,7 +1122,12 @@ def evaluate_farfield_from_modes(
                 Pnm, dPnm_dtheta = legendre_cache[(n, abs(m))]
                 
                 # Phase factor for negative m
-                phase_m = 1.0 if m == 0 else (-1.0) ** abs(m)
+                if m == 0:
+                    phase_m = 1.0
+                elif m > 0:
+                    phase_m = (-1.0) ** m  
+                else:  # m < 0
+                    phase_m = 1.0
                 
                 # Azimuthal phase
                 exp_imphi = np.exp(1j * m * phi_grid)

@@ -860,9 +860,10 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
     M = swe_data['M']
     N = swe_data['N']
     
+    # Normalization factor for TICRA format: Q' = (1/√8π) * Q*
+    norm_factor = 1.0 / np.sqrt(8.0 * np.pi)
+    
     # Calculate NTHE and NPHI based on TICRA conventions
-    # NTHE = (n_theta - 1) * 2, where n_theta is number of theta samples
-    # For full sphere coverage with N modes, we need at least 2*N theta samples
     NTHE = 2 * N  # Must be even
     NPHI = 2 * M + 1  # Must be >= 3
     
@@ -880,39 +881,82 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
         MMAX = M
         f.write(f"{NTHE:6d}{NPHI:6d}{NMAX:6d}{MMAX:6d}\n")
         
-        # Records 4-8: Dummy data (5 text strings + 10 real numbers)
+        # Records 4-8: Dummy data
         f.write("Dummy text 1\n")
         f.write("     0.00000     0.00000     0.00000     0.00000     0.00000\n")
         f.write("     0.00000     0.00000     0.00000     0.00000     0.00000\n")
         f.write("Dummy text 2\n")
         f.write("Dummy text 3\n")
         
-        # Mode coefficients - organized by azimuthal index m
-        for m in range(-M, M + 1):
-            m_idx = m + M
-            
-            # Calculate power in this azimuthal mode (sum over n for both s=1,2)
+        # Mode coefficients - organized by |m| (absolute value of azimuthal index)
+        for m_abs in range(0, M + 1):
+            # Calculate power in this azimuthal mode
             power_m = 0.0
-            for n in range(max(1, abs(m)), N + 1):
-                n_idx = n - 1
-                for s_idx in range(2):
-                    power_m += np.abs(Q_coefficients[s_idx, m_idx, n_idx])**2
+            
+            if m_abs == 0:
+                # For m=0, only include m=0 coefficients
+                for n in range(1, N + 1):
+                    n_idx = n - 1
+                    m_idx = M  # m=0 is at index M
+                    for s_idx in range(2):
+                        power_m += np.abs(Q_coefficients[s_idx, m_idx, n_idx])**2
+            else:
+                # For m≠0, include both +m and -m
+                m_pos_idx = m_abs + M
+                m_neg_idx = -m_abs + M
+                for n in range(m_abs, N + 1):
+                    n_idx = n - 1
+                    for s_idx in range(2):
+                        power_m += np.abs(Q_coefficients[s_idx, m_neg_idx, n_idx])**2
+                        power_m += np.abs(Q_coefficients[s_idx, m_pos_idx, n_idx])**2
             
             # Record m.1: M, POWERM
-            f.write(f"{abs(m):6d}  {power_m:14.6e}\n")
+            f.write(f"{m_abs:6d}  {power_m:14.6e}\n")
             
-            # Record m.2: Q1MN, Q2MN for each n
-            # For m, write Q_smn for n = max(1,|m|) to N
-            for n in range(max(1, abs(m)), N + 1):
-                n_idx = n - 1
+            # Record m.2: Coefficients
+            if m_abs == 0:
+                # For m=0: write Q1,0,n and Q2,0,n for n=1 to N
+                m_idx = M
+                for n in range(1, N + 1):
+                    n_idx = n - 1
+                    
+                    Q1_0n = Q_coefficients[0, m_idx, n_idx]  # s=1 (TE)
+                    Q2_0n = Q_coefficients[1, m_idx, n_idx]  # s=2 (TM)
+                    
+                    # Apply normalization and conjugation
+                    Q1_file = Q1_0n.conjugate() * norm_factor
+                    Q2_file = Q2_0n.conjugate() * norm_factor
+                    
+                    f.write(f"  {Q1_file.real:14.6e}  {Q1_file.imag:14.6e}  "
+                           f"{Q2_file.real:14.6e}  {Q2_file.imag:14.6e}\n")
+            else:
+                # For m≠0: write Q(s,-m,n) then Q(s,+m,n) for each n
+                m_neg_idx = -m_abs + M
+                m_pos_idx = m_abs + M
                 
-                # Get coefficients for s=1 and s=2
-                Q1mn = Q_coefficients[0, m_idx, n_idx]  # s=1 (TM)
-                Q2mn = Q_coefficients[1, m_idx, n_idx]  # s=2 (TE)
-                
-                # Write as 4 real numbers per line: Q1_real, Q1_imag, Q2_real, Q2_imag
-                # Note: TICRA uses complex conjugate due to e^(+jwt) vs e^(-jwt) convention
-                f.write(f"  {Q1mn.real:14.6e}  {-Q1mn.imag:14.6e}  "
-                       f"{Q2mn.real:14.6e}  {-Q2mn.imag:14.6e}\n")
+                for n in range(m_abs, N + 1):
+                    n_idx = n - 1
+                    
+                    # Get -m coefficients
+                    Q1_neg = Q_coefficients[0, m_neg_idx, n_idx]  # s=1, -m, n (TE)
+                    Q2_neg = Q_coefficients[1, m_neg_idx, n_idx]  # s=2, -m, n (TM)
+                    
+                    # Get +m coefficients  
+                    Q1_pos = Q_coefficients[0, m_pos_idx, n_idx]  # s=1, +m, n (TE)
+                    Q2_pos = Q_coefficients[1, m_pos_idx, n_idx]  # s=2, +m, n (TM)
+                    
+                    # Apply normalization and conjugation
+                    Q1_neg_file = Q1_neg.conjugate() * norm_factor
+                    Q2_neg_file = Q2_neg.conjugate() * norm_factor
+                    Q1_pos_file = Q1_pos.conjugate() * norm_factor
+                    Q2_pos_file = Q2_pos.conjugate() * norm_factor
+                    
+                    # Write -m coefficients
+                    f.write(f"  {Q1_neg_file.real:14.6e}  {Q1_neg_file.imag:14.6e}  "
+                           f"{Q2_neg_file.real:14.6e}  {Q2_neg_file.imag:14.6e}\n")
+                    
+                    # Write +m coefficients
+                    f.write(f"  {Q1_pos_file.real:14.6e}  {Q1_pos_file.imag:14.6e}  "
+                           f"{Q2_pos_file.real:14.6e}  {Q2_pos_file.imag:14.6e}\n")
     
     logger.info(f"SWE coefficients exported to TICRA format: {file_path}")
