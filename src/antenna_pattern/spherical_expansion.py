@@ -1187,8 +1187,11 @@ def evaluate_farfield_from_modes(
         s_idx = s - 1
         
         for n in range(1, N + 1): 
-            # Far-field phase factor: (-j)^(n+1)
-            phase_n = (-1j) ** (n + 1)
+            # Far-field phase factor depends on s
+            if s == 1:
+                phase_n = (-1j) ** (n + 1)
+            else:  # s == 2
+                phase_n = (-1j) ** n
 
             # Mode normalization
             norm_n = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
