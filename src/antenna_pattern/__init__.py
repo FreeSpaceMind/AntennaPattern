@@ -18,7 +18,10 @@ from .ant_io import (
     load_pattern_npz, 
     save_pattern_npz,
     write_cut,
-    write_ffd
+    write_ffd,
+    save_swe_coefficients,
+    load_swe_coefficients,
+    create_pattern_from_swe
 )
 from .polarization import (
     polarization_tp2xy,
@@ -78,6 +81,7 @@ from .spherical_expansion import (
     calculate_mode_power_distribution,
     find_truncation_index,
     evaluate_field_from_modes,
+    evaluate_farfield_from_modes,
     calculate_nearfield_spherical_surface,
     calculate_nearfield_planar_surface,
     extend_pattern_for_swe
@@ -92,6 +96,9 @@ __all__ = [
     'save_pattern_npz',
     'write_cut',
     'write_ffd',
+    'save_swe_coefficients',
+    'load_swe_coefficients', 
+    'create_pattern_from_swe',
     'polarization_tp2xy',
     'polarization_xy2tp',
     'polarization_tp2rl',
@@ -137,6 +144,7 @@ __all__ = [
     'calculate_mode_power_distribution',
     'find_truncation_index',
     'evaluate_field_from_modes',
+    'evaluate_farfield_from_modes',
     'calculate_nearfield_spherical_surface',
     'calculate_nearfield_planar_surface',
     'extend_pattern_for_swe'

@@ -658,3 +658,174 @@ def write_ffd(pattern, file_path: Union[str, Path]) -> None:
                     eph = e_phi[freq_idx, theta_idx, phi_idx] * np.sqrt(60)
                     
                     f.write(f"{eth.real:.6e} {eth.imag:.6e} {eph.real:.6e} {eph.imag:.6e}\n")
+
+def save_swe_coefficients(swe_data: Dict[str, Any], file_path: Union[str, Path], 
+                         metadata: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Save spherical mode coefficients to NPZ format.
+    
+    Args:
+        swe_data: Dictionary from calculate_spherical_modes containing coefficients
+        file_path: Path to save the file to
+        metadata: Optional additional metadata to include
+        
+    Raises:
+        OSError: If file cannot be written
+    """
+    file_path = Path(file_path)
+    
+    # Ensure .npz extension
+    if file_path.suffix.lower() != '.npz':
+        file_path = file_path.with_suffix('.npz')
+    
+    # Build metadata dict
+    meta_dict = {
+        'M': int(swe_data['M']),
+        'N': int(swe_data['N']),
+        'frequency': float(swe_data['frequency']),
+        'wavelength': float(swe_data['wavelength']),
+        'radius': float(swe_data['radius']),
+        'mode_power': float(swe_data['mode_power']),
+        'k': float(swe_data['k']),
+        'file_type': 'AntPy_SWE_Coefficients',
+        'version': '1.0'
+    }
+    
+    # Add optional fields
+    for key in ['N_full', 'M_full', 'converged', 'iterations', 'power_retained_fraction']:
+        if key in swe_data:
+            value = swe_data[key]
+            # Convert numpy types to native Python types
+            if isinstance(value, (np.integer, np.int64, np.int32)):
+                meta_dict[key] = int(value)
+            elif isinstance(value, (np.floating, np.float64, np.float32)):
+                meta_dict[key] = float(value)
+            elif isinstance(value, np.bool_):
+                meta_dict[key] = bool(value)
+            else:
+                meta_dict[key] = value
+    
+    # Add user metadata
+    if metadata:
+        meta_dict.update(metadata)
+    
+    # Save
+    np.savez_compressed(
+        file_path,
+        Q_coefficients=swe_data['Q_coefficients'],
+        power_per_n=swe_data['power_per_n'],
+        metadata=json.dumps(meta_dict)
+    )
+    
+    logger.info(f"SWE coefficients saved to {file_path}")
+
+
+def load_swe_coefficients(file_path: Union[str, Path]) -> Dict[str, Any]:
+    """
+    Load spherical mode coefficients from NPZ format.
+    
+    Args:
+        file_path: Path to the NPZ file
+        
+    Returns:
+        Dictionary with same structure as calculate_spherical_modes output
+        
+    Raises:
+        FileNotFoundError: If file does not exist
+        ValueError: If file format is invalid
+    """
+    file_path = Path(file_path)
+    
+    if not file_path.exists():
+        raise FileNotFoundError(f"SWE file not found: {file_path}")
+    
+    with np.load(file_path, allow_pickle=False) as data:
+        Q_coefficients = data['Q_coefficients']
+        power_per_n = data['power_per_n']
+        
+        metadata_json = str(data['metadata'])
+        metadata = json.loads(metadata_json)
+        
+        # Reconstruct swe_data dictionary
+        swe_data = {
+            'Q_coefficients': Q_coefficients,
+            'power_per_n': power_per_n,
+            'M': metadata['M'],
+            'N': metadata['N'],
+            'frequency': metadata['frequency'],
+            'wavelength': metadata['wavelength'],
+            'radius': metadata['radius'],
+            'mode_power': metadata['mode_power'],
+            'k': metadata['k']
+        }
+        
+        # Add optional fields
+        for key in ['N_full', 'M_full', 'converged', 'iterations', 'power_retained_fraction']:
+            if key in metadata:
+                swe_data[key] = metadata[key]
+        
+        logger.info(f"SWE coefficients loaded from {file_path}")
+        return swe_data
+
+
+def create_pattern_from_swe(swe_data: Dict[str, Any],
+                           theta_angles: Optional[np.ndarray] = None,
+                           phi_angles: Optional[np.ndarray] = None) -> 'AntennaPattern':
+    """
+    Create a far field AntennaPattern from spherical mode coefficients.
+    
+    Args:
+        swe_data: Dictionary from calculate_spherical_modes or load_swe_coefficients
+        theta_angles: Theta angles in degrees (default: -180 to 180, 1° steps)
+        phi_angles: Phi angles in degrees (default: 0 to 360, 5° steps)
+        
+    Returns:
+        AntennaPattern object with reconstructed far field
+        
+    Notes:
+        Uses optimized far-field evaluation (no radial distance normalization).
+        The pattern represents the far-field angular distribution.
+    """
+    from .spherical_expansion import evaluate_farfield_from_modes
+    
+    # Default angles
+    if theta_angles is None:
+        theta_angles = np.arange(-180, 181, 1.0)
+    if phi_angles is None:
+        phi_angles = np.arange(0, 361, 5.0)
+    
+    # Create meshgrid
+    theta_rad = np.radians(theta_angles)
+    phi_rad = np.radians(phi_angles)
+    THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
+    
+    # Evaluate far field using optimized function
+    E_theta, E_phi = evaluate_farfield_from_modes(
+        swe_data['Q_coefficients'],
+        swe_data['M'],
+        swe_data['N'],
+        swe_data['k'],
+        THETA,
+        PHI,
+        normalize_to_radius=None  # No radial normalization for pattern
+    )
+    
+    # Create pattern (single frequency)
+    frequencies = np.array([swe_data['frequency']])
+    e_theta = E_theta[np.newaxis, :, :]  # Add frequency dimension
+    e_phi = E_phi[np.newaxis, :, :]
+    
+    pattern = AntennaPattern(
+        theta=theta_angles,
+        phi=phi_angles,
+        frequency=frequencies,
+        e_theta=e_theta,
+        e_phi=e_phi,
+        polarization='theta'
+    )
+    
+    # Attach SWE data
+    pattern.swe = {swe_data['frequency']: swe_data}
+    
+    logger.info(f"Pattern created from SWE coefficients at f={swe_data['frequency']/1e9:.3f} GHz")
+    return pattern

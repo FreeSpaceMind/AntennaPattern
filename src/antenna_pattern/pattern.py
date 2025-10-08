@@ -158,6 +158,40 @@ class AntennaPattern(PatternOperationsMixin):
         
         yield single_freq_pattern
 
+
+    @staticmethod
+    def from_swe_coefficients(file_path: Union[str, Path],
+                            theta_angles: Optional[np.ndarray] = None,
+                            phi_angles: Optional[np.ndarray] = None) -> 'AntennaPattern':
+        """
+        Create AntennaPattern from saved spherical mode coefficients.
+        
+        Args:
+            file_path: Path to .npz file with SWE coefficients
+            theta_angles: Theta angles in degrees (default: -180 to 180, 1°)
+            phi_angles: Phi angles in degrees (default: 0 to 360, 5°)
+            
+        Returns:
+            AntennaPattern reconstructed from mode coefficients
+            
+        Notes:
+            Uses optimized far-field reconstruction for fast pattern generation.
+            
+        Example:
+            ```python
+            # Save coefficients
+            pattern.calculate_spherical_modes()
+            pattern.save_swe_coefficients('antenna_modes.npz')
+            
+            # Later, reconstruct pattern
+            reconstructed = AntennaPattern.from_swe_coefficients('antenna_modes.npz')
+            ```
+        """
+        from .ant_io import load_swe_coefficients, create_pattern_from_swe
+        
+        swe_data = load_swe_coefficients(file_path)
+        return create_pattern_from_swe(swe_data, theta_angles, phi_angles)
+
     def copy(self) -> 'AntennaPattern':
         """
         Create a deep copy of the antenna pattern.
@@ -802,3 +836,31 @@ class AntennaPattern(PatternOperationsMixin):
         return calculate_nearfield_planar_surface(
             swe_data, x_points, y_points, z_plane
         )
+    
+    def save_swe_coefficients(self, file_path: Union[str, Path], 
+                            frequency: Optional[float] = None,
+                            metadata: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Save spherical mode coefficients to NPZ file.
+        
+        Args:
+            file_path: Path to save the file to
+            frequency: Frequency to save (if None, saves first available)
+            metadata: Optional additional metadata
+            
+        Raises:
+            RuntimeError: If no SWE coefficients exist
+            ValueError: If specified frequency not found
+        """
+        from .ant_io import save_swe_coefficients
+        
+        if not hasattr(self, 'swe') or len(self.swe) == 0:
+            raise RuntimeError("No SWE coefficients. Call calculate_spherical_modes() first.")
+        
+        if frequency is None:
+            frequency = list(self.swe.keys())[0]
+        elif frequency not in self.swe:
+            raise ValueError(f"No SWE data for frequency {frequency} Hz. "
+                        f"Available: {list(self.swe.keys())}")
+        
+        save_swe_coefficients(self.swe[frequency], file_path, metadata)
