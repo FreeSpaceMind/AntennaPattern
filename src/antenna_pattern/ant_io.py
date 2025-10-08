@@ -924,11 +924,12 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
                     Q2_0n = Q_coefficients[1, m_idx, n_idx]  # s=2 (TM)
                     
                     # Apply normalization and conjugation
+                    # No (-1)^m conversion needed for m=0
                     Q1_file = Q1_0n.conjugate() * norm_factor
                     Q2_file = Q2_0n.conjugate() * norm_factor
                     
                     f.write(f"  {Q1_file.real:14.6e}  {Q1_file.imag:14.6e}  "
-                           f"{Q2_file.real:14.6e}  {Q2_file.imag:14.6e}\n")
+                        f"{Q2_file.real:14.6e}  {Q2_file.imag:14.6e}\n")
             else:
                 # For m≠0: write Q(s,-m,n) then Q(s,+m,n) for each n
                 m_neg_idx = -m_abs + M
@@ -945,18 +946,23 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
                     Q1_pos = Q_coefficients[0, m_pos_idx, n_idx]  # s=1, +m, n (TE)
                     Q2_pos = Q_coefficients[1, m_pos_idx, n_idx]  # s=2, +m, n (TM)
                     
-                    # Apply normalization and conjugation
-                    Q1_neg_file = Q1_neg.conjugate() * norm_factor
-                    Q2_neg_file = Q2_neg.conjugate() * norm_factor
-                    Q1_pos_file = Q1_pos.conjugate() * norm_factor
-                    Q2_pos_file = Q2_pos.conjugate() * norm_factor
+                    # CRITICAL: Convert from scipy convention to Hansen convention
+                    # Hansen omits the (-1)^m factor that scipy includes
+                    # Therefore: Q_Hansen = Q_scipy * (-1)^m
+                    phase_correction = ((-1.0) ** m_abs)
+                    
+                    # Apply normalization, conjugation, AND phase correction
+                    Q1_neg_file = Q1_neg.conjugate() * norm_factor * phase_correction
+                    Q2_neg_file = Q2_neg.conjugate() * norm_factor * phase_correction
+                    Q1_pos_file = Q1_pos.conjugate() * norm_factor * phase_correction
+                    Q2_pos_file = Q2_pos.conjugate() * norm_factor * phase_correction
                     
                     # Write -m coefficients
                     f.write(f"  {Q1_neg_file.real:14.6e}  {Q1_neg_file.imag:14.6e}  "
-                           f"{Q2_neg_file.real:14.6e}  {Q2_neg_file.imag:14.6e}\n")
+                        f"{Q2_neg_file.real:14.6e}  {Q2_neg_file.imag:14.6e}\n")
                     
                     # Write +m coefficients
                     f.write(f"  {Q1_pos_file.real:14.6e}  {Q1_pos_file.imag:14.6e}  "
-                           f"{Q2_pos_file.real:14.6e}  {Q2_pos_file.imag:14.6e}\n")
+                        f"{Q2_pos_file.real:14.6e}  {Q2_pos_file.imag:14.6e}\n")
     
     logger.info(f"SWE coefficients exported to TICRA format: {file_path}")
