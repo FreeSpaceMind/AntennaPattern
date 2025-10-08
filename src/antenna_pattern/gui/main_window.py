@@ -191,10 +191,6 @@ class MainWindow(QMainWindow):
         statistic_type = self.controls.get_statistic_type()
         percentile_range = self.controls.get_percentile_range()
         
-        # Get near field parameters
-        nearfield_data = self.controls.get_nearfield_data()
-        plot_nearfield = self.controls.get_plot_nearfield()
-        
         # Convert to format expected by plot function
         freq_list = frequencies if len(frequencies) > 1 else (frequencies[0] if frequencies else None)
         phi_list = phi_angles if len(phi_angles) > 1 else (phi_angles[0] if phi_angles else None)
@@ -212,8 +208,6 @@ class MainWindow(QMainWindow):
             show_range=show_range,
             statistic_type=statistic_type,
             percentile_range=percentile_range,
-            nearfield_data=nearfield_data,
-            plot_nearfield=plot_nearfield
         )
     
     def load_pattern(self, pattern, file_path=None):

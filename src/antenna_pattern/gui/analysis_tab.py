@@ -16,7 +16,6 @@ class AnalysisTab(QWidget):
     # Signals for analysis operations
     calculate_swe_signal = pyqtSignal()
     calculate_nearfield_signal = pyqtSignal()
-    plot_nearfield_changed = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -188,13 +187,13 @@ class AnalysisTab(QWidget):
         self.calculate_nf_btn.clicked.connect(self.on_calculate_nearfield)
         self.calculate_nf_btn.setEnabled(False)
         nf_group.addWidget(self.calculate_nf_btn)
-        
-        # Plot near field checkbox
-        self.plot_nf_check = QCheckBox("Show Near Field in Plot")
-        self.plot_nf_check.setChecked(True)
-        self.plot_nf_check.setEnabled(False)
-        self.plot_nf_check.toggled.connect(self.plot_nearfield_changed.emit)  # ADD THIS LINE
-        nf_group.addWidget(self.plot_nf_check)
+
+        # View near field button (initially hidden)
+        self.view_nf_btn = QPushButton("View Near Field Plot")
+        self.view_nf_btn.clicked.connect(self.on_view_nearfield)
+        self.view_nf_btn.setEnabled(False)
+        self.view_nf_btn.setVisible(False)
+        nf_group.addWidget(self.view_nf_btn)
 
         # Results display
         self.nf_results = QTextEdit()
@@ -237,8 +236,7 @@ class AnalysisTab(QWidget):
             
             # Enable near field calculation since SWE data exists
             self.calculate_nf_btn.setEnabled(True)
-            self.plot_nf_check.setEnabled(True)
-            
+
             # Keep SWE calculation button enabled (can recalculate)
             self.calculate_swe_btn.setEnabled(True)
         else:
@@ -369,10 +367,6 @@ class AnalysisTab(QWidget):
             'y_points': self.nf_y_points_spin.value()
         }
     
-    def get_plot_nearfield(self):
-        """Get plot near field state."""
-        return self.plot_nf_check.isChecked() and self.nearfield_data is not None
-    
     def _display_loaded_swe_data(self):
         """Display SWE data that was loaded from file."""
         if not hasattr(self.current_pattern, 'swe') or not self.current_pattern.swe:
@@ -406,3 +400,33 @@ class AnalysisTab(QWidget):
                 result_text += f"R={swe_data['radius']:.4f} m\n"
         
         self.swe_results.setText(result_text)
+        
+    def on_view_nearfield(self):
+        """Handle view near field button click."""
+        if self.nearfield_data is not None:
+            from .nearfield_viewer import NearFieldViewer
+            viewer = NearFieldViewer(self.nearfield_data, parent=self)
+            viewer.show()
+
+    def display_nearfield_results(self, nf_data):
+        """Display near field calculation results."""
+        self.nearfield_data = nf_data
+        
+        surface_type = "spherical" if nf_data.get('is_spherical', True) else "planar"
+        result_text = f"Near Field Calculated ({surface_type}):\n"
+        
+        if surface_type == "spherical":
+            result_text += f"Radius: {nf_data['radius']:.4f} m\n"
+            result_text += f"Theta points: {len(nf_data['theta'])}\n"
+            result_text += f"Phi points: {len(nf_data['phi'])}\n"
+        else:
+            result_text += f"X extent: ±{nf_data['x_extent']:.3f} m\n"
+            result_text += f"Y extent: ±{nf_data['y_extent']:.3f} m\n"
+            result_text += f"Z distance: {nf_data['z_distance']:.4f} m\n"
+            result_text += f"Grid: {len(nf_data['x'])} × {len(nf_data['y'])} points\n"
+        
+        self.nf_results.setText(result_text)
+        
+        # Show and enable view button
+        self.view_nf_btn.setVisible(True)
+        self.view_nf_btn.setEnabled(True)

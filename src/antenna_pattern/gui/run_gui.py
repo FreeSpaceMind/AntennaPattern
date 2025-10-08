@@ -20,7 +20,6 @@ def main():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(sys.stdout),  # Print to console
-            logging.FileHandler('antenna_pattern.log')  # Also save to file
         ]
     )
     

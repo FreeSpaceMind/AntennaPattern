@@ -52,8 +52,7 @@ class ControlsWidget(QWidget):
         # to on_polarization_changed, not relayed through parameters_changed
         self.analysis_tab.calculate_swe_signal.connect(self.on_calculate_swe)
         self.analysis_tab.calculate_nearfield_signal.connect(self.on_calculate_nearfield)
-        self.analysis_tab.plot_nearfield_changed.connect(self.parameters_changed.emit)
-        
+
         layout.addWidget(self.tab_widget)
         self.setLayout(layout)
     
@@ -184,12 +183,15 @@ class ControlsWidget(QWidget):
             # Display results
             self.analysis_tab.display_nearfield_results(nf_data)
             
-            # Trigger plot update if plotting is enabled
-            if self.analysis_tab.get_plot_nearfield():
-                self.parameters_changed.emit()
+            # Open near field viewer window
+            from .nearfield_viewer import NearFieldViewer
+            viewer = NearFieldViewer(nf_data, parent=self)
+            viewer.show()
             
         except Exception as e:
-            self.analysis_tab.nf_results.setText(f"Error: {str(e)}")
+            import traceback
+            error_msg = f"Error: {str(e)}\n{traceback.format_exc()}"
+            self.analysis_tab.nf_results.setText(error_msg)
     
     # Getter methods - delegate to appropriate tabs
     def get_selected_frequencies(self):
@@ -235,14 +237,6 @@ class ControlsWidget(QWidget):
     def get_polarization(self):
         """Get polarization from processing tab."""
         return self.processing_tab.get_polarization()
-    
-    def get_nearfield_data(self):
-        """Get near field data from analysis tab."""
-        return self.analysis_tab.nearfield_data
-    
-    def get_plot_nearfield(self):
-        """Get plot near field state from analysis tab."""
-        return self.analysis_tab.get_plot_nearfield()
     
     # For backward compatibility with existing code
     @property

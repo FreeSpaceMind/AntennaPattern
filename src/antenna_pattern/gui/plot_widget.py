@@ -146,8 +146,8 @@ class PlotWidget(QWidget):
     def update_plot(self, pattern, frequencies, phi_angles, value_type, 
                     show_cross_pol, plot_format, component, 
                     statistics_enabled=False, show_range=True, 
-                    statistic_type='mean', percentile_range=(25, 75),
-                    nearfield_data=None, plot_nearfield=False):  # ADD THESE PARAMS
+                    statistic_type='mean', percentile_range=(25, 75)
+    ):
         """
         Update the plot with new data and parameters.
         
@@ -163,8 +163,6 @@ class PlotWidget(QWidget):
             show_range: Whether to show min/max range for statistics
             statistic_type: Type of statistic ('mean', 'median', 'rms', 'percentile', 'std')
             percentile_range: Tuple of (lower, upper) percentiles
-            nearfield_data: Near field data dictionary (optional)
-            plot_nearfield: Whether to plot near field (optional)
         """
         import numpy as np
         from ..plotting import plot_pattern_cut, plot_pattern_2d_polar, plot_pattern_statistics
@@ -181,29 +179,12 @@ class PlotWidget(QWidget):
         self.current_show_range = show_range
         self.current_statistic_type = statistic_type
         self.current_percentile_range = percentile_range
-        self.current_nearfield_data = nearfield_data
-        self.current_plot_nearfield = plot_nearfield
         
         # Clear the current figure
         self.figure.clear()
         self.ax = self.figure.add_subplot(111)
         
         try:
-            # Handle near field plotting
-            if plot_format == "near_field":
-                if plot_nearfield and nearfield_data is not None:
-                    self.plot_nearfield(nearfield_data, value_type, component)
-                else:
-                    self.ax.clear()
-                    self.ax.text(0.5, 0.5, 'Calculate Near Field in Analysis tab',
-                                ha='center', va='center', transform=self.ax.transAxes,
-                                fontsize=12)
-                    self.ax.set_xlim(0, 1)
-                    self.ax.set_ylim(0, 1)
-                    self.ax.axis('off')
-                self.canvas.draw()
-                return
-            
             # Statistics plot
             if statistics_enabled:
                 # Determine statistic_over based on what's selected
@@ -479,9 +460,7 @@ class PlotWidget(QWidget):
                 statistics_enabled=self.current_statistics_enabled,
                 show_range=self.current_show_range,
                 statistic_type=self.current_statistic_type,
-                percentile_range=self.current_percentile_range,
-                nearfield_data=self.current_nearfield_data, 
-                plot_nearfield=self.current_plot_nearfield 
+                percentile_range=self.current_percentile_range
             )
             
     def update_plot_formatting(self):
@@ -555,83 +534,3 @@ class PlotWidget(QWidget):
         self.y_theta_max_edit.setText('')
         self.z_min_edit.setText('')
         self.z_max_edit.setText('')
-
-    def plot_nearfield(self, nf_data, value_type, component):
-        """Plot near field data."""
-        import numpy as np
-        import matplotlib.pyplot as plt
-        
-        self.ax.clear()
-        
-        # Extract field components based on component selection
-        comp_map = {
-            'e_co': 'E_co',
-            'e_cx': 'E_cx', 
-            'e_theta': 'E_theta',
-            'e_phi': 'E_phi'
-        }
-        field_key = comp_map.get(component, 'E_theta')
-        
-        # Handle different field naming conventions
-        if field_key not in nf_data:
-            # Try lowercase versions
-            field_key_lower = field_key.lower()
-            if field_key_lower in nf_data:
-                field_key = field_key_lower
-            else:
-                self.ax.text(0.5, 0.5, f'{field_key} not available in near field data',
-                            ha='center', va='center', transform=self.ax.transAxes)
-                self.canvas.draw()
-                return
-        
-        field_data = nf_data[field_key]
-        
-        # Calculate value based on type
-        if value_type == 'gain':
-            values = 20 * np.log10(np.abs(field_data) + 1e-12)
-            label = 'Magnitude (dB)'
-        elif value_type == 'phase':
-            values = np.angle(field_data, deg=True)
-            label = 'Phase (degrees)'
-        else:
-            values = np.abs(field_data)
-            label = 'Magnitude (V/m)'
-        
-        if nf_data.get('is_spherical', True):
-            # Spherical surface plot
-            theta = nf_data['theta']
-            phi = nf_data['phi']
-            
-            # Create meshgrid
-            PHI, THETA = np.meshgrid(phi, theta)
-            
-            # 2D color plot
-            im = self.ax.pcolormesh(PHI, THETA, values, shading='auto', cmap='viridis')
-            self.ax.set_xlabel('Phi (degrees)')
-            self.ax.set_ylabel('Theta (degrees)')
-            self.ax.set_title(f'Near Field on Sphere - {field_key} - {label}')
-            
-            if self.legend_colorbar_check.isChecked():
-                plt.colorbar(im, ax=self.ax, label=label)
-        else:
-            # Planar surface plot
-            x = nf_data['x']
-            y = nf_data['y']
-            
-            # Create meshgrid
-            X, Y = np.meshgrid(x, y)
-            
-            # 2D color plot
-            im = self.ax.pcolormesh(X, Y, values.T, shading='auto', cmap='viridis')
-            self.ax.set_xlabel('X (m)')
-            self.ax.set_ylabel('Y (m)')
-            self.ax.set_title(f'Near Field on Plane - {field_key} - {label}')
-            self.ax.set_aspect('equal')
-            
-            if self.legend_colorbar_check.isChecked():
-                plt.colorbar(im, ax=self.ax, label=label)
-        
-        if self.grid_check.isChecked():
-            self.ax.grid(True, alpha=0.3)
-        
-        self.figure.tight_layout()
