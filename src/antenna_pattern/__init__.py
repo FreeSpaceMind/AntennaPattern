@@ -79,7 +79,8 @@ from .spherical_expansion import (
     find_truncation_index,
     evaluate_field_from_modes,
     calculate_nearfield_spherical_surface,
-    calculate_nearfield_planar_surface
+    calculate_nearfield_planar_surface,
+    extend_pattern_for_swe
 )
 
 # Define what gets imported with "from antenna_pattern import *"
@@ -137,5 +138,6 @@ __all__ = [
     'find_truncation_index',
     'evaluate_field_from_modes',
     'calculate_nearfield_spherical_surface',
-    'calculate_nearfield_planar_surface'
+    'calculate_nearfield_planar_surface',
+    'extend_pattern_for_swe'
 ]

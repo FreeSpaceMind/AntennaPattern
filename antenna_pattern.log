@@ -438,3 +438,375 @@ UnboundLocalError: cannot access local variable 'dtheta_actual' where it is not 
 2025-10-08 08:58:15,530 - antenna_pattern.spherical_expansion - INFO -   Actual:   dtheta = 0.25deg, dphi = 2.00deg
 2025-10-08 08:58:15,530 - antenna_pattern.spherical_expansion - WARNING - Pattern sampling may be insufficient for accurate mode calculation
 2025-10-08 08:58:15,531 - antenna_pattern.spherical_expansion - INFO - Vectorized pre-computation of Legendre polynomials for N=104, M=104...
+2025-10-08 09:02:30,828 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:02:58,742 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:02:58,756 - antenna_pattern.spherical_expansion - INFO - Estimated antenna radius from beamwidth (11.0 deg):
+2025-10-08 09:02:58,756 - antenna_pattern.spherical_expansion - INFO -   Aperture diameter: 0.2037 m (6.3 lambda)
+2025-10-08 09:02:58,756 - antenna_pattern.spherical_expansion - INFO -   Minimum sphere radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:02:58,756 - antenna_pattern.spherical_expansion - INFO - 
+=== Iteration 1: r0 = 0.3055 m (9.4 lambda) ===
+2025-10-08 09:02:58,756 - antenna_pattern.spherical_expansion - INFO - Pre-computing Legendre polynomials...
+2025-10-08 09:03:52,967 - antenna_pattern.spherical_expansion - INFO - Starting coefficient extraction for 10656 modes...
+2025-10-08 09:04:05,801 - antenna_pattern.spherical_expansion - INFO - 
+Mode power distribution (first 10 modes):
+2025-10-08 09:04:05,801 - antenna_pattern.spherical_expansion - INFO -   n=1: 3.838867e-08 (0.16%)
+2025-10-08 09:04:05,801 - antenna_pattern.spherical_expansion - INFO -   n=2: 7.663729e-08 (0.32%)
+2025-10-08 09:04:05,802 - antenna_pattern.spherical_expansion - INFO -   n=3: 1.386293e-07 (0.57%)
+2025-10-08 09:04:05,802 - antenna_pattern.spherical_expansion - INFO -   n=4: 2.181551e-07 (0.90%)
+2025-10-08 09:04:05,802 - antenna_pattern.spherical_expansion - INFO -   n=5: 3.148799e-07 (1.29%)
+2025-10-08 09:04:05,803 - antenna_pattern.spherical_expansion - INFO -   n=6: 4.257690e-07 (1.75%)
+2025-10-08 09:04:05,803 - antenna_pattern.spherical_expansion - INFO -   n=7: 5.422681e-07 (2.23%)
+2025-10-08 09:04:05,803 - antenna_pattern.spherical_expansion - INFO -   n=8: 6.491128e-07 (2.67%)
+2025-10-08 09:04:05,803 - antenna_pattern.spherical_expansion - INFO -   n=9: 7.261777e-07 (2.99%)
+2025-10-08 09:04:05,803 - antenna_pattern.spherical_expansion - INFO -   n=10: 7.556526e-07 (3.11%)
+2025-10-08 09:04:05,804 - antenna_pattern.spherical_expansion - INFO - 
+Total power: 2.432484e-05
+2025-10-08 09:04:05,804 - antenna_pattern.spherical_expansion - INFO - Power in first 10 modes: 16.0%
+2025-10-08 09:04:05,804 - antenna_pattern.spherical_expansion - INFO - Power in last 10 modes: 7.5%
+2025-10-08 09:04:05,888 - antenna_pattern.spherical_expansion - INFO -   Power check: first 10 modes=16.0%, last 7 modes=5.1%
+2025-10-08 09:04:05,888 - antenna_pattern.spherical_expansion - INFO -   N = 72 modes calculated
+2025-10-08 09:04:05,888 - antenna_pattern.spherical_expansion - INFO -   Power in highest modes: 5.1%
+2025-10-08 09:04:05,888 - antenna_pattern.spherical_expansion - INFO -   X Not converged, increasing radius by 1.5x
+2025-10-08 09:04:05,888 - antenna_pattern.spherical_expansion - INFO - 
+=== Iteration 2: r0 = 0.4583 m (14.1 lambda) ===
+2025-10-08 09:04:05,888 - antenna_pattern.spherical_expansion - INFO - Pre-computing Legendre polynomials...
+2025-10-08 09:09:14,780 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:09:29,086 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:09:29,086 - antenna_pattern.spherical_expansion - INFO - Estimated antenna radius from beamwidth (10.5 deg):
+2025-10-08 09:09:29,086 - antenna_pattern.spherical_expansion - INFO -   Aperture diameter: 0.2134 m (6.5 lambda)
+2025-10-08 09:09:29,086 - antenna_pattern.spherical_expansion - INFO -   Minimum sphere radius: 0.3201 m (9.8 lambda)
+2025-10-08 09:09:29,086 - antenna_pattern.spherical_expansion - INFO - 
+=== Iteration 1: r0 = 0.3201 m (9.8 lambda) ===
+2025-10-08 09:09:29,086 - antenna_pattern.spherical_expansion - INFO - Pre-computing Legendre polynomials...
+2025-10-08 09:10:54,469 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:11:06,849 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:11:06,849 - antenna_pattern.spherical_expansion - INFO - Estimated antenna radius from beamwidth (11.0 deg):
+2025-10-08 09:11:06,849 - antenna_pattern.spherical_expansion - INFO -   Aperture diameter: 0.2037 m (6.3 lambda)
+2025-10-08 09:11:06,849 - antenna_pattern.spherical_expansion - INFO -   Minimum sphere radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:11:06,849 - antenna_pattern.spherical_expansion - INFO - 
+=== Iteration 1: r0 = 0.3055 m (9.4 lambda) ===
+2025-10-08 09:11:06,849 - antenna_pattern.spherical_expansion - INFO - Pre-computing Legendre polynomials...
+2025-10-08 09:12:00,908 - antenna_pattern.spherical_expansion - INFO - Starting coefficient extraction for 10656 modes...
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO - 
+Mode power distribution (first 10 modes):
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO -   n=1: 1.550704e-07 (0.00%)
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO -   n=2: 2.087566e-06 (0.00%)
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO -   n=3: 1.432122e-05 (0.00%)
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO -   n=4: 6.087113e-05 (0.00%)
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO -   n=5: 1.941930e-04 (0.00%)
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO -   n=6: 5.082920e-04 (0.00%)
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO -   n=7: 1.137090e-03 (0.00%)
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO -   n=8: 2.210411e-03 (0.00%)
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO -   n=9: 3.744370e-03 (0.01%)
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO -   n=10: 5.505250e-03 (0.01%)
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO - 
+Total power: 5.843625e+01
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO - Power in first 10 modes: 0.0%
+2025-10-08 09:12:13,264 - antenna_pattern.spherical_expansion - INFO - Power in last 10 modes: 47.7%
+2025-10-08 09:12:13,350 - antenna_pattern.spherical_expansion - INFO -   Power check: first 10 modes=0.0%, last 7 modes=35.6%
+2025-10-08 09:12:13,352 - antenna_pattern.spherical_expansion - INFO -   N = 72 modes calculated
+2025-10-08 09:12:13,352 - antenna_pattern.spherical_expansion - INFO -   Power in highest modes: 35.6%
+2025-10-08 09:12:13,352 - antenna_pattern.spherical_expansion - INFO -   X Not converged, increasing radius by 1.5x
+2025-10-08 09:12:13,352 - antenna_pattern.spherical_expansion - INFO - 
+=== Iteration 2: r0 = 0.4583 m (14.1 lambda) ===
+2025-10-08 09:12:13,353 - antenna_pattern.spherical_expansion - INFO - Pre-computing Legendre polynomials...
+2025-10-08 09:15:03,860 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:26:58,310 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:27:09,576 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:27:09,576 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:27:09,576 - antenna_pattern.spherical_expansion - INFO - PATTERN EXTENSION FOR SWE ORTHOGONALITY
+2025-10-08 09:27:09,576 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:27:09,576 - antenna_pattern.spherical_expansion - INFO - Extending pattern from theta=[-45.0°, 45.0°] to [0°, 180°]
+2025-10-08 09:27:09,576 - antenna_pattern.spherical_expansion - INFO -   Noise floor: -60.0 dB below peak
+2025-10-08 09:27:09,576 - antenna_pattern.spherical_expansion - INFO -   Back hemisphere: constant noise floor (2 theta points)
+2025-10-08 09:27:09,576 - antenna_pattern.spherical_expansion - INFO -   Transition region: 179 points (45.0° to 90.0°)
+2025-10-08 09:27:09,576 - antenna_pattern.spherical_expansion - INFO -   Extended pattern: 542 theta points (was 361)
+2025-10-08 09:27:09,576 - antenna_pattern.spherical_expansion - INFO -   Theta range: [-45.0°, 180.0°]
+2025-10-08 09:27:09,593 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+
+2025-10-08 09:27:09,597 - antenna_pattern.spherical_expansion - INFO - Estimated antenna radius from beamwidth (11.0 deg):
+2025-10-08 09:27:09,597 - antenna_pattern.spherical_expansion - INFO -   Aperture diameter: 0.2037 m (6.3 lambda)
+2025-10-08 09:27:09,597 - antenna_pattern.spherical_expansion - INFO -   Minimum sphere radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:27:09,597 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:27:09,597 - antenna_pattern.spherical_expansion - INFO - ADAPTIVE SWE CALCULATION
+2025-10-08 09:27:09,598 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:27:09,598 - antenna_pattern.spherical_expansion - INFO - 
+=== Iteration 1: r0 = 0.3055 m (9.4 lambda) ===
+2025-10-08 09:27:09,599 - antenna_pattern.spherical_expansion - INFO - Pre-computing Legendre polynomials...
+2025-10-08 09:30:17,902 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:30:28,053 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:30:28,053 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:30:28,053 - antenna_pattern.spherical_expansion - INFO - PATTERN EXTENSION FOR SWE ORTHOGONALITY
+2025-10-08 09:30:28,053 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:30:28,053 - antenna_pattern.spherical_expansion - INFO - Detected CENTRAL pattern: theta=[-45.0°, 45.0°]
+2025-10-08 09:30:28,053 - antenna_pattern.spherical_expansion - INFO - Converting to standard coordinates [0°, 180°]...
+2025-10-08 09:30:28,064 - antenna_pattern.spherical_expansion - INFO -   After conversion: theta=[45.0°, 135.0°]
+2025-10-08 09:30:28,064 - antenna_pattern.spherical_expansion - INFO - Extending pattern from theta=[45.0°, 135.0°] to [0°, 180°]
+2025-10-08 09:30:28,065 - antenna_pattern.spherical_expansion - INFO -   Noise floor: -60.0 dB below peak
+2025-10-08 09:30:28,065 - antenna_pattern.spherical_expansion - INFO -   Back hemisphere: constant noise floor (2 theta points)
+2025-10-08 09:30:28,065 - antenna_pattern.spherical_expansion - INFO -   Front extension: 180 points (0° to 45.0°)
+2025-10-08 09:30:28,067 - antenna_pattern.spherical_expansion - INFO -   Extended pattern: 542 theta points (was 361)
+2025-10-08 09:30:28,067 - antenna_pattern.spherical_expansion - INFO -   Theta range: [0.0°, 180.0°]
+2025-10-08 09:30:28,068 - antenna_pattern.gui.swe_worker - ERROR - SWE calculation error: e_theta shape mismatch: expected (3, 542, 90), got (3, 543, 90)
+Traceback (most recent call last):
+  File "C:\Users\justin.long\Documents\Python\antenna_pattern\AntennaPattern\src\antenna_pattern\gui\swe_worker.py", line 32, in run
+    swe_data = self.pattern.calculate_spherical_modes(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\justin.long\Documents\Python\antenna_pattern\AntennaPattern\src\antenna_pattern\pattern.py", line 660, in calculate_spherical_modes
+    swe_data = calculate_q_coefficients_adaptive(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\justin.long\Documents\Python\antenna_pattern\AntennaPattern\src\antenna_pattern\spherical_expansion.py", line 864, in calculate_q_coefficients_adaptive
+    working_pattern = extend_pattern_for_swe(
+                      ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\justin.long\Documents\Python\antenna_pattern\AntennaPattern\src\antenna_pattern\spherical_expansion.py", line 1318, in extend_pattern_for_swe
+    extended_pattern = AntennaPattern(
+                       ^^^^^^^^^^^^^^^
+  File "C:\Users\justin.long\Documents\Python\antenna_pattern\AntennaPattern\src\antenna_pattern\pattern.py", line 81, in __init__
+    raise ValueError(f"e_theta shape mismatch: expected {expected_shape}, got {e_theta.shape}")
+ValueError: e_theta shape mismatch: expected (3, 542, 90), got (3, 543, 90)
+2025-10-08 09:35:04,397 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:35:15,918 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:35:15,918 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:35:15,918 - antenna_pattern.spherical_expansion - INFO - PATTERN EXTENSION FOR SWE ORTHOGONALITY
+2025-10-08 09:35:15,918 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:35:15,918 - antenna_pattern.spherical_expansion - INFO - Detected CENTRAL pattern: theta=[-45.0°, 45.0°]
+2025-10-08 09:35:15,918 - antenna_pattern.spherical_expansion - INFO - Converting to standard coordinates [0°, 180°]...
+2025-10-08 09:35:15,929 - antenna_pattern.spherical_expansion - INFO -   After conversion: theta=[45.0°, 135.0°]
+2025-10-08 09:35:15,929 - antenna_pattern.spherical_expansion - INFO - Extending pattern from theta=[45.0°, 135.0°] to [0°, 180°]
+2025-10-08 09:35:15,929 - antenna_pattern.spherical_expansion - INFO -   Noise floor: -60.0 dB below peak
+2025-10-08 09:35:15,929 - antenna_pattern.spherical_expansion - INFO -   Back hemisphere: constant noise floor (2 theta points)
+2025-10-08 09:35:15,929 - antenna_pattern.spherical_expansion - INFO -   Front extension: 180 points (0° to 45.0°)
+2025-10-08 09:35:15,929 - antenna_pattern.spherical_expansion - INFO -   Extended pattern: 542 theta points (was 361)
+2025-10-08 09:35:15,929 - antenna_pattern.spherical_expansion - INFO -   Theta range: [0.0°, 180.0°]
+2025-10-08 09:35:15,938 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+
+2025-10-08 09:35:15,939 - antenna_pattern.spherical_expansion - INFO - Estimated antenna radius from beamwidth (11.0 deg):
+2025-10-08 09:35:15,939 - antenna_pattern.spherical_expansion - INFO -   Aperture diameter: 0.2037 m (6.3 lambda)
+2025-10-08 09:35:15,939 - antenna_pattern.spherical_expansion - INFO -   Minimum sphere radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:35:15,939 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:35:15,939 - antenna_pattern.spherical_expansion - INFO - ADAPTIVE SWE CALCULATION
+2025-10-08 09:35:15,939 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:35:15,939 - antenna_pattern.spherical_expansion - INFO - 
+=== Iteration 1: r0 = 0.3055 m (9.4 lambda) ===
+2025-10-08 09:35:15,939 - antenna_pattern.spherical_expansion - INFO - Pre-computing Legendre polynomials...
+2025-10-08 09:39:46,678 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:39:59,726 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:39:59,726 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:39:59,726 - antenna_pattern.spherical_expansion - INFO - PATTERN EXTENSION FOR SWE ORTHOGONALITY
+2025-10-08 09:39:59,726 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:39:59,726 - antenna_pattern.spherical_expansion - INFO - Detected CENTRAL pattern: theta=[-45.0°, 45.0°]
+2025-10-08 09:39:59,726 - antenna_pattern.spherical_expansion - INFO - Converting to SIDED format using transform_coordinates()...
+2025-10-08 09:39:59,739 - antenna_pattern.spherical_expansion - INFO -   After conversion: theta=[0.0°, 45.0°]
+2025-10-08 09:39:59,739 - antenna_pattern.spherical_expansion - INFO - Extending pattern from theta=[0.0°, 45.0°] to [0°, 180°]
+2025-10-08 09:39:59,739 - antenna_pattern.spherical_expansion - INFO -   Noise floor: -60.0 dB below peak
+2025-10-08 09:39:59,739 - antenna_pattern.spherical_expansion - INFO -   Back hemisphere: constant noise floor (2 theta points)
+2025-10-08 09:39:59,742 - antenna_pattern.spherical_expansion - INFO -   Transition region: 179 points (45.0° to 90.0°)
+2025-10-08 09:39:59,743 - antenna_pattern.spherical_expansion - INFO -   Extended pattern: 362 theta points (was 181)
+2025-10-08 09:39:59,743 - antenna_pattern.spherical_expansion - INFO -   Theta range: [0.0°, 180.0°]
+2025-10-08 09:39:59,754 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+
+2025-10-08 09:39:59,754 - antenna_pattern.spherical_expansion - INFO - Estimated antenna radius from beamwidth (5.5 deg):
+2025-10-08 09:39:59,754 - antenna_pattern.spherical_expansion - INFO -   Aperture diameter: 0.4074 m (12.5 lambda)
+2025-10-08 09:39:59,754 - antenna_pattern.spherical_expansion - INFO -   Minimum sphere radius: 0.6110 m (18.8 lambda)
+2025-10-08 09:39:59,754 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:39:59,754 - antenna_pattern.spherical_expansion - INFO - ADAPTIVE SWE CALCULATION
+2025-10-08 09:39:59,754 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:39:59,754 - antenna_pattern.spherical_expansion - INFO - 
+=== Iteration 1: r0 = 0.6110 m (18.8 lambda) ===
+2025-10-08 09:39:59,757 - antenna_pattern.spherical_expansion - INFO - Pre-computing Legendre polynomials...
+2025-10-08 09:53:41,344 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:53:54,777 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:53:54,777 - antenna_pattern.spherical_expansion - INFO - Estimated antenna radius from beamwidth (11.0 deg):
+2025-10-08 09:53:54,777 - antenna_pattern.spherical_expansion - INFO -   Aperture diameter: 0.2037 m (6.3 lambda)
+2025-10-08 09:53:54,777 - antenna_pattern.spherical_expansion - INFO -   Minimum sphere radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:53:54,777 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:53:54,777 - antenna_pattern.spherical_expansion - INFO - ADAPTIVE SPHERICAL WAVE EXPANSION
+2025-10-08 09:53:54,777 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:53:54,777 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:53:54,793 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:53:54,793 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:53:54,794 - antenna_pattern.spherical_expansion - INFO - Q-COEFFICIENT CALCULATION
+2025-10-08 09:53:54,794 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:53:54,796 - antenna_pattern.spherical_expansion - INFO - Mode indices: N = 72, M = 72
+2025-10-08 09:53:54,797 - antenna_pattern.spherical_expansion - INFO - Preparing pattern for SWE...
+2025-10-08 09:53:54,797 - antenna_pattern.spherical_expansion - INFO -   Converting central pattern [-45.0°, 45.0°] to sided
+2025-10-08 09:53:54,805 - antenna_pattern.spherical_expansion - INFO -   Extending from theta=[0.0°, 45.0°] to full sphere
+2025-10-08 09:53:54,813 - antenna_pattern.spherical_expansion - INFO - 
+Sampling analysis for N=72:
+2025-10-08 09:53:54,819 - antenna_pattern.spherical_expansion - INFO - Fast computing Legendre polynomials (N=72, M=72)...
+2025-10-08 09:54:06,891 - antenna_pattern.spherical_expansion - INFO -   Cached 200/2700 modes...
+2025-10-08 09:56:40,860 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:57:00,225 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:57:00,225 - antenna_pattern.spherical_expansion - INFO - Estimated antenna radius from beamwidth (11.0 deg):
+2025-10-08 09:57:00,225 - antenna_pattern.spherical_expansion - INFO -   Aperture diameter: 0.2037 m (6.3 lambda)
+2025-10-08 09:57:00,225 - antenna_pattern.spherical_expansion - INFO -   Minimum sphere radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:57:00,225 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:57:00,225 - antenna_pattern.spherical_expansion - INFO - ADAPTIVE SPHERICAL WAVE EXPANSION
+2025-10-08 09:57:00,225 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:57:00,235 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:57:00,237 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:57:00,237 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:57:00,237 - antenna_pattern.spherical_expansion - INFO - Q-COEFFICIENT CALCULATION
+2025-10-08 09:57:00,237 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:57:00,237 - antenna_pattern.spherical_expansion - INFO - Frequency: 9.200 GHz (lambda = 32.59 mm)
+2025-10-08 09:57:00,237 - antenna_pattern.spherical_expansion - INFO - Radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:57:00,237 - antenna_pattern.spherical_expansion - INFO - Mode indices: N = 72, M = 72
+2025-10-08 09:57:00,237 - antenna_pattern.spherical_expansion - INFO - Preparing pattern for SWE...
+2025-10-08 09:57:00,238 - antenna_pattern.spherical_expansion - INFO -   Converting central pattern [-45.0deg, 45.0deg] to sided
+2025-10-08 09:57:00,246 - antenna_pattern.spherical_expansion - INFO -   Extending from theta=[0.0deg, 45.0deg] to full sphere
+2025-10-08 09:57:00,253 - antenna_pattern.spherical_expansion - INFO - 
+Sampling analysis for N=72:
+2025-10-08 09:57:00,254 - antenna_pattern.spherical_expansion - INFO -   Current:  dtheta = 0.99°, dphi = 2.00°
+2025-10-08 09:57:00,254 - antenna_pattern.spherical_expansion - INFO -   Oversample factors: theta=0.79x, phi=0.80x
+2025-10-08 09:57:00,255 - antenna_pattern.spherical_expansion - INFO -   OK Current sampling is optimal (close to Nyquist)
+2025-10-08 09:57:00,255 - antenna_pattern.spherical_expansion - INFO - Fast computing Legendre polynomials (N=72, M=72)...
+2025-10-08 09:57:13,001 - antenna_pattern.spherical_expansion - INFO -   Cached 200/2700 modes...
+2025-10-08 09:57:25,598 - antenna_pattern.spherical_expansion - INFO -   Cached 400/2700 modes...
+2025-10-08 09:57:38,703 - antenna_pattern.spherical_expansion - INFO -   Cached 600/2700 modes...
+2025-10-08 09:57:52,369 - antenna_pattern.spherical_expansion - INFO -   Cached 800/2700 modes...
+2025-10-08 09:58:06,061 - antenna_pattern.spherical_expansion - INFO -   Cached 1000/2700 modes...
+2025-10-08 09:58:13,081 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:58:25,221 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:58:25,221 - antenna_pattern.spherical_expansion - INFO - Estimated antenna radius from beamwidth (11.0 deg):
+2025-10-08 09:58:25,221 - antenna_pattern.spherical_expansion - INFO -   Aperture diameter: 0.2037 m (6.3 lambda)
+2025-10-08 09:58:25,221 - antenna_pattern.spherical_expansion - INFO -   Minimum sphere radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:58:25,221 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:58:25,221 - antenna_pattern.spherical_expansion - INFO - ADAPTIVE SPHERICAL WAVE EXPANSION
+2025-10-08 09:58:25,221 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:58:25,221 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:58:25,232 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:58:25,232 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:58:25,232 - antenna_pattern.spherical_expansion - INFO - Q-COEFFICIENT CALCULATION
+2025-10-08 09:58:25,232 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:58:25,233 - antenna_pattern.spherical_expansion - INFO - Frequency: 9.200 GHz (lambda = 32.59 mm)
+2025-10-08 09:58:25,233 - antenna_pattern.spherical_expansion - INFO - Radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:58:25,233 - antenna_pattern.spherical_expansion - INFO - Mode indices: N = 72, M = 72
+2025-10-08 09:58:25,233 - antenna_pattern.spherical_expansion - INFO - Preparing pattern for SWE...
+2025-10-08 09:58:25,233 - antenna_pattern.spherical_expansion - INFO -   Converting central pattern [-45.0deg, 45.0deg] to sided
+2025-10-08 09:58:25,245 - antenna_pattern.spherical_expansion - INFO -   Extending from theta=[0.0deg, 45.0deg] to full sphere
+2025-10-08 09:58:25,251 - antenna_pattern.spherical_expansion - INFO - 
+Sampling analysis for N=72:
+2025-10-08 09:58:25,252 - antenna_pattern.spherical_expansion - INFO -   Required: dtheta <= 1.25°, dphi <= 2.50°
+2025-10-08 09:58:25,252 - antenna_pattern.spherical_expansion - INFO -   Current:  dtheta = 0.99°, dphi = 2.00°
+2025-10-08 09:58:25,252 - antenna_pattern.spherical_expansion - INFO -   Oversample factors: theta=0.79x, phi=0.80x
+2025-10-08 09:58:25,253 - antenna_pattern.spherical_expansion - INFO -   OK Current sampling is optimal (close to Nyquist)
+2025-10-08 09:58:25,254 - antenna_pattern.spherical_expansion - INFO - Fast computing Legendre polynomials (N=72, M=72)...
+2025-10-08 09:58:37,877 - antenna_pattern.spherical_expansion - INFO -   Cached 200/2700 modes...
+2025-10-08 09:58:51,798 - antenna_pattern.spherical_expansion - INFO -   Cached 400/2700 modes...
+2025-10-08 09:58:59,096 - __main__ - INFO - Starting Antenna Pattern Analyzer GUI
+2025-10-08 09:59:08,770 - antenna_pattern.gui.swe_worker - INFO - SWE worker thread started
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - Estimated antenna radius from beamwidth (11.0 deg):
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO -   Aperture diameter: 0.2037 m (6.3 lambda)
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO -   Minimum sphere radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - ADAPTIVE SPHERICAL WAVE EXPANSION
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - Initial radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - ITERATION 1: r0 = 0.3055 m (9.4 lambda)
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - Q-COEFFICIENT CALCULATION
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - Frequency: 9.200 GHz (lambda = 32.59 mm)
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - Radius: 0.3055 m (9.4 lambda)
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - Mode indices: N = 72, M = 72
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO - Preparing pattern for SWE...
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO -   Converting central pattern [-45.0deg, 45.0deg] to sided
+2025-10-08 09:59:08,770 - antenna_pattern.spherical_expansion - INFO -   Extending from theta=[0.0deg, 45.0deg] to full sphere
+2025-10-08 09:59:08,789 - antenna_pattern.spherical_expansion - INFO - 
+Sampling analysis for N=72:
+2025-10-08 09:59:08,790 - antenna_pattern.spherical_expansion - INFO -   Required: dtheta <= 1.25°, dphi <= 2.50°
+2025-10-08 09:59:08,790 - antenna_pattern.spherical_expansion - INFO -   Current:  dtheta = 0.99°, dphi = 2.00°
+2025-10-08 09:59:08,790 - antenna_pattern.spherical_expansion - INFO -   Oversample factors: theta=0.79x, phi=0.80x
+2025-10-08 09:59:08,790 - antenna_pattern.spherical_expansion - INFO -   OK Current sampling is optimal (close to Nyquist)
+2025-10-08 09:59:08,792 - antenna_pattern.spherical_expansion - INFO - Fast computing Legendre polynomials (N=72, M=72)...
+2025-10-08 09:59:21,190 - antenna_pattern.spherical_expansion - INFO -   Cached 200/2700 modes...
+2025-10-08 09:59:33,439 - antenna_pattern.spherical_expansion - INFO -   Cached 400/2700 modes...
+2025-10-08 09:59:45,694 - antenna_pattern.spherical_expansion - INFO -   Cached 600/2700 modes...
+2025-10-08 09:59:58,553 - antenna_pattern.spherical_expansion - INFO -   Cached 800/2700 modes...
+2025-10-08 10:00:11,576 - antenna_pattern.spherical_expansion - INFO -   Cached 1000/2700 modes...
+2025-10-08 10:00:24,509 - antenna_pattern.spherical_expansion - INFO -   Cached 1200/2700 modes...
+2025-10-08 10:00:37,271 - antenna_pattern.spherical_expansion - INFO -   Cached 1400/2700 modes...
+2025-10-08 10:00:49,694 - antenna_pattern.spherical_expansion - INFO -   Cached 1600/2700 modes...
+2025-10-08 10:01:02,006 - antenna_pattern.spherical_expansion - INFO -   Cached 1800/2700 modes...
+2025-10-08 10:01:14,038 - antenna_pattern.spherical_expansion - INFO -   Cached 2000/2700 modes...
+2025-10-08 10:01:25,665 - antenna_pattern.spherical_expansion - INFO -   Cached 2200/2700 modes...
+2025-10-08 10:01:38,972 - antenna_pattern.spherical_expansion - INFO -   Cached 2400/2700 modes...
+2025-10-08 10:02:00,477 - antenna_pattern.spherical_expansion - INFO -   Cached 2600/2700 modes...
+2025-10-08 10:02:10,828 - antenna_pattern.spherical_expansion - INFO -   Cached 2700/2700 modes...
+2025-10-08 10:02:10,828 - antenna_pattern.spherical_expansion - INFO - OK Cached 2700 Legendre polynomial pairs
+2025-10-08 10:02:10,828 - antenna_pattern.spherical_expansion - INFO - Pre-computing spherical Hankel functions...
+2025-10-08 10:02:10,847 - antenna_pattern.spherical_expansion - INFO - Extracting mode coefficients...
+2025-10-08 10:02:11,113 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=10 (120/10656)
+2025-10-08 10:02:11,855 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=20 (440/10656)
+2025-10-08 10:02:13,288 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=30 (960/10656)
+2025-10-08 10:02:14,953 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=40 (1680/10656)
+2025-10-08 10:02:17,285 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=50 (2600/10656)
+2025-10-08 10:02:20,282 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=60 (3720/10656)
+2025-10-08 10:02:23,697 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=70 (5040/10656)
+2025-10-08 10:02:24,397 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=72 (5328/10656)
+2025-10-08 10:02:24,557 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=10 (5448/10656)
+2025-10-08 10:02:25,187 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=20 (5768/10656)
+2025-10-08 10:02:26,410 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=30 (6288/10656)
+2025-10-08 10:02:27,963 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=40 (7008/10656)
+2025-10-08 10:02:30,021 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=50 (7928/10656)
+2025-10-08 10:02:32,474 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=60 (9048/10656)
+2025-10-08 10:02:35,397 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=70 (10368/10656)
+2025-10-08 10:02:35,972 - antenna_pattern.spherical_expansion - INFO -   Processed modes up to n=72 (10656/10656)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO - 
+Mode power distribution (first 10):
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO -   n= 1: 3.807260e-07 ( 0.33%)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO -   n= 2: 1.021711e-06 ( 0.88%)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO -   n= 3: 1.921196e-06 ( 1.66%)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO -   n= 4: 3.069437e-06 ( 2.65%)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO -   n= 5: 4.357027e-06 ( 3.76%)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO -   n= 6: 5.642450e-06 ( 4.87%)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO -   n= 7: 6.865040e-06 ( 5.93%)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO -   n= 8: 7.949850e-06 ( 6.87%)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO -   n= 9: 8.705203e-06 ( 7.52%)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO -   n=10: 8.979707e-06 ( 7.76%)
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO - 
+Total power: 1.157546e-04
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO - Power in first 10 modes: 42.2%
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO - Power in last 10 modes: 0.5%
+2025-10-08 10:02:35,975 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+
+2025-10-08 10:02:36,118 - antenna_pattern.spherical_expansion - INFO -   Power check: first 10 modes=42.2%, last 7 modes=0.4%
+2025-10-08 10:02:36,118 - antenna_pattern.spherical_expansion - INFO - 
+Convergence check:
+2025-10-08 10:02:36,120 - antenna_pattern.spherical_expansion - INFO -   High-mode power fraction: 0.4%
+2025-10-08 10:02:36,120 - antenna_pattern.spherical_expansion - INFO -   Threshold: 1.0%
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO -   OK CONVERGED - Power distribution is good!
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO - 
+======================================================================
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO - FINAL RESULTS
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO - Final radius: 0.3055 m (9.4 lambda)
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO - Modes: N = 36 (from 72), M = 36
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO - Power retained: 99.07%
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO - Iterations: 1
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO - Converged: Yes
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO - ======================================================================
+
+2025-10-08 10:02:36,121 - antenna_pattern.spherical_expansion - INFO - Added SWE coefficients to pattern for f=9.200 GHz
+2025-10-08 10:02:36,121 - antenna_pattern.gui.swe_worker - INFO - SWE calculation complete
