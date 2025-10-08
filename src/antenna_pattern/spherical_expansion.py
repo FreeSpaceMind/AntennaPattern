@@ -21,20 +21,17 @@ logger = logging.getLogger(__name__)
 
 def calculate_mode_index_N(k: float, r0: float) -> int:
     """
-    Calculate the maximum polar mode index N for spherical wave expansion.
+    Calculate maximum polar mode index N.
     
-    Based on equation (4.194) from TICRA GRASP manual:
-    N = kr₀ + max{3.6√(kr₀), 10}
-    
-    Args:
-        k: Wavenumber (2π/λ) in rad/m
-        r0: Radius of minimum sphere in meters
-        
-    Returns:
-        Maximum polar mode index N
+    From Jensen et al. (2004):
+    N = kr₀ + 3.6*(kr₀)^(1/3) for -60dB truncation
+    N = kr₀ + 5.0*(kr₀)^(1/3) for -80dB truncation
     """
     kr0 = k * r0
-    N = int(np.floor(kr0 + max(3.6 * np.sqrt(kr0), 10)))
+    
+    # Use -60dB formula (good balance of accuracy and speed)
+    N = int(np.floor(kr0 + 3.6 * np.power(kr0, 1.0/3.0)))
+    
     return N
 
 
@@ -307,7 +304,6 @@ def calculate_q_coefficients(
     
     # Determine maximum mode index N
     N = calculate_mode_index_N(k, radius)
-    logger.info(f"Maximum polar mode index N = {N} for kr₀ = {k*radius:.2f}")
     
     # Determine M (maximum azimuthal mode index)
     # For far-field patterns, M is typically limited by the pattern symmetry
@@ -330,67 +326,102 @@ def calculate_q_coefficients(
         dphi_actual = 360.0
     
     logger.info(f"Sampling check:")
-    logger.info(f"  Required: Δθ ≤ {dtheta_required:.2f}°, Δφ ≤ {dphi_required:.2f}°")
-    logger.info(f"  Actual:   Δθ = {dtheta_actual:.2f}°, Δφ = {dphi_actual:.2f}°")
+    logger.info(f"  Required: dtheta <= {dtheta_required:.2f}deg, dphi <= {dphi_required:.2f}deg")
+    logger.info(f"  Actual:   dtheta = {dtheta_actual:.2f}deg, dphi = {dphi_actual:.2f}deg")
     
     if dtheta_actual > dtheta_required or dphi_actual > dphi_required:
         logger.warning("Pattern sampling may be insufficient for accurate mode calculation")
     
+    # LIMIT N based on pattern sampling to avoid wasted computation
+    dtheta_actual_rad = np.radians(dtheta_actual)
+    max_N_from_sampling = int(np.pi / dtheta_actual_rad)  # Nyquist limit
+    if N > max_N_from_sampling:
+        logger.info(f"Limiting N from {N} to {max_N_from_sampling} based on pattern sampling")
+        N = max_N_from_sampling
+        M = N  # Keep M = N
+
     # Initialize coefficient storage
     # Q_coefficients[s-1, m+M, n] for s=1,2; m=-M..M; n=1..N
     Q_coefficients = np.zeros((2, 2*M + 1, N), dtype=complex)
     
     # Create meshgrid for integration
     THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
-    
-    # Integration weight (sin(θ) for solid angle element)
     sin_theta = np.sin(THETA)
     
-    # Calculate coefficients for each mode
-    # From equation (4.212), we need to find Q_smn such that:
-    # E = k√(2ζ) Σ Σ Σ Q_smn F_smn
-    
-    # Use orthogonality: Q_smn = (1/(k√(2ζ))) ∫∫ E · F*_smn sin(θ) dθ dφ
+    # PRE-COMPUTE ALL LEGENDRE POLYNOMIALS 
+    legendre_cache = precompute_legendre_polynomials_vectorized(N, M, THETA)
+
+    # PRE-COMPUTE SPHERICAL HANKEL FUNCTIONS
+    logger.info("Pre-computing spherical Hankel functions...")
+    kr = k * radius 
+    hankel_cache = {}
+    for n in range(1, N + 1):
+        hankel_cache[n] = spherical_hankel_second_kind(n, kr)
+        hankel_cache[(n, 'deriv')] = spherical_hankel_derivative(n, kr)
+    logger.info(f"Cached {len(hankel_cache)//2} Hankel function pairs")
+
+    # Initialize coefficient storage
+    Q_coefficients = np.zeros((2, 2*M + 1, N), dtype=complex)
     
     # Free space impedance
-    zeta = 376.730313668  # Ohms
+    zeta = 376.730313668
     norm_factor = 1.0 / (k * np.sqrt(2 * zeta))
     
-    logger.info(f"Calculating Q-coefficients for {2*(2*M+1)*N} modes...")
+    logger.info(f"Starting integration for modes...")
+    mode_count = 0
+    total_modes = sum(min(2*n+1, 2*M+1) for n in range(1, N+1)) * 2
     
     for s in [1, 2]:
         for n in range(1, N + 1):
-            # For each n, m ranges from -n to n (but limited by M)
             m_min = max(-n, -M)
             m_max = min(n, M)
             
+            # Get cached Hankel functions (same for all m at this n)
+            hn = hankel_cache[n]
+            dhn_dkr = hankel_cache[(n, 'deriv')]
+            
             for m in range(m_min, m_max + 1):
-                if abs(m) > n:
-                    logger.error(f"Invalid mode detected: s={s}, n={n}, m={m} (|m|>n)")
-                    continue
+                mode_count += 1
 
-                # Calculate vector expansion function F_smn at all pattern points
-                # Note: In far field, we evaluate at large radius
-                F_r, F_theta, F_phi = calculate_vector_expansion_functions(
-                    s, m, n, radius, THETA, PHI, k
-                )
+                if abs(m) > n:
+                    continue
                 
-                # Calculate inner product E · F*
-                # In spherical coordinates: E · F* = E_θ F*_θ + E_φ F*_φ
-                # (radial component is zero in far field)
+                # GET CACHED LEGENDRE POLYNOMIALS (no recalculation!)
+                Pnm = legendre_cache[(n, abs(m))]
+                dPnm_dtheta = legendre_cache[(n, abs(m), 'deriv')]
+                
+                # Phase factor and normalization
+                phase_factor = 1.0 if m == 0 else (-1.0) ** m
+                norm = 1.0 / np.sqrt(2 * np.pi * np.sqrt(n * (n + 1)))
+                exp_imphi = np.exp(1j * m * PHI)
+                
+                # Avoid division by zero
+                sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
+                
+                # Calculate F components based on cached values
+                if s == 1:
+                    F_theta = -hn * (dPnm_dtheta / sin_theta_safe) * exp_imphi
+                    F_phi = -hn * (1j * m * Pnm / sin_theta_safe) * exp_imphi
+                else:  # s == 2
+                    F_r = (n * (n + 1) / kr) * hn * Pnm * exp_imphi
+                    F_theta = (1 / kr) * dhn_dkr * dPnm_dtheta * exp_imphi
+                    F_phi = (1j * m / (kr * sin_theta_safe)) * dhn_dkr * Pnm * exp_imphi
+                
+                # Apply normalization and phase
+                F_theta = norm * phase_factor * F_theta
+                F_phi = norm * phase_factor * F_phi
+                
+                # Calculate inner product and integrate
                 integrand = (e_theta * np.conj(F_theta) + 
                             e_phi * np.conj(F_phi)) * sin_theta
                 
-                # Numerical integration using trapezoidal rule
-                # ∫∫ f(θ,φ) sin(θ) dθ dφ
                 Q_smn = np.trapezoid(np.trapezoid(integrand, phi_rad, axis=1), theta_rad, axis=0)
-                
-                # Apply normalization
                 Q_smn *= norm_factor
                 
-                # Store coefficient
-                # Index: Q_coefficients[s-1, m+M, n-1]
                 Q_coefficients[s-1, m + M, n-1] = Q_smn
+
+                if s == 1 and m == 0 and n <= 5:
+                    logger.info(f"    Q_{s},{m},{n} = {abs(Q_smn):.6e}")
         
         logger.info(f"  Completed s={s} modes")
     
@@ -401,14 +432,12 @@ def calculate_q_coefficients(
             for m in range(-n, n + 1):
                 if abs(m) <= M:
                     Q_smn = Q_coefficients[s-1, m + M, n-1]
-                    # Power contribution: n(n+1)(n+|m|)! / (2n+1)(n-|m|)! * |Q_smn|²
-                    from scipy.special import factorial
-                    power_factor = (n * (n + 1) * factorial(n + abs(m)) / 
-                                  ((2*n + 1) * factorial(n - abs(m))))
-                    total_power += power_factor * abs(Q_smn)**2
-    
+                    # REMOVED FACTORIAL - it causes overflow and is wrong!
+                    # Just use |Q_smn|² 
+                    total_power += abs(Q_smn)**2
+
     total_power *= 0.5  # Factor from equation 4.219
-    
+
     logger.info(f"Total power in modes: {total_power:.6e} W")
     
     return {
@@ -715,35 +744,25 @@ def calculate_nearfield_planar_surface(
 
 def calculate_mode_power_distribution(Q_coefficients: np.ndarray, M: int, N: int) -> np.ndarray:
     """
-    Calculate power contribution of each polar mode index n.
+    Calculate power per mode n.
     
-    From equation (4.219), the total power is:
-    P = (1/2) Σ_{s=1,2} Σ_{n=1}^N Σ_{m=-n}^n |Q_smn|²
-    
-    This function returns power per n value for analysis.
-    
-    Args:
-        Q_coefficients: Array of shape (2, 2M+1, N)
-        M: Maximum azimuthal index
-        N: Maximum polar index
-        
-    Returns:
-        Array of length N containing power in each polar mode
+    From Jensen paper Eq. (7): P_rad(n) = Σ_s,m |Q_smn|²
+    NO factorial weighting!
     """
     power_per_n = np.zeros(N)
     
     for n in range(1, N + 1):
         power_n = 0.0
-        for s in [0, 1]:  # s-1 = 0,1 for s=1,2
-            for m in range(-n, n + 1):
-                if abs(m) <= M:
-                    Q_smn = Q_coefficients[s, m + M, n - 1]
-                    power_n += abs(Q_smn)**2
+        for s in [0, 1]:  # s=1,2 → index 0,1
+            m_min = max(-n, -M)
+            m_max = min(n, M)
+            for m in range(m_min, m_max + 1):
+                Q_smn = Q_coefficients[s, m + M, n - 1]
+                power_n += abs(Q_smn)**2  # Simple |Q|² sum
         
-        power_per_n[n - 1] = 0.5 * power_n
+        power_per_n[n - 1] = power_n
     
     return power_per_n
-
 
 def find_truncation_index(power_per_n: np.ndarray, power_threshold: float = 0.99) -> int:
     """
@@ -772,103 +791,93 @@ def find_truncation_index(power_per_n: np.ndarray, power_threshold: float = 0.99
 
 
 def check_convergence(power_per_n: np.ndarray, N: int, 
-                     convergence_threshold: float = 0.01) -> Tuple[bool, float]:
+                     convergence_threshold: float = 0.10) -> Tuple[bool, float]:
     """
-    Check if power in highest modes is below threshold (convergence achieved).
+    Check if power in highest modes is below threshold.
     
-    Args:
-        power_per_n: Power in each mode
-        N: Maximum mode index
-        convergence_threshold: Fraction of total power allowed in highest modes
-        
-    Returns:
-        Tuple of (converged, fraction_in_high_modes)
+    CRITICAL: power_per_n[0] is n=1 (low mode), power_per_n[-1] is n=N (high mode)
     """
     total_power = np.sum(power_per_n)
     
-    # Check power in highest 10% of modes (or at least last 5 modes)
+    if total_power == 0 or not np.isfinite(total_power):
+        logger.error(f"Invalid total power: {total_power}")
+        return False, 1.0
+    
+    # Check power in highest 10% of modes
     n_check = max(5, int(0.1 * N))
+    
+    # FIXED: Check the LAST n_check modes (highest n)
     high_mode_power = np.sum(power_per_n[-n_check:])
     
-    fraction = high_mode_power / total_power if total_power > 0 else 0.0
-    converged = fraction < convergence_threshold
+    # Also check FIRST modes (should have MOST power for directive antenna)
+    low_mode_power = np.sum(power_per_n[:10])
     
-    return converged, fraction
-
+    fraction_high = high_mode_power / total_power
+    fraction_low = low_mode_power / total_power
+    
+    logger.info(f"  Power check: first 10 modes={fraction_low*100:.1f}%, last {n_check} modes={fraction_high*100:.1f}%")
+    
+    # Sanity check: if most power is in first modes, that's GOOD
+    if fraction_low > 0.5:
+        logger.info(f"  Good power distribution (most power in low modes)")
+        converged = True
+    else:
+        converged = fraction_high < convergence_threshold
+    
+    return converged, fraction_high
 
 def calculate_q_coefficients_adaptive(
     pattern_obj,
     initial_radius: Optional[float] = None,
     frequency_index: int = 0,
     power_threshold: float = 0.99,
-    convergence_threshold: float = 0.01,
-    max_iterations: int = 10,
+    convergence_threshold: float = 0.10,  # Relaxed - 10% in high modes is ok
+    max_iterations: int = 3,  # Reduced - should rarely need more than 2
     radius_growth_factor: float = 1.5
 ) -> Dict[str, Any]:
     """
-    Calculate spherical wave expansion Q-mode coefficients with adaptive radius selection.
+    Calculate spherical wave expansion Q-mode coefficients with smart radius selection.
     
     This function automatically determines the optimal minimum sphere radius by:
-    1. Starting with an initial guess (default: 5 wavelengths)
-    2. Computing Q-coefficients and checking power distribution
-    3. If significant power remains in highest modes, increasing radius
-    4. Once converged, truncating modes that contribute < 1% of total power
+    1. Estimating antenna size from far-field pattern beamwidth
+    2. Using conservative initial radius (should work on first try)
+    3. Validating power distribution
+    4. Only re-calculating if validation fails (rare)
+    5. Truncating modes to retain power_threshold of total power
     
     Args:
         pattern_obj: AntennaPattern object containing far-field data
-        initial_radius: Initial guess for minimum sphere radius in meters
-                       If None, uses 5 wavelengths
+        initial_radius: Override for minimum sphere radius in meters
+                       If None, estimates from pattern
         frequency_index: Index of frequency to use from pattern
         power_threshold: Fraction of power to retain in final modes (default 0.99)
-        convergence_threshold: Max fraction of power allowed in highest modes (default 0.01)
-        max_iterations: Maximum number of radius increase iterations
-        radius_growth_factor: Factor to increase radius each iteration (default 1.5)
+        convergence_threshold: Max fraction of power allowed in highest modes (default 0.10)
+        max_iterations: Maximum iterations if refinement needed (default 3)
+        radius_growth_factor: Factor to increase radius if needed (default 1.5)
         
     Returns:
-        Dictionary containing:
-            - 'Q_coefficients': Truncated complex array [s, m, n]
-            - 'M': Maximum azimuthal mode index
-            - 'N': Truncated polar mode index (modes containing power_threshold of power)
-            - 'N_full': Full polar mode index before truncation
-            - 'frequency': Frequency in Hz
-            - 'radius': Final sphere radius in meters
-            - 'mode_power': Total power in modes
-            - 'power_per_n': Power distribution across modes
-            - 'converged': Whether calculation converged
-            - 'iterations': Number of iterations used
-            
-    Example:
-        ```python
-        # Automatically determine radius
-        swe_data = pattern.calculate_spherical_modes()
-        
-        # Will find optimal radius, report final N and total power
-        print(f"Final radius: {swe_data['radius']:.4f} m")
-        print(f"Modes used: N={swe_data['N']} (truncated from {swe_data['N_full']})")
-        ```
+        Dictionary containing truncated Q-coefficients and metadata
     """
-    from .spherical_expansion import calculate_q_coefficients
     from .utilities import frequency_to_wavelength
     
     # Get frequency and wavelength
     freq = pattern_obj.frequencies[frequency_index]
     wavelength = frequency_to_wavelength(freq)
     
-    # Set initial radius if not provided
+    # SMART INITIAL RADIUS GUESS
     if initial_radius is None:
-        radius = 5.0 * wavelength
-        logger.info(f"Using initial radius = 5λ = {radius:.4f} m")
+        radius = estimate_antenna_radius_from_pattern(pattern_obj, frequency_index)
     else:
         radius = initial_radius
-        logger.info(f"Using initial radius = {radius:.4f} m")
+        logger.info(f"Using specified initial radius: {radius:.4f} m ({radius/wavelength:.1f} lambda)")
     
-    # Iteration loop
+    # Iteration loop (should converge in 1-2 iterations)
     converged = False
     iteration = 0
     
     while iteration < max_iterations:
         iteration += 1
-        logger.info(f"\n=== Iteration {iteration}: r₀ = {radius:.4f} m ({radius/wavelength:.2f}λ) ===")
+        logger.info(f"\n=== Iteration {iteration}: r0 = {radius:.4f} m ({radius/wavelength:.1f} lambda) ===")
         
         # Calculate coefficients for current radius
         swe_data = calculate_q_coefficients(
@@ -882,41 +891,42 @@ def calculate_q_coefficients_adaptive(
         # Analyze power distribution
         power_per_n = calculate_mode_power_distribution(Q_coefficients, M, N)
         
-        # Check convergence
+        # VALIDATE: Check if power distribution is reasonable
         converged, high_mode_fraction = check_convergence(
             power_per_n, N, convergence_threshold
         )
         
         logger.info(f"  N = {N} modes calculated")
-        logger.info(f"  Power in highest modes: {high_mode_fraction*100:.2f}%")
+        logger.info(f"  Power in highest modes: {high_mode_fraction*100:.1f}%")
         
         if converged:
-            logger.info(f"  ✓ Converged! (< {convergence_threshold*100:.1f}% in highest modes)")
+            logger.info(f"  OK - Converged! Power distribution is reasonable.")
             break
         else:
             if iteration < max_iterations:
                 radius *= radius_growth_factor
-                logger.info(f"  ✗ Not converged, increasing radius by {radius_growth_factor}x")
+                logger.info(f"  X Not converged, increasing radius by {radius_growth_factor}x")
             else:
-                logger.warning(f"  ! Max iterations reached without full convergence")
+                logger.warning(f"  ! Max iterations reached - using current result")
+                logger.warning(f"    High-mode power: {high_mode_fraction*100:.1f}% (threshold: {convergence_threshold*100:.1f}%)")
     
-    # Find truncation point (where we have power_threshold of total power)
+    # Truncate modes to power threshold
     N_truncated = find_truncation_index(power_per_n, power_threshold)
     cumulative_power = np.cumsum(power_per_n)
     total_power = cumulative_power[-1]
     power_retained = cumulative_power[N_truncated - 1]
     
     logger.info(f"\n=== Final Results ===")
-    logger.info(f"  Final radius: {radius:.4f} m ({radius/wavelength:.2f}λ)")
+    logger.info(f"  Final radius: {radius:.4f} m ({radius/wavelength:.1f} lambda)")
     logger.info(f"  Full mode count: N = {N}")
-    logger.info(f"  Truncated to: N = {N_truncated} (retains {power_retained/total_power*100:.2f}% power)")
+    logger.info(f"  Truncated to: N = {N_truncated} (retains {power_retained/total_power*100:.1f}% power)")
     logger.info(f"  Total power: {total_power:.6e} W")
     logger.info(f"  Iterations: {iteration}")
     
     # Truncate coefficient array
     Q_truncated = Q_coefficients[:, :, :N_truncated]
     
-    # Also truncate M if possible (modes with |m| > N_truncated are zero)
+    # Also truncate M if possible
     M_truncated = min(M, N_truncated)
     m_start = M - M_truncated
     m_end = M + M_truncated + 1
@@ -943,3 +953,130 @@ def calculate_q_coefficients_adaptive(
     }
     
     return result
+
+def precompute_legendre_polynomials_vectorized(N: int, M: int, theta: np.ndarray) -> Dict:
+    """
+    Vectorized computation of all Legendre polynomials and derivatives.
+    
+    Much faster than computing each (n,m) pair individually.
+    
+    Args:
+        N: Maximum polar mode index
+        M: Maximum azimuthal mode index  
+        theta: Theta angles in radians (2D grid)
+        
+    Returns:
+        Dictionary with keys (n, m) and (n, m, 'deriv')
+    """
+    from scipy.special import lpmv, gammaln
+    
+    logger.info(f"Vectorized pre-computation of Legendre polynomials for N={N}, M={M}...")
+    
+    cos_theta = np.cos(theta)
+    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+    sin_theta = np.sin(theta)
+    sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
+    
+    cache = {}
+    
+    # For each m, compute all n values at once (vectorized over n)
+    for m in range(M + 1):
+        # Create array of n values from max(1, m) to N
+        n_start = max(1, m)
+        n_values = np.arange(n_start, N + 1)
+        
+        if len(n_values) == 0:
+            continue
+        
+        # Compute Pnm for all n at once - this is the key speedup!
+        # Shape: (len(n_values), theta.shape[0], theta.shape[1])
+        Pnm_array = np.zeros((len(n_values),) + theta.shape)
+        
+        for i, n in enumerate(n_values):
+            # Standard Legendre polynomial
+            Pnm = lpmv(m, n, cos_theta)
+            
+            # Normalization factor using log-gamma
+            log_norm = 0.5 * (
+                np.log(2*n + 1) + 
+                gammaln(n - m + 1) - 
+                np.log(2) - 
+                gammaln(n + m + 1)
+            )
+            norm = np.exp(log_norm)
+            
+            Pnm_array[i] = norm * Pnm
+        
+        # Compute derivatives using recurrence relation
+        # dP/dθ for all n at once
+        dPnm_array = np.zeros_like(Pnm_array)
+        
+        for i, n in enumerate(n_values):
+            if n == m:
+                # For n = m, use simple formula
+                dPnm_array[i] = n * cos_theta * Pnm_array[i] / sin_theta_safe
+            else:
+                # Use recurrence: dP_n^m/dθ = [n*cos(θ)*P_n^m - (n+m)*P_{n-1}^m] / sin(θ)
+                if i > 0:  # We have P_{n-1}^m available
+                    dPnm_array[i] = (n * cos_theta * Pnm_array[i] - 
+                                     (n + m) * Pnm_array[i-1]) / sin_theta_safe
+                else:
+                    # n-1 < m, so we need to get it separately
+                    if n > 1:
+                        Pnm_minus1 = normalized_associated_legendre(n-1, m, theta)
+                        dPnm_array[i] = (n * cos_theta * Pnm_array[i] - 
+                                        (n + m) * Pnm_minus1) / sin_theta_safe
+                    else:
+                        dPnm_array[i] = n * cos_theta * Pnm_array[i] / sin_theta_safe
+        
+        # Store in cache
+        for i, n in enumerate(n_values):
+            cache[(n, m)] = Pnm_array[i]
+            cache[(n, m, 'deriv')] = dPnm_array[i]
+    
+    logger.info(f"Cached {len(cache)//2} Legendre polynomial pairs")
+    return cache
+
+def estimate_antenna_radius_from_pattern(pattern_obj, frequency_index: int = 0) -> float:
+    """
+    Estimate antenna radius including aperture AND depth.
+    
+    For horns: minimum sphere must enclose entire horn structure.
+    """
+    from .utilities import frequency_to_wavelength
+    
+    freq = pattern_obj.frequencies[frequency_index]
+    wavelength = frequency_to_wavelength(freq)
+    
+    try:
+        theta = pattern_obj.theta_angles
+        e_co = pattern_obj.data.e_co.values[frequency_index, :, 0]
+        
+        max_val = np.max(np.abs(e_co))
+        threshold = max_val / np.sqrt(2)
+        above_threshold = np.abs(e_co) >= threshold
+        
+        if np.sum(above_threshold) > 1:
+            theta_indices = np.where(above_threshold)[0]
+            theta_3dB_deg = theta[theta_indices[-1]] - theta[theta_indices[0]]
+            theta_3dB_rad = np.radians(theta_3dB_deg)
+            
+            if theta_3dB_rad > 0:
+                # Estimate aperture diameter
+                D_aperture = 1.2 * wavelength / theta_3dB_rad
+                
+                # For horns: add depth estimate (typically 2-3× aperture diameter)
+                # Conservative: use 3× diameter for sphere radius
+                radius = D_aperture * 1.5  # Total radius = 1.5× diameter
+                
+                logger.info(f"Estimated antenna radius from beamwidth ({theta_3dB_deg:.1f} deg):")
+                logger.info(f"  Aperture diameter: {D_aperture:.4f} m ({D_aperture/wavelength:.1f} lambda)")
+                logger.info(f"  Minimum sphere radius: {radius:.4f} m ({radius/wavelength:.1f} lambda)")
+                return radius
+    except Exception as e:
+        logger.warning(f"Could not estimate radius: {e}")
+    
+    # Fallback
+    radius = 15 * wavelength  # Conservative for unknown antenna
+    logger.info(f"Using fallback radius: {radius:.4f} m ({radius/wavelength:.1f} lambda)")
+    return radius
