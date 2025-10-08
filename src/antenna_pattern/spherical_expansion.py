@@ -387,9 +387,8 @@ def calculate_q_coefficients(
     logger.info(f"Extracting mode coefficients...")
     Q_coefficients = np.zeros((2, 2*M + 1, N), dtype=complex)
     
-    # Free space impedance and normalization
-    zeta = 376.730313668
-    norm_factor = 1.0 / (k * np.sqrt(2 * zeta))
+    # normalization
+    norm_factor = 1.0 / (4 * np.pi)
     
     total_modes = 2 * sum(min(2*n+1, 2*M+1) for n in range(1, N+1))
     mode_count = 0
@@ -415,8 +414,8 @@ def calculate_q_coefficients(
                 norm = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
                 exp_imphi = np.exp(1j * m * PHI)
                 sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
-                
-                # Calculate expansion function components (far-field form)
+
+                # In calculate_q_coefficients for far-field patterns:
                 if s == 1:
                     F_theta = -(dPnm_dtheta / sin_theta_safe) * exp_imphi
                     F_phi = -(1j * m * Pnm / sin_theta_safe) * exp_imphi
@@ -1064,7 +1063,7 @@ def evaluate_farfield_from_modes(
     
     # Free space impedance and normalization
     zeta = 376.730313668
-    norm_amplitude = k * np.sqrt(2 * zeta)
+    norm_amplitude = np.sqrt(zeta * k / (4 * np.pi))
     
     # Radial factor if requested
     if normalize_to_radius is not None:
@@ -1091,10 +1090,10 @@ def evaluate_farfield_from_modes(
     for s in [1, 2]:
         s_idx = s - 1
         
-        for n in range(1, N + 1):
+        for n in range(1, N + 1): 
             # Far-field phase factor: (-j)^(n+1)
             phase_n = (-1j) ** (n + 1)
-            
+
             # Mode normalization
             norm_n = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
             

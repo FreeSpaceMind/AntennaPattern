@@ -247,7 +247,6 @@ class AnalysisTab(QWidget):
             
             # Disable near field until SWE is calculated
             self.calculate_nf_btn.setEnabled(False)
-            self.plot_nf_check.setEnabled(False)
             
             # Clear results
             self.swe_results.clear()
@@ -307,7 +306,6 @@ class AnalysisTab(QWidget):
         
         # Enable near field calculation
         self.calculate_nf_btn.setEnabled(True)
-        self.plot_nf_check.setEnabled(True)
     
     def display_nearfield_results(self, nf_data):
         """Display near field calculation results."""
