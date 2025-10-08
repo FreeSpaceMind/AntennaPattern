@@ -112,9 +112,13 @@ class MainWindow(QMainWindow):
         export_swe_action = QAction("Export SWE Coefficients...", self)
         export_swe_action.triggered.connect(self.export_swe_file)
         file_menu.addAction(export_swe_action)
-        
+
+        export_ticra_action = QAction("Export SWE to TICRA Format...", self)
+        export_ticra_action.triggered.connect(self.export_swe_to_ticra)
+        file_menu.addAction(export_ticra_action)
+                
         # Store export actions to enable/disable them
-        self.export_actions = [export_npz_action, export_cut_action, export_swe_action]
+        self.export_actions = [export_npz_action, export_cut_action, export_swe_action, export_ticra_action]
         
         file_menu.addSeparator()
         
@@ -495,6 +499,52 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage("SWE coefficients saved successfully")
             except Exception as e:
                 self.show_error(f"Error saving SWE coefficients: {str(e)}")
+                self.statusBar().showMessage("Ready")
+
+    def export_swe_to_ticra(self):
+        """Export spherical mode coefficients to TICRA .sph format."""
+        if not self.current_pattern:
+            return
+        
+        # Check if pattern has SWE data
+        if not hasattr(self.current_pattern, 'swe') or len(self.current_pattern.swe) == 0:
+            reply = QMessageBox.question(
+                self,
+                "Calculate SWE Coefficients?",
+                "This pattern does not have spherical mode coefficients calculated.\n\n"
+                "Would you like to calculate them now?\n\n"
+                "Note: This may take several minutes for large patterns.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                try:
+                    self.statusBar().showMessage("Calculating spherical mode coefficients...")
+                    QApplication.processEvents()
+                    
+                    self.current_pattern.calculate_spherical_modes()
+                    
+                    self.statusBar().showMessage("SWE coefficients calculated successfully")
+                except Exception as e:
+                    self.show_error(f"Error calculating SWE coefficients: {str(e)}")
+                    self.statusBar().showMessage("Ready")
+                    return
+            else:
+                return
+        
+        # Now export the coefficients
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export SWE to TICRA Format", "", "TICRA SPH Files (*.sph);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                self.statusBar().showMessage("Exporting SWE coefficients to TICRA format...")
+                self.current_pattern.export_to_ticra(file_path)
+                self.statusBar().showMessage("SWE coefficients exported to TICRA format successfully")
+            except Exception as e:
+                self.show_error(f"Error exporting to TICRA format: {str(e)}")
                 self.statusBar().showMessage("Ready")
 
 

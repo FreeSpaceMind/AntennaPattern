@@ -864,3 +864,28 @@ class AntennaPattern(PatternOperationsMixin):
                         f"Available: {list(self.swe.keys())}")
         
         save_swe_coefficients(self.swe[frequency], file_path, metadata)
+
+    def export_to_ticra(self, file_path: Union[str, Path], 
+                        program_tag: str = "AntPy",
+                        id_string: str = "SWE Export") -> None:
+        """
+        Export spherical mode coefficients to TICRA .sph format.
+        
+        Args:
+            file_path: Path to save the file to
+            program_tag: Program identification tag (default: "AntPy")
+            id_string: Description string (default: "SWE Export")
+            
+        Raises:
+            OSError: If file cannot be written
+            ValueError: If SWE coefficients have not been calculated
+        """
+        from .ant_io import write_ticra_sph
+        
+        if not hasattr(self, 'swe') or len(self.swe) == 0:
+            raise ValueError("SWE coefficients must be calculated before exporting to TICRA format. "
+                            "Call calculate_spherical_modes() first.")
+        
+        # Use the first frequency's SWE data
+        swe_data = next(iter(self.swe.values()))
+        write_ticra_sph(swe_data, file_path, program_tag, id_string)

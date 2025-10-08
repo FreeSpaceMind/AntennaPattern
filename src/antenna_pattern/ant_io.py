@@ -830,83 +830,89 @@ def create_pattern_from_swe(swe_data: Dict[str, Any],
     logger.info(f"Pattern created from SWE coefficients at f={swe_data['frequency']/1e9:.3f} GHz")
     return pattern
 
-def export_swe_to_ticra_format(swe_data: Dict[str, Any], filename: str):
+def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
+                    program_tag: str = "AntPy", id_string: str = "SWE Export") -> None:
     """
-    Export SWE coefficients to TICRA .sph format.
+    Write spherical mode coefficients to TICRA .sph format.
     
     Args:
-        swe_data: Dictionary from calculate_q_coefficients_adaptive
-        filename: Output .sph filename
+        swe_data: Dictionary from calculate_spherical_modes containing coefficients
+        file_path: Path to save the file to  
+        program_tag: Program identification tag (default: "AntPy")
+        id_string: Description string (default: "SWE Export")
+        
+    Raises:
+        OSError: If file cannot be written
+        
+    References:
+        TICRA GRASP Manual, Section F4.2 "Spherical Wave Q-Coefficients"
     """
-    Q = swe_data['Q_coefficients']  # Shape: [s, m, n]
+    import datetime
+    
+    file_path = Path(file_path)
+    
+    # Ensure .sph extension
+    if file_path.suffix.lower() != '.sph':
+        file_path = file_path.with_suffix('.sph')
+    
+    # Extract data
+    Q_coefficients = swe_data['Q_coefficients']  # Shape: [2, 2*M+1, N]
     M = swe_data['M']
     N = swe_data['N']
-    freq = swe_data['frequency']
     
-    # Convert to TICRA format: Q' = Q* / sqrt(8π)
-    Q_prime = np.conj(Q) / np.sqrt(8 * np.pi)
-    
-    # Calculate total power for each |m|
-    power_per_m = []
-    for m_abs in range(M + 1):
-        power_m = 0.0
-        for s in range(2):
-            for n in range(max(1, m_abs), N + 1):
-                # Positive m
-                if m_abs <= n:
-                    m_idx = m_abs + M
-                    n_idx = n - 1
-                    power_m += abs(Q_prime[s, m_idx, n_idx])**2
-                
-                # Negative m (if m_abs > 0)
-                if m_abs > 0 and m_abs <= n:
-                    m_idx = -m_abs + M
-                    power_m += abs(Q_prime[s, m_idx, n_idx])**2
-        
-        power_per_m.append(power_m)
+    # Calculate NTHE and NPHI based on TICRA conventions
+    # NTHE = (n_theta - 1) * 2, where n_theta is number of theta samples
+    # For full sphere coverage with N modes, we need at least 2*N theta samples
+    NTHE = 2 * N  # Must be even
+    NPHI = 2 * M + 1  # Must be >= 3
     
     # Write file
-    with open(filename, 'w') as f:
-        # Header records
-        f.write("GRASP Q-coefficients exported from AntPy\n")  # PRGTAG
-        f.write("Spherical Wave Expansion Coefficients\n")    # IDSTRG
+    with open(file_path, 'w') as f:
+        # Record 1: PRGTAG
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"{program_tag} - {timestamp}\n")
         
-        # Calculate NTHE, NPHI for sampling (dummy values for coefficients)
-        NTHE = 181  # 0-180 deg
-        NPHI = 361  # 0-360 deg
-        f.write(f"{NTHE:6d}{NPHI:6d}{N:6d}{M:6d}\n")  # NTHE, NPHI, NMAX, MMAX
+        # Record 2: IDSTRG
+        f.write(f"{id_string}\n")
         
-        # Dummy records 4-8
-        f.write("Frequency: {:.6e} Hz\n".format(freq))
-        for _ in range(4):
-            f.write("0.0 0.0 0.0 0.0 0.0\n")
+        # Record 3: NTHE, NPHI, NMAX, MMAX
+        NMAX = N
+        MMAX = M
+        f.write(f"{NTHE:6d}{NPHI:6d}{NMAX:6d}{MMAX:6d}\n")
         
-        # Write coefficients for each |m|
-        for m_abs in range(M + 1):
-            # Write M and POWERM
-            f.write(f"{m_abs:6d} {power_per_m[m_abs]:16.8e}\n")
+        # Records 4-8: Dummy data (5 text strings + 10 real numbers)
+        f.write("Dummy text 1\n")
+        f.write("     0.00000     0.00000     0.00000     0.00000     0.00000\n")
+        f.write("     0.00000     0.00000     0.00000     0.00000     0.00000\n")
+        f.write("Dummy text 2\n")
+        f.write("Dummy text 3\n")
+        
+        # Mode coefficients - organized by azimuthal index m
+        for m in range(-M, M + 1):
+            m_idx = m + M
             
-            # Write coefficients for this m
-            for n in range(max(1, m_abs), N + 1):
+            # Calculate power in this azimuthal mode (sum over n for both s=1,2)
+            power_m = 0.0
+            for n in range(max(1, abs(m)), N + 1):
+                n_idx = n - 1
+                for s_idx in range(2):
+                    power_m += np.abs(Q_coefficients[s_idx, m_idx, n_idx])**2
+            
+            # Record m.1: M, POWERM
+            f.write(f"{abs(m):6d}  {power_m:14.6e}\n")
+            
+            # Record m.2: Q1MN, Q2MN for each n
+            # For m, write Q_smn for n = max(1,|m|) to N
+            for n in range(max(1, abs(m)), N + 1):
                 n_idx = n - 1
                 
-                # Get Q1MN, Q2MN for positive m
-                m_idx = m_abs + M
-                Q1_re = Q_prime[0, m_idx, n_idx].real
-                Q1_im = Q_prime[0, m_idx, n_idx].imag
-                Q2_re = Q_prime[1, m_idx, n_idx].real
-                Q2_im = Q_prime[1, m_idx, n_idx].imag
+                # Get coefficients for s=1 and s=2
+                Q1mn = Q_coefficients[0, m_idx, n_idx]  # s=1 (TM)
+                Q2mn = Q_coefficients[1, m_idx, n_idx]  # s=2 (TE)
                 
-                f.write(f"{Q1_re:16.8e}{Q1_im:16.8e}{Q2_re:16.8e}{Q2_im:16.8e}\n")
-                
-                # If m > 0, also write negative m coefficients
-                if m_abs > 0:
-                    m_idx = -m_abs + M
-                    Q1_re = Q_prime[0, m_idx, n_idx].real
-                    Q1_im = Q_prime[0, m_idx, n_idx].imag
-                    Q2_re = Q_prime[1, m_idx, n_idx].real
-                    Q2_im = Q_prime[1, m_idx, n_idx].imag
-                    
-                    f.write(f"{Q1_re:16.8e}{Q1_im:16.8e}{Q2_re:16.8e}{Q2_im:16.8e}\n")
+                # Write as 4 real numbers per line: Q1_real, Q1_imag, Q2_real, Q2_imag
+                # Note: TICRA uses complex conjugate due to e^(+jwt) vs e^(-jwt) convention
+                f.write(f"  {Q1mn.real:14.6e}  {-Q1mn.imag:14.6e}  "
+                       f"{Q2mn.real:14.6e}  {-Q2mn.imag:14.6e}\n")
     
-    logger.info(f"TICRA SWE coefficients exported to {filename}")
+    logger.info(f"SWE coefficients exported to TICRA format: {file_path}")
