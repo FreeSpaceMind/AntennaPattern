@@ -427,6 +427,7 @@ def extract_q_coefficients_fft(
     Fast Q-coefficient extraction from FAR-FIELD pattern using FFT.
     
     Properly accounts for FFT normalization and basis function orthogonality.
+    Includes Hankel function normalization per textbook equation (7.13).
     """
     n_theta = len(theta_rad)
     n_phi = len(phi_rad)
@@ -439,8 +440,6 @@ def extract_q_coefficients_fft(
     e_phi_fft = np.fft.fft(e_phi, axis=1)
     
     # Grid spacing
-    dphi = 2.0 * np.pi / n_phi  # Full 2π range divided by number of points
-    dtheta = theta_rad[1] - theta_rad[0] if len(theta_rad) > 1 else np.pi / n_theta
     sin_theta_1d = sin_theta[:, 0]
     
     # Free space impedance
@@ -450,14 +449,19 @@ def extract_q_coefficients_fft(
     mode_count = 0
     total_modes = 2 * sum(min(2*n+1, 2*M+1) for n in range(1, N+1))
     
-    for s in [1, 2]:
-        s_idx = s - 1
+    for n in range(1, N + 1):
+        n_idx = n - 1
         
-        for n in range(1, N + 1):
-            n_idx = n - 1
-            
-            # Mode normalization (Hansen convention)
-            norm_n = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
+        # === COMPUTE HANKEL FUNCTION NORMALIZATION FOR THIS n ===
+        kr = k * radius
+        h_n2 = spherical_hankel_second_kind(n, kr)
+        h_n2_abs_sq = np.abs(h_n2)**2
+        
+        # Mode normalization (Hansen convention)
+        norm_n = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
+        
+        for s in [1, 2]:
+            s_idx = s - 1
             
             # Far-field phase factor
             if s == 1:
@@ -467,6 +471,15 @@ def extract_q_coefficients_fft(
             
             # Phase conjugate for extraction
             phase_n_conj = np.conj(phase_n)
+            
+            # === HANKEL NORMALIZATION (different for TE vs TM) ===
+            if s == 1:  # TE mode
+                hankel_norm = k / (np.sqrt(zeta) * h_n2_abs_sq) / zeta
+            else:  # TM mode
+                hankel_norm = k / (np.sqrt(zeta) * (h_n2_abs_sq - (n/kr) * h_n2)) / zeta
+            
+            # Combine with FFT normalization (1/2π for φ-integration)
+            base_norm_factor = hankel_norm * (1.0 / (2.0 * np.pi))
             
             m_min = max(-n, -M)
             m_max = min(n, M)
@@ -492,7 +505,7 @@ def extract_q_coefficients_fft(
                 
                 # Build basis functions (angular part only, no e^(imφ))
                 if s == 1:  # TE mode
-                    K_theta_basis = 1j * m * Pnm / sin_theta_safe_1d
+                    K_theta_basis = -1j * m * Pnm
                     K_phi_basis = -dPnm
                 else:  # TM mode  
                     K_theta_basis = dPnm
@@ -503,7 +516,6 @@ def extract_q_coefficients_fft(
                 K_phi_basis = norm_n * phase_m * phase_n_conj * K_phi_basis
                 
                 # Get FFT coefficient for this m
-                # FFT index mapping: m>=0 -> m, m<0 -> n_phi+m
                 if m >= 0:
                     m_fft_idx = m
                 else:
@@ -513,22 +525,15 @@ def extract_q_coefficients_fft(
                 e_phi_m = e_phi_fft[:, m_fft_idx]
                 
                 # Orthogonality integral over theta
-                # The FFT has already done: ∫ E(θ,φ) e^(-imφ) dφ
-                # We need: ∫∫ E(θ,φ) K*(θ) e^(-imφ) sinθ dθ dφ
                 integrand_theta = (
                     e_theta_m * np.conj(K_theta_basis) + 
                     e_phi_m * np.conj(K_phi_basis)
                 ) * sin_theta_1d
                 
-                integral_theta = np.trapz(integrand_theta, theta_rad)
+                integral_theta = np.trapezoid(integrand_theta, theta_rad)
                 
-                # Normalization:
-                # Reconstruction uses: E = √(ζk/4π) × Q × [basis]
-                # Extraction needs: Q = [1/√(ζk/4π)] × [1/2π] × ∫∫ E·K* dΩ
-                # The 1/2π accounts for the φ-integration normalization
-                norm_factor = (1.0 / (2.0 * np.pi)) / np.sqrt(zeta * k / (4.0 * np.pi))
-                
-                Q_coefficients[s_idx, m_idx, n_idx] = norm_factor * integral_theta
+                # Apply the complete normalization (including Hankel functions)
+                Q_coefficients[s_idx, m_idx, n_idx] = base_norm_factor * integral_theta
                 
                 mode_count += 1
             
@@ -633,7 +638,9 @@ def calculate_q_coefficients(
         'radius': radius,
         'mode_power': total_power,
         'power_per_n': power_per_n,
-        'k': k
+        'k': k,
+        'n_theta_samples': len(theta),
+        'n_phi_samples': len(phi) 
     }
 
 def calculate_mode_index_N(k: float, r0: float) -> int:
@@ -1050,7 +1057,9 @@ def calculate_q_coefficients_adaptive(
         'k': swe_data['k'],
         'converged': converged,
         'iterations': iteration,
-        'power_retained_fraction': power_retained / total_power
+        'power_retained_fraction': power_retained / total_power,
+        'n_theta_samples': swe_data.get('n_theta_samples'),  
+        'n_phi_samples': swe_data.get('n_phi_samples') 
     }
 
 

@@ -854,9 +854,18 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
     # Normalization factor for TICRA format: Q' = (1/√8π) * Q*
     norm_factor = 1.0 / np.sqrt(8.0 * np.pi)
     
-    # Calculate NTHE and NPHI based on TICRA conventions
-    NTHE = 2 * N  # Must be even
-    NPHI = 2 * M + 1  # Must be >= 3
+    # Calculate NTHE and NPHI based on actual sampling grid
+    # NTHE: number of theta samples over 360° (must be even)
+    n_theta_samples = swe_data['n_theta_samples'] 
+    # If theta goes 0-180° (half sphere), double it for 360°
+    NTHE = 4* n_theta_samples
+    # Ensure even
+    if NTHE % 2 != 0:
+        NTHE += 1
+
+    # NPHI: number of phi samples over 360° (must be >= 3)
+    n_phi_samples = swe_data['n_phi_samples']
+    NPHI = max(3, 2*n_phi_samples)
     
     # Write file
     with open(file_path, 'w') as f:
