@@ -37,7 +37,7 @@ def prepare_pattern_for_swe(
     pattern_obj,
     N: int,
     noise_floor_db: float = -40,
-    downsample_factor: float = 1.5
+    downsample_factor: float = 2
 ) -> Tuple:
     """
     Prepare pattern for SWE: extend to full sphere and downsample if oversampled.
@@ -452,10 +452,6 @@ def extract_q_coefficients_fft(
     for n in range(1, N + 1):
         n_idx = n - 1
         
-        # === COMPUTE HANKEL FUNCTION NORMALIZATION FOR THIS n ===
-        kr = k * radius
-        h_n2 = spherical_hankel_second_kind(n, kr)
-        h_n2_abs_sq = np.abs(h_n2)**2
         
         # Mode normalization (Hansen convention)
         norm_n = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
@@ -469,17 +465,9 @@ def extract_q_coefficients_fft(
             else:
                 phase_n = (-1j) ** n
             
-            # Phase conjugate for extraction
-            phase_n_conj = np.conj(phase_n)
-            
-            # === HANKEL NORMALIZATION (different for TE vs TM) ===
-            if s == 1:  # TE mode
-                hankel_norm = k / (np.sqrt(zeta) * h_n2_abs_sq) / zeta
-            else:  # TM mode
-                hankel_norm = k / (np.sqrt(zeta) * (h_n2_abs_sq - (n/kr) * h_n2)) / zeta
-            
             # Combine with FFT normalization (1/2π for φ-integration)
-            base_norm_factor = hankel_norm * (1.0 / (2.0 * np.pi))
+            n_phi = len(phi_rad)
+            base_norm_factor = np.sqrt(4.0 * np.pi / (zeta * k)) * (2.0 * np.pi / n_phi)
             
             m_min = max(-n, -M)
             m_max = min(n, M)
@@ -505,15 +493,15 @@ def extract_q_coefficients_fft(
                 
                 # Build basis functions (angular part only, no e^(imφ))
                 if s == 1:  # TE mode
-                    K_theta_basis = -1j * m * Pnm
+                    K_theta_basis = -1j * m * Pnm / sin_theta_safe_1d
                     K_phi_basis = -dPnm
                 else:  # TM mode  
                     K_theta_basis = dPnm
                     K_phi_basis = 1j * m * Pnm / sin_theta_safe_1d
                 
                 # Apply normalization and phase (conjugate for orthogonality)
-                K_theta_basis = norm_n * phase_m * phase_n_conj * K_theta_basis
-                K_phi_basis = norm_n * phase_m * phase_n_conj * K_phi_basis
+                K_theta_basis = norm_n * phase_m * phase_n * K_theta_basis
+                K_phi_basis = norm_n * phase_m * phase_n * K_phi_basis
                 
                 # Get FFT coefficient for this m
                 if m >= 0:
