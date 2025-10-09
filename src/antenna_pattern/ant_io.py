@@ -835,17 +835,8 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
     """
     Write spherical mode coefficients to TICRA .sph format.
     
-    Args:
-        swe_data: Dictionary from calculate_spherical_modes containing coefficients
-        file_path: Path to save the file to  
-        program_tag: Program identification tag (default: "AntPy")
-        id_string: Description string (default: "SWE Export")
-        
-    Raises:
-        OSError: If file cannot be written
-        
-    References:
-        TICRA GRASP Manual, Section F4.2 "Spherical Wave Q-Coefficients"
+    Note: Phase convention conversion is now handled during extraction,
+    so Q_coefficients are already in Hansen convention.
     """
     import datetime
     
@@ -856,7 +847,7 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
         file_path = file_path.with_suffix('.sph')
     
     # Extract data
-    Q_coefficients = swe_data['Q_coefficients']  # Shape: [2, 2*M+1, N]
+    Q_coefficients = swe_data['Q_coefficients']  # Already in Hansen convention
     M = swe_data['M']
     N = swe_data['N']
     
@@ -888,7 +879,7 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
         f.write("Dummy text 2\n")
         f.write("Dummy text 3\n")
         
-        # Mode coefficients - organized by |m| (absolute value of azimuthal index)
+        # Mode coefficients - organized by |m|
         for m_abs in range(0, M + 1):
             # Calculate power in this azimuthal mode
             power_m = 0.0
@@ -923,8 +914,8 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
                     Q1_0n = Q_coefficients[0, m_idx, n_idx]  # s=1 (TE)
                     Q2_0n = Q_coefficients[1, m_idx, n_idx]  # s=2 (TM)
                     
-                    # Apply normalization and conjugation
-                    # No (-1)^m conversion needed for m=0
+                    # Apply TICRA normalization and conjugation ONLY
+                    # No phase correction needed - already in Hansen convention
                     Q1_file = Q1_0n.conjugate() * norm_factor
                     Q2_file = Q2_0n.conjugate() * norm_factor
                     
@@ -938,24 +929,17 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
                 for n in range(m_abs, N + 1):
                     n_idx = n - 1
                     
-                    # Get -m coefficients
+                    # Get coefficients (already in Hansen convention)
                     Q1_neg = Q_coefficients[0, m_neg_idx, n_idx]  # s=1, -m, n (TE)
                     Q2_neg = Q_coefficients[1, m_neg_idx, n_idx]  # s=2, -m, n (TM)
-                    
-                    # Get +m coefficients  
                     Q1_pos = Q_coefficients[0, m_pos_idx, n_idx]  # s=1, +m, n (TE)
                     Q2_pos = Q_coefficients[1, m_pos_idx, n_idx]  # s=2, +m, n (TM)
                     
-                    # CRITICAL: Convert from scipy convention to Hansen convention
-                    # Hansen omits the (-1)^m factor that scipy includes
-                    # Therefore: Q_Hansen = Q_scipy * (-1)^m
-                    phase_correction = ((-1.0) ** m_abs)
-                    
-                    # Apply normalization, conjugation, AND phase correction
-                    Q1_neg_file = Q1_neg.conjugate() * norm_factor * phase_correction
-                    Q2_neg_file = Q2_neg.conjugate() * norm_factor * phase_correction
-                    Q1_pos_file = Q1_pos.conjugate() * norm_factor * phase_correction
-                    Q2_pos_file = Q2_pos.conjugate() * norm_factor * phase_correction
+                    # Apply TICRA normalization and conjugation ONLY
+                    Q1_neg_file = Q1_neg.conjugate() * norm_factor
+                    Q2_neg_file = Q2_neg.conjugate() * norm_factor
+                    Q1_pos_file = Q1_pos.conjugate() * norm_factor
+                    Q2_pos_file = Q2_pos.conjugate() * norm_factor
                     
                     # Write -m coefficients
                     f.write(f"  {Q1_neg_file.real:14.6e}  {Q1_neg_file.imag:14.6e}  "

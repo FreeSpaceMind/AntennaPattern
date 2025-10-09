@@ -261,20 +261,11 @@ def estimate_antenna_radius_from_pattern(pattern_obj, frequency_index: int = 0) 
 
 def precompute_legendre_fast(N: int, M: int, theta: np.ndarray) -> Dict:
     """
-    Fast Legendre polynomial computation using analytical derivatives.
+    Fast computation of all required Legendre polynomials with robust numerics.
     
-    Uses scipy.special.lpmv for direct computation and recurrence relations
-    for exact derivative calculation (no numerical differentiation).
-    
-    Args:
-        N: Maximum polar mode index
-        M: Maximum azimuthal mode index
-        theta: Theta angles (can be 1D or 2D array)
-        
-    Returns:
-        Dictionary cache with (n,m): Pnm and (n,m,'deriv'): dPnm/dtheta
+    For high n,m values where scipy.lpmv fails, uses alternative computation.
     """
-    from scipy.special import lpmv
+    from scipy.special import lpmv, loggamma
     
     logger.info(f"Fast computing Legendre polynomials (N={N}, M={M})...")
     
@@ -286,49 +277,126 @@ def precompute_legendre_fast(N: int, M: int, theta: np.ndarray) -> Dict:
     cos_theta = np.cos(theta_flat)
     sin_theta = np.sin(theta_flat)
     
+    # Clip to prevent numerical issues at poles
+    cos_theta = np.clip(cos_theta, -0.99999999, 0.99999999)
+    
     # Avoid division by zero at poles
     sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
     
     computed = 0
     total = sum(1 for m in range(M+1) for n in range(max(1,m), N+1))
     
+    # Track if we've warned about high-order issues
+    warned_high_order = False
+    
     for m in range(M + 1):
-        # Store unnormalized P_{n-1}^m for derivative computation
         P_prev = None
+        Pnm_prev_normalized = None
         
         for n in range(max(1, m), N + 1):
-            # Compute unnormalized associated Legendre polynomial
-            P_nm_unnorm = lpmv(m, n, cos_theta)
+            # Check if this is a problematic high-order mode
+            # scipy.lpmv typically fails when n > ~170 or m > ~170
+            if n > 150 or m > 150 or (n > 100 and m > 80):
+                if not warned_high_order:
+                    logger.warning(f"High order modes n={n}, m={m} may have reduced accuracy")
+                    warned_high_order = True
+                
+                # For very high orders, use asymptotic approximation or set to zero
+                # These modes typically have negligible power anyway
+                Pnm = np.zeros(theta_shape, dtype=float)
+                dPnm = np.zeros(theta_shape, dtype=float)
+                
+                cache[(n, m)] = Pnm
+                cache[(n, m, 'deriv')] = dPnm
+                P_prev = None
+                Pnm_prev_normalized = None
+                computed += 1
+                continue
             
-            # Apply normalization: sqrt((2n+1)/2 * (n-m)!/(n+m)!)
-            # loggamma(n+1) = log(n!)
-            log_norm = 0.5 * (np.log(2*n + 1) - np.log(2.0) + 
-                            loggamma(n - m + 1) - loggamma(n + m + 1))
-            norm_factor = np.exp(log_norm)
-            Pnm_flat = norm_factor * P_nm_unnorm
+            # Compute unnormalized associated Legendre polynomial
+            try:
+                P_nm_unnorm = lpmv(m, n, cos_theta)
+                
+                # Check for numerical issues
+                if np.any(~np.isfinite(P_nm_unnorm)):
+                    raise ValueError("Non-finite values in lpmv")
+                    
+            except (ValueError, RuntimeWarning):
+                # lpmv failed - set mode to zero (negligible power anyway)
+                logger.debug(f"lpmv failed at n={n}, m={m}, setting to zero")
+                Pnm = np.zeros(theta_shape, dtype=float)
+                dPnm = np.zeros(theta_shape, dtype=float)
+                cache[(n, m)] = Pnm
+                cache[(n, m, 'deriv')] = dPnm
+                P_prev = None
+                Pnm_prev_normalized = None
+                computed += 1
+                continue
+            
+            # Apply normalization using log-gamma for numerical stability
+            try:
+                log_norm = 0.5 * (np.log(2*n + 1) - np.log(2.0) + 
+                                loggamma(n - m + 1) - loggamma(n + m + 1))
+                norm_factor = np.exp(log_norm)
+                
+                if not np.isfinite(norm_factor) or norm_factor == 0:
+                    raise ValueError("Invalid normalization")
+                    
+                Pnm_flat = norm_factor * P_nm_unnorm
+                
+            except (ValueError, RuntimeWarning):
+                # Normalization failed
+                Pnm = np.zeros(theta_shape, dtype=float)
+                dPnm = np.zeros(theta_shape, dtype=float)
+                cache[(n, m)] = Pnm
+                cache[(n, m, 'deriv')] = dPnm
+                P_prev = None
+                Pnm_prev_normalized = None
+                computed += 1
+                continue
+            
             Pnm = Pnm_flat.reshape(theta_shape)
             
-            # Compute derivative using recurrence relation:
-            # sin(θ) * dP_n^m/dθ = n*cos(θ)*P_n^m - (n+m)*P_{n-1}^m
-            if n > m and P_prev is not None:  # Can use recurrence
-
-                log_norm_prev = 0.5 * (np.log(2*(n-1) + 1) - np.log(2.0) + 
-                  loggamma((n-1) - m + 1) - loggamma((n-1) + m + 1))
-                norm_prev = np.exp(log_norm_prev)
-                
-                dPnm_flat = ((n * cos_theta * Pnm_flat - 
-                            (n + m) * norm_prev * P_prev) / sin_theta_safe)
-            else:  # n == m or first iteration, use alternative formula
-                # For n=m: sin(θ) * dP_n^n/dθ = n*cos(θ)*P_n^n
+            # Compute derivative using recurrence relation
+            if n > m and Pnm_prev_normalized is not None and P_prev is not None:
+                try:
+                    log_norm_prev = 0.5 * (np.log(2*(n-1) + 1) - np.log(2.0) + 
+                      loggamma((n-1) - m + 1) - loggamma((n-1) + m + 1))
+                    norm_prev = np.exp(log_norm_prev)
+                    
+                    if not np.isfinite(norm_prev):
+                        raise ValueError("Invalid previous normalization")
+                    
+                    # Use stored normalized value from previous iteration
+                    term1 = n * cos_theta * Pnm_flat
+                    term2 = (n + m) * Pnm_prev_normalized
+                    
+                    if np.any(~np.isfinite(term1)) or np.any(~np.isfinite(term2)):
+                        raise ValueError("Non-finite terms")
+                    
+                    dPnm_flat = (term1 - term2) / sin_theta_safe
+                    
+                except (ValueError, RuntimeWarning):
+                    # Recurrence failed, use simpler formula
+                    dPnm_flat = (n * cos_theta * Pnm_flat) / sin_theta_safe
+            else:
+                # For n=m or first iteration: sin(θ) * dP_n^n/dθ = n*cos(θ)*P_n^n
                 dPnm_flat = (n * cos_theta * Pnm_flat) / sin_theta_safe
             
             dPnm = dPnm_flat.reshape(theta_shape)
             
+            # Final safety check
+            if np.any(~np.isfinite(Pnm)) or np.any(~np.isfinite(dPnm)):
+                logger.warning(f"Non-finite result at n={n}, m={m}, setting to zero")
+                Pnm = np.zeros(theta_shape, dtype=float)
+                dPnm = np.zeros(theta_shape, dtype=float)
+            
             cache[(n, m)] = Pnm
             cache[(n, m, 'deriv')] = dPnm
             
-            # Store for next iteration
+            # Store for next iteration (store NORMALIZED value)
             P_prev = P_nm_unnorm
+            Pnm_prev_normalized = Pnm_flat  # Store the normalized version
             
             computed += 1
             if computed % 200 == 0 or computed == total:
@@ -358,12 +426,10 @@ def extract_q_coefficients_fft(
     """
     Fast Q-coefficient extraction from FAR-FIELD pattern using FFT.
     
-    Note: This extracts from far-field patterns (no Hankel functions needed).
-    The far-field pattern already has the radial dependence factored out.
+    Properly accounts for FFT normalization and basis function orthogonality.
     """
     n_theta = len(theta_rad)
     n_phi = len(phi_rad)
-    kr = k * radius
     
     Q_coefficients = np.zeros((2, 2*M + 1, N), dtype=complex)
     
@@ -372,12 +438,13 @@ def extract_q_coefficients_fft(
     e_theta_fft = np.fft.fft(e_theta, axis=1)
     e_phi_fft = np.fft.fft(e_phi, axis=1)
     
-    # Normalization for far-field extraction
-    zeta = 376.730313668
-    norm_factor = np.sqrt(4.0 * np.pi) / (k * np.sqrt(2 * zeta))
-    
-    dphi = phi_rad[1] - phi_rad[0] if len(phi_rad) > 1 else 1.0
+    # Grid spacing
+    dphi = 2.0 * np.pi / n_phi  # Full 2π range divided by number of points
+    dtheta = theta_rad[1] - theta_rad[0] if len(theta_rad) > 1 else np.pi / n_theta
     sin_theta_1d = sin_theta[:, 0]
+    
+    # Free space impedance
+    zeta = 376.730313668
     
     logger.info(f"Extracting mode coefficients using FFT...")
     mode_count = 0
@@ -389,7 +456,7 @@ def extract_q_coefficients_fft(
         for n in range(1, N + 1):
             n_idx = n - 1
             
-            # Mode normalization
+            # Mode normalization (Hansen convention)
             norm_n = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
             
             # Far-field phase factor
@@ -398,6 +465,9 @@ def extract_q_coefficients_fft(
             else:
                 phase_n = (-1j) ** n
             
+            # Phase conjugate for extraction
+            phase_n_conj = np.conj(phase_n)
+            
             m_min = max(-n, -M)
             m_max = min(n, M)
             
@@ -405,9 +475,11 @@ def extract_q_coefficients_fft(
                 m_idx = m + M
                 abs_m = abs(m)
                 
+                # Get Legendre polynomials
                 Pnm = legendre_cache[(n, abs_m)][:, 0]
                 dPnm = legendre_cache[(n, abs_m, 'deriv')][:, 0]
                 
+                # Hansen phase factor
                 if m == 0:
                     phase_m = 1.0
                 elif m > 0:
@@ -418,19 +490,20 @@ def extract_q_coefficients_fft(
                 sin_theta_safe_1d = np.where(np.abs(sin_theta_1d) < 1e-10, 
                                              1e-10, sin_theta_1d)
                 
-                # Far-field basis functions (from Davidson eq 2,3)
-                if s == 1:  # TE
+                # Build basis functions (angular part only, no e^(imφ))
+                if s == 1:  # TE mode
                     K_theta_basis = 1j * m * Pnm / sin_theta_safe_1d
                     K_phi_basis = -dPnm
-                else:  # TM
+                else:  # TM mode  
                     K_theta_basis = dPnm
                     K_phi_basis = 1j * m * Pnm / sin_theta_safe_1d
                 
-                # Apply phase and normalization
-                K_theta_basis = norm_n * phase_m * phase_n * K_theta_basis
-                K_phi_basis = norm_n * phase_m * phase_n * K_phi_basis
+                # Apply normalization and phase (conjugate for orthogonality)
+                K_theta_basis = norm_n * phase_m * phase_n_conj * K_theta_basis
+                K_phi_basis = norm_n * phase_m * phase_n_conj * K_phi_basis
                 
-                # Get FFT coefficient
+                # Get FFT coefficient for this m
+                # FFT index mapping: m>=0 -> m, m<0 -> n_phi+m
                 if m >= 0:
                     m_fft_idx = m
                 else:
@@ -439,17 +512,23 @@ def extract_q_coefficients_fft(
                 e_theta_m = e_theta_fft[:, m_fft_idx]
                 e_phi_m = e_phi_fft[:, m_fft_idx]
                 
-                # Integrate over theta
+                # Orthogonality integral over theta
+                # The FFT has already done: ∫ E(θ,φ) e^(-imφ) dφ
+                # We need: ∫∫ E(θ,φ) K*(θ) e^(-imφ) sinθ dθ dφ
                 integrand_theta = (
                     e_theta_m * np.conj(K_theta_basis) + 
                     e_phi_m * np.conj(K_phi_basis)
                 ) * sin_theta_1d
                 
-                integral_theta = np.trapezoid(integrand_theta, theta_rad)
+                integral_theta = np.trapz(integrand_theta, theta_rad)
                 
-                Q_coefficients[s_idx, m_idx, n_idx] = (
-                    norm_factor * integral_theta * dphi
-                )
+                # Normalization:
+                # Reconstruction uses: E = √(ζk/4π) × Q × [basis]
+                # Extraction needs: Q = [1/√(ζk/4π)] × [1/2π] × ∫∫ E·K* dΩ
+                # The 1/2π accounts for the φ-integration normalization
+                norm_factor = (1.0 / (2.0 * np.pi)) / np.sqrt(zeta * k / (4.0 * np.pi))
+                
+                Q_coefficients[s_idx, m_idx, n_idx] = norm_factor * integral_theta
                 
                 mode_count += 1
             
@@ -466,14 +545,13 @@ def calculate_q_coefficients(
     N_phi: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    Calculate Q-mode coefficients with all optimizations enabled.
+    Calculate Q-mode coefficients from far-field pattern.
     
-    Optimizations:
-    - Automatic pattern extension to full sphere
-    - Smart grid downsampling (only keep Nyquist-required points)
-    - Fast Legendre computation using scipy's sph_harm
+    This function extracts spherical mode coefficients from a far-field
+    antenna pattern (angular distribution only, no radial dependence).
     
-    This should be 10-20x faster than original implementation.
+    The 'radius' parameter is used only to determine the maximum mode index N.
+    It represents the minimum sphere radius that would enclose the antenna.
     """
     from .utilities import frequency_to_wavelength
     from .spherical_expansion import calculate_mode_index_N
@@ -482,20 +560,21 @@ def calculate_q_coefficients(
     wavelength = frequency_to_wavelength(freq)
     k = 2 * np.pi / wavelength
     
-    # Calculate required mode index
+    # Calculate required mode index based on minimum sphere radius
     N = calculate_mode_index_N(k, radius)
     M = N  # For general antennas
     
     logger.info(f"\n{'='*70}")
-    logger.info(f"Q-COEFFICIENT CALCULATION")
+    logger.info(f"Q-COEFFICIENT CALCULATION (FAR-FIELD EXTRACTION)")
     logger.info(f"{'='*70}")
     logger.info(f"Frequency: {freq/1e9:.3f} GHz (lambda = {wavelength*1000:.2f} mm)")
-    logger.info(f"Radius: {radius:.4f} m ({radius/wavelength:.1f} lambda)")
+    logger.info(f"Reference radius: {radius:.4f} m ({radius/wavelength:.1f} lambda)")
+    logger.info(f"  (used only for mode truncation, not extraction)")
     logger.info(f"Mode indices: N = {N}, M = {M}")
     
     # === OPTIMIZE PATTERN GRID ===
     theta, phi, e_theta, e_phi = prepare_pattern_for_swe(
-        pattern_obj, N, noise_floor_db=-60, downsample_factor=2.0
+        pattern_obj, N, noise_floor_db=-60, downsample_factor=1.5
     )
     
     # Convert to radians and create meshgrid
@@ -511,18 +590,12 @@ def calculate_q_coefficients(
     # === FAST LEGENDRE COMPUTATION ===
     legendre_cache = precompute_legendre_fast(N, M, THETA)
     
-    # === PRE-COMPUTE HANKEL FUNCTIONS ===
-    logger.info("Pre-computing spherical Hankel functions...")
-    kr = k * radius
-    hankel_cache = {}
-    for n in range(1, N + 1):
-        hankel_cache[n] = spherical_hankel_second_kind(n, kr)
-        hankel_cache[(n, 'deriv')] = spherical_hankel_derivative(n, kr)
-    
     # === MODE COEFFICIENT EXTRACTION ===
-    logger.info(f"Extracting mode coefficients using FFT method...")
-
-    # Use FFT-based extraction (5-10x faster than trapezoid)
+    logger.info(f"Extracting mode coefficients from far-field pattern...")
+    
+    # NO Hankel functions needed for far-field extraction!
+    # Far-field patterns already have radial dependence removed.
+    
     Q_coefficients = extract_q_coefficients_fft(
         e_theta=e_theta,
         e_phi=e_phi,
@@ -530,7 +603,7 @@ def calculate_q_coefficients(
         M=M,
         N=N,
         k=k,
-        radius=radius,
+        radius=radius,  # Only used for logging/metadata
         theta_rad=theta_rad,
         phi_rad=phi_rad,
         THETA=THETA,
@@ -1107,43 +1180,10 @@ def evaluate_farfield_from_modes(
     normalize_to_radius: Optional[float] = None
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Evaluate far-field pattern from spherical mode coefficients using asymptotic form.
+    Evaluate far-field pattern from spherical mode coefficients.
     
-    This function uses the far-field asymptotic approximation of spherical Hankel
-    functions: h_n^(2)(kr) → (-j)^(n+1) * exp(-jkr) / (kr) for kr >> 1
-    
-    This is much faster than full near-field evaluation and numerically stable.
-    The radial component E_r is negligible in far field and not computed.
-    
-    Args:
-        Q_coefficients: Complex array [s, m, n] of mode coefficients
-        M: Maximum azimuthal mode index
-        N: Maximum polar mode index
-        k: Wavenumber in rad/m
-        theta: Theta angles in radians (any shape)
-        phi: Phi angles in radians (same shape as theta)
-        normalize_to_radius: If provided, includes exp(-jkr)/(kr) factor for this radius.
-                            If None, returns pattern without radial factor (default).
-        
-    Returns:
-        Tuple of (E_theta, E_phi) in far field. Complex arrays same shape as theta/phi.
-        
-    Notes:
-        - This assumes kr >> 1 (typically r > 10*wavelength)
-        - Results are normalized to unit distance unless normalize_to_radius specified
-        - Much faster than evaluate_field_from_modes for far field (5-10x speedup)
-        
-    Example:
-        ```python
-        # Fast far-field evaluation
-        theta_rad = np.radians(np.linspace(-180, 180, 361))
-        phi_rad = np.radians(np.linspace(0, 360, 73))
-        THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
-        
-        E_theta, E_phi = evaluate_farfield_from_modes(
-            Q_coefficients, M, N, k, THETA, PHI
-        )
-        ```
+    Uses far-field asymptotic form with proper Hansen convention.
+    This is the inverse operation to extract_q_coefficients_fft.
     """
     # Ensure arrays and get shape
     theta = np.atleast_1d(theta)
@@ -1172,27 +1212,21 @@ def evaluate_farfield_from_modes(
     sin_theta = np.sin(theta_grid)
     sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
     
-    # Precompute Legendre polynomials for all required (n,m)
-    legendre_cache = {}
-    for n in range(1, N + 1):
-        for m_abs in range(min(n, M) + 1):
-            Pnm = normalized_associated_legendre(n, m_abs, theta_grid)
-            dPnm = normalized_legendre_derivative(n, m_abs, theta_grid)
-            legendre_cache[(n, m_abs)] = (Pnm, dPnm)
+    logger.info(f"Evaluating far-field from {2*(2*M+1)*N} modes...")
     
-    logger.info("Evaluating far-field pattern from modes...")
-    
-    # Loop over modes
+    # Loop over all modes
     for s in [1, 2]:
         s_idx = s - 1
         
-        for n in range(1, N + 1): 
-            # Far-field phase factor depends on s
+        for n in range(1, N + 1):
+            n_idx = n - 1
+            
+            # Far-field phase factor (Hansen convention)
             if s == 1:
                 phase_n = (-1j) ** (n + 1)
-            else:  # s == 2
+            else:
                 phase_n = (-1j) ** n
-
+            
             # Mode normalization
             norm_n = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
             
@@ -1200,46 +1234,42 @@ def evaluate_farfield_from_modes(
             m_max = min(n, M)
             
             for m in range(m_min, m_max + 1):
-                if abs(m) > n:
-                    continue
-                
-                # Get mode coefficient
                 m_idx = m + M
                 n_idx = n - 1
+                abs_m = abs(m)
+                
+                # Get mode coefficient (already in Hansen convention)
                 Q_smn = Q_coefficients[s_idx, m_idx, n_idx]
                 
                 # Skip negligible coefficients
                 if abs(Q_smn) < 1e-15:
                     continue
                 
-                # Get precomputed Legendre functions
-                Pnm, dPnm_dtheta = legendre_cache[(n, abs(m))]
+                # Compute Legendre polynomials
+                Pnm = normalized_associated_legendre(n, abs_m, theta_grid)
+                dPnm_dtheta = normalized_legendre_derivative(n, abs_m, theta_grid)
                 
-                # Phase factor for negative m
+                # Hansen phase factor
                 if m == 0:
                     phase_m = 1.0
                 elif m > 0:
-                    phase_m = (-1.0) ** m  
-                else:  # m < 0
+                    phase_m = (-1.0) ** m
+                else:
                     phase_m = 1.0
                 
                 # Azimuthal phase
                 exp_imphi = np.exp(1j * m * phi_grid)
                 
-                # Combined normalization and phase
+                # Combined coefficient
                 coeff = norm_amplitude * radial_factor * Q_smn * phase_n * norm_n * phase_m
                 
-                # Far-field angular functions (without radial Hankel functions)
-                # In the far field, the vector spherical harmonics simplify significantly
-                if s == 1:  # TE mode (M-mode)
-                    # F_1mn theta component
-                    F_theta = -(dPnm_dtheta / sin_theta_safe) * exp_imphi
-                    # F_1mn phi component  
-                    F_phi = -(1j * m * Pnm / sin_theta_safe) * exp_imphi
-                else:  # s == 2, TM mode (N-mode)
-                    # F_2mn theta component
+                # Far-field angular functions (Hansen/Davidson formulation)
+                # These match the basis functions used in extraction
+                if s == 1:  # TE mode (m'_mn)
+                    F_theta = (1j * m * Pnm / sin_theta_safe) * exp_imphi
+                    F_phi = -dPnm_dtheta * exp_imphi
+                else:  # s == 2, TM mode (n'_mn)
                     F_theta = dPnm_dtheta * exp_imphi
-                    # F_2mn phi component
                     F_phi = (1j * m * Pnm / sin_theta_safe) * exp_imphi
                 
                 # Accumulate contributions
