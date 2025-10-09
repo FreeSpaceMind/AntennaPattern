@@ -37,7 +37,7 @@ def prepare_pattern_for_swe(
     pattern_obj,
     N: int,
     noise_floor_db: float = -40,
-    downsample_factor: float = 2
+    downsample_factor: float = 1.5
 ) -> Tuple:
     """
     Prepare pattern for SWE: extend to full sphere and downsample if oversampled.
@@ -91,8 +91,8 @@ def prepare_pattern_for_swe(
     
     # Nyquist requirement for SWE (from Hansen):
     # Δθ ≤ π/N, Δφ ≤ 2π/N
-    dtheta_required = np.degrees(np.pi / N) / downsample_factor  # Include safety factor
-    dphi_required = np.degrees(2 * np.pi / N) / downsample_factor
+    dtheta_required = np.degrees(0.5 * np.pi / N) / downsample_factor  # Include safety factor
+    dphi_required = np.degrees(np.pi / N) / downsample_factor
     
     # Current sampling
     dtheta_current = np.mean(np.diff(theta_current))
@@ -493,7 +493,7 @@ def extract_q_coefficients_fft(
                 
                 # Build basis functions (angular part only, no e^(imφ))
                 if s == 1:  # TE mode
-                    K_theta_basis = -1j * m * Pnm / sin_theta_safe_1d
+                    K_theta_basis = 1j * m * Pnm / sin_theta_safe_1d
                     K_phi_basis = -dPnm
                 else:  # TM mode  
                     K_theta_basis = dPnm
@@ -616,6 +616,9 @@ def calculate_q_coefficients(
     logger.info(f"Power in first 10 modes: {np.sum(power_per_n[:10])/total_power*100:.1f}%")
     logger.info(f"Power in last 10 modes: {np.sum(power_per_n[-10:])/total_power*100:.1f}%")
     logger.info(f"{'='*70}\n")
+
+    # Generate detailed power report
+    report_mode_power_distribution(Q_coefficients, M, N)
     
     return {
         'Q_coefficients': Q_coefficients,
@@ -630,6 +633,94 @@ def calculate_q_coefficients(
         'n_theta_samples': len(theta),
         'n_phi_samples': len(phi) 
     }
+
+def calculate_power_per_azimuthal_mode(Q_coefficients: np.ndarray, M: int, N: int) -> np.ndarray:
+    """
+    Calculate power per azimuthal mode |m|.
+    
+    From GRASP: Power in each |m| is summed over all n and both polarizations.
+    
+    Args:
+        Q_coefficients: [2, 2*M+1, N] array of mode coefficients
+        M: Maximum azimuthal index
+        N: Maximum polar index
+        
+    Returns:
+        Array of power per |m| from 0 to M
+    """
+    power_per_m = np.zeros(M + 1)
+    
+    for m_abs in range(M + 1):
+        power_m = 0.0
+        
+        # For m=0, only one m index
+        if m_abs == 0:
+            m_indices = [M]  # m=0 is at index M
+        else:
+            # For m>0, sum both +m and -m
+            m_indices = [M - m_abs, M + m_abs]
+        
+        for m_idx in m_indices:
+            for s in [0, 1]:  # Both TE and TM
+                for n in range(max(m_abs, 1), N + 1):
+                    n_idx = n - 1
+                    Q_smn = Q_coefficients[s, m_idx, n_idx]
+                    power_m += abs(Q_smn)**2
+        
+        power_per_m[m_abs] = power_m
+    
+    return power_per_m
+
+def report_mode_power_distribution(Q_coefficients: np.ndarray, M: int, N: int) -> None:
+    """
+    Generate detailed power distribution report similar to GRASP output.
+    
+    Reports power in each azimuthal mode |m| and polar mode n.
+    """
+    # Calculate power distributions
+    power_per_n = calculate_mode_power_distribution(Q_coefficients, M, N)
+    power_per_m = calculate_power_per_azimuthal_mode(Q_coefficients, M, N)
+    
+    total_power = np.sum(power_per_n)
+    
+    logger.info("\n" + "="*70)
+    logger.info("POWER DISTRIBUTION BY AZIMUTHAL MODE")
+    logger.info("="*70)
+    logger.info(f"{'|m|':<6} {'Power':<14} {'Accumulated':<14} {'Power(dB)':<12}")
+    logger.info("-"*70)
+    
+    accum_m = 0.0
+    for m in range(min(M + 1, 16)):  # Limit to first 16 for readability
+        accum_m += power_per_m[m]
+        power_db = 10 * np.log10(power_per_m[m] / total_power) if power_per_m[m] > 0 else -200
+        logger.info(f"{m:<6} {power_per_m[m]:<14.6e} {accum_m/total_power:<14.6f} {power_db:<12.2f}")
+    
+    logger.info("\n" + "="*70)
+    logger.info("POWER DISTRIBUTION BY POLAR MODE")
+    logger.info("="*70)
+    logger.info(f"{'n':<6} {'Power':<14} {'Accumulated':<14} {'Power(dB)':<12}")
+    logger.info("-"*70)
+    
+    accum_n = 0.0
+    # Show first 20 modes
+    for n in range(1, min(N + 1, 21)):
+        accum_n += power_per_n[n-1]
+        power_db = 10 * np.log10(power_per_n[n-1] / total_power) if power_per_n[n-1] > 0 else -200
+        logger.info(f"{n:<6} {power_per_n[n-1]:<14.6e} {accum_n/total_power:<14.6f} {power_db:<12.2f}")
+    
+    if N > 20:
+        logger.info(f"...")
+        # Show last 5 modes
+        for n in range(max(21, N - 4), N + 1):
+            accum_n = np.sum(power_per_n[:n])
+            power_db = 10 * np.log10(power_per_n[n-1] / total_power) if power_per_n[n-1] > 0 else -200
+            logger.info(f"{n:<6} {power_per_n[n-1]:<14.6e} {accum_n/total_power:<14.6f} {power_db:<12.2f}")
+    
+    logger.info("="*70)
+    logger.info(f"Total power: {total_power:.6e}")
+    logger.info(f"Power in |m|≤5: {np.sum(power_per_m[:6])/total_power*100:.2f}%")
+    logger.info(f"Power in n≤10: {np.sum(power_per_n[:10])/total_power*100:.2f}%")
+    logger.info("="*70 + "\n")
 
 def calculate_mode_index_N(k: float, r0: float) -> int:
     """
