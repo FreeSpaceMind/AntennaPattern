@@ -921,8 +921,8 @@ def read_ticra_sph(file_path: Union[str, Path], frequency: float) -> Dict[str, A
                 values = lines[line_idx].split()
                 Q1_re, Q1_im, Q2_re, Q2_im = map(float, values[:4])
                 
-                Q_coefficients[0, m_idx, n_idx] = norm_factor * complex(Q1_re, -Q1_im)
-                Q_coefficients[1, m_idx, n_idx] = norm_factor * complex(Q2_re, -Q2_im)
+                Q_coefficients[0, m_idx, n_idx] = norm_factor * complex(Q1_re, Q1_im)
+                Q_coefficients[1, m_idx, n_idx] = norm_factor * complex(Q2_re, Q2_im)
                 
                 line_idx += 1
         else:
@@ -957,10 +957,18 @@ def read_ticra_sph(file_path: Union[str, Path], frequency: float) -> Dict[str, A
                 line_idx += 1
                 
                 # Store with conversions
-                Q_coefficients[0, m_neg_idx, n_idx] = norm_factor * complex(Q1_neg_re, -Q1_neg_im)
-                Q_coefficients[1, m_neg_idx, n_idx] = norm_factor * complex(Q2_neg_re, -Q2_neg_im)
-                Q_coefficients[0, m_pos_idx, n_idx] = norm_factor * complex(Q1_pos_re, -Q1_pos_im)
-                Q_coefficients[1, m_pos_idx, n_idx] = norm_factor * complex(Q2_pos_re, -Q2_pos_im)
+                Q_coefficients[0, m_neg_idx, n_idx] = norm_factor * complex(Q1_neg_re, Q1_neg_im)
+                Q_coefficients[1, m_neg_idx, n_idx] = norm_factor * complex(Q2_neg_re, Q2_neg_im)
+                Q_coefficients[0, m_pos_idx, n_idx] = norm_factor * complex(Q1_pos_re, Q1_pos_im)
+                Q_coefficients[1, m_pos_idx, n_idx] = norm_factor * complex(Q2_pos_re, Q2_pos_im)
+
+    # In read_ticra_sph, after parsing all coefficients:
+    total_power = 0.5 * np.sum(np.abs(Q_coefficients)**2)
+    logger.info(f"\n=== POWER CHECK ===")
+    logger.info(f"Total radiated power from Q coefficients: {total_power:.6e} W")
+    logger.info(f"This should equal 0.5 for normalized coefficients")
+    logger.info(f"  or the actual radiated power if in physical units")
+
     
     logger.info(f"Successfully read coefficients: shape={Q_coefficients.shape}")
     

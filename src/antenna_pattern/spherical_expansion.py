@@ -1310,15 +1310,17 @@ def precompute_legendre_polynomials_fast(
                 term2 = 0.0
                 
                 if m - 1 >= 0 and (n, m - 1) in cache:
-                    term1 = 0.5 * (n - m + 1) * (n + m) * cache[(n, m - 1)]
+                    ratio1 = norm_factors[(n, m - 1)] / norm_factors[(n, m)]
+                    term1 = 0.5 * (n - m + 1) * (n + m) * ratio1 * cache[(n, m - 1)]
                 
                 # Check both n and M constraints for m+1
                 if m + 1 <= n and m + 1 <= M and (n, m + 1) in norm_factors:
                     P_nm1_scipy = lpmv(m + 1, n, cos_theta)
                     P_nm1_unnorm = P_nm1_scipy * ((-1.0) ** (m + 1))
                     P_bar_nm1 = norm_factors[(n, m + 1)] * P_nm1_unnorm
-                    term2 = 0.5 * P_bar_nm1
-                
+                    ratio2 = norm_factors[(n, m + 1)] / norm_factors[(n, m)]
+                    term2 = 0.5 * ratio2 * P_bar_nm1
+                            
                 dP_bar = term1 - term2
             
             cache[(n, m, 'deriv')] = dP_bar
@@ -1357,7 +1359,7 @@ def evaluate_farfield_from_modes(
     
     # Amplitude factor
     zeta = 376.730313668
-    amplitude = k * np.sqrt(zeta / (4.0 * np.pi))
+    amplitude = np.sqrt(zeta / (4.0 * np.pi))
     
     # Precompute trig
     cos_theta = np.cos(theta_flat)
@@ -1372,7 +1374,7 @@ def evaluate_farfield_from_modes(
     t_leg = time.time()
     legendre_cache = precompute_legendre_polynomials_fast(N, M, cos_theta_clip, sin_theta)
     logger.info(f"  Legendre computation: {time.time() - t_leg:.2f}s")
-    
+            
     # Pre-compute azimuthal phases
     m_array = np.arange(-M, M + 1)
     azimuthal_phases = np.exp(1j * m_array[:, np.newaxis] * phi_flat[np.newaxis, :])
