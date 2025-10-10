@@ -1415,11 +1415,13 @@ def evaluate_farfield_from_modes(
             # Combined coefficient
             coeff = norm_amplitude * radial_factor * Q_smn * phase_n * norm_n * phase_m
             
-            # Far-field angular functions
+            # Far-field angular functions (using asymptotic forms)
             if s == 1:  # TE mode
-                F_theta = (1j * m * Pnm / sin_theta_safe) * exp_phase
+                # m'_mn in far field: angular part only with (-i)^(n+1) phase
+                F_theta = -(1j * m * Pnm / sin_theta_safe) * exp_phase
                 F_phi = -dPnm_dtheta * exp_phase
             else:  # TM mode
+                # n'_mn in far field: angular part only with (-i)^n phase
                 F_theta = dPnm_dtheta * exp_phase
                 F_phi = (1j * m * Pnm / sin_theta_safe) * exp_phase
             

@@ -119,6 +119,14 @@ class AntennaPattern(PatternOperationsMixin):
         """Get phi angles in degrees."""
         return self.data.phi.values
     
+    @property
+    def e_co_db(self) -> xr.DataArray:
+        return 10 * np.log10(np.maximum(np.abs(self.data.e_co)**2, 1e-30))
+
+    @property
+    def e_cx_db(self) -> xr.DataArray:
+        return 10 * np.log10(np.maximum(np.abs(self.data.e_cx)**2, 1e-30))
+    
     def clear_cache(self) -> None:
         """Clear the internal cache."""
         self._cache = {}
@@ -191,6 +199,38 @@ class AntennaPattern(PatternOperationsMixin):
         
         swe_data = load_swe_coefficients(file_path)
         return create_pattern_from_swe(swe_data, theta_angles, phi_angles)
+    
+    
+    @classmethod
+    def from_ticra_sph(cls, file_path: Union[str, Path], frequency: float,
+                    theta_angles: Optional[np.ndarray] = None,
+                    phi_angles: Optional[np.ndarray] = None) -> 'AntennaPattern':
+        """
+        Create AntennaPattern from TICRA .sph file.
+        
+        Args:
+            file_path: Path to .sph file
+            frequency: Frequency in Hz
+            theta_angles: Theta angles for reconstruction (default: -180 to 180, 1°)
+            phi_angles: Phi angles for reconstruction (default: 0 to 360, 5°)
+            
+        Returns:
+            AntennaPattern object with SWE coefficients attached
+            
+        Example:
+        ```python
+                pattern = AntennaPattern.from_ticra_sph('antenna.sph', frequency=9.2e9)
+        ```
+        """
+        from .ant_io import read_ticra_sph, create_pattern_from_swe
+
+        # Read SWE coefficients
+        swe_data = read_ticra_sph(file_path, frequency)
+
+        # Create pattern from coefficients
+        pattern = create_pattern_from_swe(swe_data, theta_angles, phi_angles)
+
+        return pattern
 
     def copy(self) -> 'AntennaPattern':
         """
