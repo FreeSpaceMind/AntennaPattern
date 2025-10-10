@@ -1304,7 +1304,7 @@ def evaluate_farfield_from_modes(
     # OPTIMIZATION 1: Pre-compute ALL azimuthal phases
     # Shape: (2*M+1, n_points)
     m_array = np.arange(-M, M + 1)[:, np.newaxis]  # (2*M+1, 1)
-    exp_imphi_all = np.exp(-1j * m_array * phi_flat[np.newaxis, :])  # (2*M+1, n_points)
+    exp_imphi_all = np.exp(1j * m_array * phi_flat[np.newaxis, :])  # (2*M+1, n_points)
     
     logger.info(f"Evaluating far-field from {2*(2*M+1)*N} modes (optimized)...")
     logger.info(f"  Pre-computed azimuthal phases: {exp_imphi_all.shape}")
@@ -1409,7 +1409,7 @@ def evaluate_farfield_from_modes(
             norm_n = np.sqrt(2.0 / (n * (n + 1)))
             
             # Phase factors from Hansen convention
-            phase_n = (1j) ** (n + 1) if s == 1 else (1j) ** n
+            phase_n = (-1j) ** (n + 1) if s == 1 else (-1j) ** n
             phase_m = 1.0 if m == 0 else ((-1.0) ** m if m > 0 else 1.0)
             
             # Get pre-computed azimuthal phase
@@ -1422,8 +1422,8 @@ def evaluate_farfield_from_modes(
             # Far-field angular functions (K_smn from Hansen)
             if s == 1:  # TE mode (m'_mn)
                 # K_1mn: theta = (im/sin(theta))*P_n^m, phi = -dP_n^m/dtheta
-                F_theta = -(1j * m * Pnm / sin_theta_safe) * exp_phase
-                F_phi = -dPnm_dtheta * exp_phase
+                F_theta = (1j * m * Pnm / sin_theta_safe) * exp_phase
+                F_phi = dPnm_dtheta * exp_phase
             else:  # TM mode (n'_mn)  
                 # K_2mn: theta = dP_n^m/dtheta, phi = (im/sin(theta))*P_n^m
                 F_theta = dPnm_dtheta * exp_phase
