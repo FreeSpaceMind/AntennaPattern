@@ -1249,6 +1249,84 @@ def evaluate_field_from_modes(
     
     return E_r, E_theta, E_phi
 
+def precompute_legendre_polynomials_fast(
+    N: int,
+    M: int, 
+    cos_theta: np.ndarray,
+    sin_theta: np.ndarray
+) -> Dict:
+    """
+    Pre-compute all normalized Legendre polynomials efficiently.
+    """
+    from scipy.special import lpmv, gammaln
+    
+    n_points = len(cos_theta)
+    cache = {}
+    
+    # Safe sin(theta) for divisions
+    sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
+    
+    logger.info(f"Pre-computing Legendre polynomials: N={N}, M={M}")
+    
+    # Pre-compute normalization factors - need extra for derivatives
+    norm_factors = {}
+    for n in range(1, N + 1):
+        # Compute up to min(n, M) for actual modes
+        # But also need m+1 for derivatives, so compute one extra if possible
+        m_max_for_norm = min(n, M + 1)  # Allow one extra for derivatives
+        for m in range(m_max_for_norm + 1):
+            log_norm = 0.5 * (
+                np.log(2.0 * n + 1.0) + 
+                gammaln(n - m + 1) - 
+                np.log(2.0) - 
+                gammaln(n + m + 1)
+            )
+            norm_factors[(n, m)] = np.exp(log_norm)
+    
+    # Compute all Legendre polynomials
+    for n in range(1, N + 1):
+        m_max = min(n, M)
+        
+        for m in range(m_max + 1):
+            # Compute P_n^m using scipy
+            P_nm_scipy = lpmv(m, n, cos_theta)
+            P_nm_unnorm = P_nm_scipy * ((-1.0) ** m)
+            P_bar_nm = norm_factors[(n, m)] * P_nm_unnorm
+            cache[(n, m)] = P_bar_nm
+            
+            # Compute derivative using Hansen (A1.34b)
+            if m == 0:
+                # dP_n^0/dθ = -P_n^1
+                if n >= 1 and (n, 1) in norm_factors:
+                    P_n1_scipy = lpmv(1, n, cos_theta)
+                    P_n1_unnorm = P_n1_scipy * (-1.0)
+                    P_bar_n1 = norm_factors[(n, 1)] * P_n1_unnorm
+                    dP_bar = -P_bar_n1
+                else:
+                    dP_bar = np.zeros(n_points)
+            else:
+                # dP_n^m/dθ = 1/2{(n-m+1)(n+m)P_n^{m-1} - P_n^{m+1}}
+                term1 = 0.0
+                term2 = 0.0
+                
+                if m - 1 >= 0 and (n, m - 1) in cache:
+                    term1 = 0.5 * (n - m + 1) * (n + m) * cache[(n, m - 1)]
+                
+                # Check both n and M constraints for m+1
+                if m + 1 <= n and m + 1 <= M and (n, m + 1) in norm_factors:
+                    P_nm1_scipy = lpmv(m + 1, n, cos_theta)
+                    P_nm1_unnorm = P_nm1_scipy * ((-1.0) ** (m + 1))
+                    P_bar_nm1 = norm_factors[(n, m + 1)] * P_nm1_unnorm
+                    term2 = 0.5 * P_bar_nm1
+                
+                dP_bar = term1 - term2
+            
+            cache[(n, m, 'deriv')] = dP_bar
+    
+    logger.info(f"Cached {len(cache) // 2} Legendre polynomial pairs")
+    return cache
+
+
 def evaluate_farfield_from_modes(
     Q_coefficients: np.ndarray,
     M: int,
@@ -1259,189 +1337,105 @@ def evaluate_farfield_from_modes(
     normalize_to_radius: Optional[float] = None
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Optimized far-field pattern evaluation from spherical mode coefficients.
+    Fast far-field evaluation using pre-computed Legendre polynomials.
     
-    Key optimizations:
-    1. Pre-compute all azimuthal phase factors at once (vectorized)
-    2. Batch Legendre polynomial computation per n (reduces scipy calls)
-    3. Skip negligible coefficients early
-    4. Pre-compute phase factors
-    5. Use einsum for final accumulation
-    
-    Expected speedup: 3-5x for typical patterns
+    Implements Hansen equations (A1.59, A1.60).
     """
     import time
     t_start = time.time()
     
-    # Ensure arrays and get shape
-    theta = np.atleast_1d(theta)
-    phi = np.atleast_1d(phi)
-    output_shape = np.broadcast_shapes(theta.shape, phi.shape)
-    
     # Broadcast to common shape
     theta_grid, phi_grid = np.broadcast_arrays(theta, phi)
-    flat_shape = theta_grid.size
+    output_shape = theta_grid.shape
     theta_flat = theta_grid.flatten()
     phi_flat = phi_grid.flatten()
+    n_points = len(theta_flat)
     
-    # Initialize field arrays (flat for faster access)
-    E_theta_flat = np.zeros(flat_shape, dtype=complex)
-    E_phi_flat = np.zeros(flat_shape, dtype=complex)
+    # Initialize
+    E_theta = np.zeros(n_points, dtype=complex)
+    E_phi = np.zeros(n_points, dtype=complex)
     
-    # Constants
+    # Amplitude factor
     zeta = 376.730313668
-    # Far-field: E = (k*sqrt(zeta)/sqrt(4*pi)) * sum(Q_smn * K_smn)
-    norm_amplitude = k * np.sqrt(zeta / (4.0 * np.pi))
+    amplitude = k * np.sqrt(zeta / (4.0 * np.pi))
     
-    # No radial factor for far-field pattern
-    radial_factor = 1.0
-    
-    # Pre-compute trig functions
-    sin_theta = np.sin(theta_flat)
-    sin_theta_safe = np.where(np.abs(sin_theta) < 1e-10, 1e-10, sin_theta)
+    # Precompute trig
     cos_theta = np.cos(theta_flat)
+    sin_theta = np.sin(theta_flat)
+    at_pole = np.abs(sin_theta) < 1e-8
+    sin_theta_safe = np.where(at_pole, 1.0, sin_theta)
+    cos_theta_clip = np.clip(cos_theta, -0.99999999, 0.99999999)
     
-    # OPTIMIZATION 1: Pre-compute ALL azimuthal phases
-    # Shape: (2*M+1, n_points)
-    m_array = np.arange(-M, M + 1)[:, np.newaxis]  # (2*M+1, 1)
-    exp_imphi_all = np.exp(1j * m_array * phi_flat[np.newaxis, :])  # (2*M+1, n_points)
+    logger.info(f"Evaluating far-field: N={N}, M={M}, {n_points} points")
     
-    logger.info(f"Evaluating far-field from {2*(2*M+1)*N} modes (optimized)...")
-    logger.info(f"  Pre-computed azimuthal phases: {exp_imphi_all.shape}")
+    # PRE-COMPUTE ALL LEGENDRE POLYNOMIALS
+    t_leg = time.time()
+    legendre_cache = precompute_legendre_polynomials_fast(N, M, cos_theta_clip, sin_theta)
+    logger.info(f"  Legendre computation: {time.time() - t_leg:.2f}s")
     
-    # OPTIMIZATION 2: Pre-filter active modes (skip zeros)
-    active_modes = []
-    for s in [1, 2]:
-        s_idx = s - 1
-        for n in range(1, N + 1):
-            n_idx = n - 1
+    # Pre-compute azimuthal phases
+    m_array = np.arange(-M, M + 1)
+    azimuthal_phases = np.exp(1j * m_array[:, np.newaxis] * phi_flat[np.newaxis, :])
+    
+    # Loop over modes
+    t_sum = time.time()
+    for n in range(1, N + 1):
+        n_idx = n - 1
+        norm_factor = np.sqrt(2.0 / (n * (n + 1)))
+        
+        for s in [1, 2]:
+            s_idx = s - 1
+            phase_n = (-1j) ** (n + 1) if s == 1 else (-1j) ** n
+            
             m_min = max(-n, -M)
             m_max = min(n, M)
+            
             for m in range(m_min, m_max + 1):
                 m_idx = m + M
+                abs_m = abs(m)
+                
                 Q_smn = Q_coefficients[s_idx, m_idx, n_idx]
-                if abs(Q_smn) > 1e-15:
-                    active_modes.append((s, n, m, Q_smn))
-    
-    n_active = len(active_modes)
-    logger.info(f"  Active modes (|Q|>1e-15): {n_active}/{2*(2*M+1)*N} ({100*n_active/(2*(2*M+1)*N):.1f}%)")
-    
-    # OPTIMIZATION 3: Batch process by n to cache Legendre polynomials
-    from scipy.special import lpmv, gammaln
-    
-    # Group active modes by n
-    modes_by_n = {}
-    for s, n, m, Q in active_modes:
-        if n not in modes_by_n:
-            modes_by_n[n] = []
-        modes_by_n[n].append((s, m, Q))
-    
-    cos_theta_clip = np.clip(cos_theta, -1.0, 1.0)
-    
-    # Process each n value
-    for n in sorted(modes_by_n.keys()):
-        # Pre-compute phase factors for this n
-        norm_n = 1.0 / np.sqrt(2.0 * np.pi * np.sqrt(n * (n + 1)))
-        
-        # Legendre polynomial cache for this n
-        P_cache = {}
-        dP_cache = {}
-        
-        # Determine which |m| values we need
-        m_abs_needed = set(abs(m) for s, m, Q in modes_by_n[n])
-        
-        # Compute all needed Legendre polynomials at once
-        for m_abs in m_abs_needed:
-            # Check validity: |m| must be <= n
-            if m_abs > n:
-                P_cache[m_abs] = np.zeros_like(cos_theta_clip)
-                dP_cache[m_abs] = np.zeros_like(cos_theta_clip)
-                continue
-            
-            # Legendre polynomial
-            P_unnorm = lpmv(m_abs, n, cos_theta_clip)
-            
-            # Normalized version
-            log_norm = 0.5 * (np.log(2*n + 1) + gammaln(n - m_abs + 1) - 
-                             np.log(2) - gammaln(n + m_abs + 1))
-            Pnm = np.exp(log_norm) * P_unnorm
-            P_cache[m_abs] = Pnm
-            
-            # Derivative using recurrence relation
-            if m_abs > 0 and m_abs < n:
-                # Check if we can compute P_n^(m+1)
-                if m_abs + 1 <= n:
-                    P_m_plus_1 = lpmv(m_abs + 1, n, cos_theta_clip)
-                    log_norm_p1 = 0.5 * (np.log(2*n + 1) + gammaln(n - m_abs) - 
-                                        np.log(2) - gammaln(n + m_abs + 2))
-                    Pnm_plus_1 = np.exp(log_norm_p1) * P_m_plus_1
-                    dPnm = m_abs * cos_theta * Pnm / sin_theta_safe + Pnm_plus_1
+                if np.abs(Q_smn) < 1e-15:
+                    continue
+                
+                # Hansen phase
+                phase_m = 1.0 if m == 0 else ((-1.0) ** m if m > 0 else 1.0)
+                
+                # Get cached values
+                P_bar_nm = legendre_cache[(n, abs_m)]
+                dP_bar = legendre_cache[(n, abs_m, 'deriv')]
+                
+                # Azimuthal phase
+                exp_imf = azimuthal_phases[m_idx, :]
+                
+                # Coefficient
+                coeff = amplitude * Q_smn * norm_factor * phase_m * phase_n * exp_imf
+                
+                # Hansen pattern functions with pole handling
+                if s == 1:
+                    # TE: θ: (im P̄)/sin(θ), φ: -dP̄/dθ
+                    if m != 0:
+                        K_theta = np.where(at_pole, 0.0, (1j * m * P_bar_nm) / sin_theta_safe)
+                    else:
+                        K_theta = 0.0
+                    K_phi = -dP_bar
                 else:
-                    # For m = n, use simpler formula
-                    dPnm = n * cos_theta * Pnm / sin_theta_safe
-            elif m_abs == n:
-                # For m = n, derivative has special form
-                dPnm = n * cos_theta * Pnm / sin_theta_safe
-            else:
-                # For m=0, use P_n^1
-                if n >= 1:
-                    P_1 = lpmv(1, n, cos_theta_clip)
-                    log_norm_1 = 0.5 * (np.log(2*n + 1) + gammaln(n) - 
-                                       np.log(2) - gammaln(n + 2))
-                    dPnm = np.exp(log_norm_1) * P_1
-                else:
-                    dPnm = np.zeros_like(Pnm)
-            
-            dP_cache[m_abs] = dPnm
-        
-        # Now process all modes for this n
-        for s, m, Q_smn in modes_by_n[n]:
-            abs_m = abs(m)
-            m_idx = m + M
-            
-            # Get cached Legendre values
-            Pnm = P_cache[abs_m]
-            dPnm_dtheta = dP_cache[abs_m]
-            
-            # Far-field pattern functions K_smn (Hansen Eqs. 2.175-2.177)
-            # These are the ANGULAR components only (no radial dependence)
-            # Normalization: sqrt(2/[n(n+1)])
-            norm_n = np.sqrt(2.0 / (n * (n + 1)))
-            
-            # Phase factors from Hansen convention
-            phase_n = (-1j) ** (n + 1) if s == 1 else (-1j) ** n
-            phase_m = 1.0 if m == 0 else ((-1.0) ** m if m > 0 else 1.0)
-            
-            # Get pre-computed azimuthal phase
-            exp_phase = exp_imphi_all[m_idx, :]
-            
-            # Combined coefficient for this mode
-            # coeff = k*sqrt(zeta) * Q_smn * norm_n * phase_n * phase_m
-            coeff = norm_amplitude * Q_smn * norm_n * phase_n * phase_m
-            
-            # Far-field angular functions (K_smn from Hansen)
-            if s == 1:  # TE mode (m'_mn)
-                # K_1mn: theta = (im/sin(theta))*P_n^m, phi = -dP_n^m/dtheta
-                F_theta = (1j * m * Pnm / sin_theta_safe) * exp_phase
-                F_phi = dPnm_dtheta * exp_phase
-            else:  # TM mode (n'_mn)  
-                # K_2mn: theta = dP_n^m/dtheta, phi = (im/sin(theta))*P_n^m
-                F_theta = dPnm_dtheta * exp_phase
-                F_phi = +(1j * m * Pnm / sin_theta_safe) * exp_phase
-            
-            # Accumulate
-            E_theta_flat += coeff * F_theta
-            E_phi_flat += coeff * F_phi
-        
-        if n % 10 == 0:
-            logger.info(f"  Processed n={n}/{N}")
+                    # TM: θ: dP̄/dθ, φ: (im P̄)/sin(θ)
+                    K_theta = dP_bar
+                    if m != 0:
+                        K_phi = np.where(at_pole, 0.0, (1j * m * P_bar_nm) / sin_theta_safe)
+                    else:
+                        K_phi = 0.0
+                
+                E_theta += coeff * K_theta
+                E_phi += coeff * K_phi
     
-    # Reshape to output shape
-    E_theta = E_theta_flat.reshape(output_shape)
-    E_phi = E_phi_flat.reshape(output_shape)
+    logger.info(f"  Mode summation: {time.time() - t_sum:.2f}s")
+    logger.info(f"  Total: {time.time() - t_start:.2f}s")
     
-    t_elapsed = time.time() - t_start
-    logger.info(f"Far-field evaluation complete in {t_elapsed:.2f}s")
+    # Reshape
+    E_theta = E_theta.reshape(output_shape)
+    E_phi = E_phi.reshape(output_shape)
     
     return E_theta, E_phi
 

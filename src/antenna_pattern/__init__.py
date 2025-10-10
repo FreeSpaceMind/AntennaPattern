@@ -19,8 +19,6 @@ from .ant_io import (
     save_pattern_npz,
     write_cut,
     write_ffd,
-    save_swe_coefficients,
-    load_swe_coefficients,
     create_pattern_from_swe,
     write_ticra_sph
 )
@@ -97,8 +95,6 @@ __all__ = [
     'save_pattern_npz',
     'write_cut',
     'write_ffd',
-    'save_swe_coefficients',
-    'load_swe_coefficients', 
     'create_pattern_from_swe',
     'read_ticra_sph',
     'polarization_tp2xy',

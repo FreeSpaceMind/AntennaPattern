@@ -15,7 +15,7 @@ from PyQt6.QtGui import QAction
 from .plot_widget import PlotWidget
 from .controls import ControlsWidget
 from ..ant_io import (read_cut, read_ffd, load_pattern_npz, save_pattern_npz,
-                      load_swe_coefficients, save_swe_coefficients, read_ticra_sph)
+                      read_ticra_sph)
 from ..pattern import AntennaPattern
 
 
@@ -98,9 +98,6 @@ class MainWindow(QMainWindow):
         import_sph_action.triggered.connect(self.import_sph_file)
         file_menu.addAction(import_sph_action)
 
-        import_swe_action = QAction("Import SWE Coefficients...", self)
-        import_swe_action.triggered.connect(self.import_swe_file)
-        file_menu.addAction(import_swe_action)
 
         file_menu.addSeparator()
         
@@ -113,16 +110,12 @@ class MainWindow(QMainWindow):
         export_cut_action.triggered.connect(self.export_cut_file)
         file_menu.addAction(export_cut_action)
 
-        export_swe_action = QAction("Export SWE Coefficients...", self)
-        export_swe_action.triggered.connect(self.export_swe_file)
-        file_menu.addAction(export_swe_action)
-
         export_ticra_action = QAction("Export SWE to TICRA Format...", self)
         export_ticra_action.triggered.connect(self.export_swe_to_ticra)
         file_menu.addAction(export_ticra_action)
                 
         # Store export actions to enable/disable them
-        self.export_actions = [export_npz_action, export_cut_action, export_swe_action, export_ticra_action]
+        self.export_actions = [export_npz_action, export_cut_action, export_ticra_action]
         
         file_menu.addSeparator()
         
@@ -434,76 +427,6 @@ class MainWindow(QMainWindow):
     def show_info(self, message):
         """Show an info message."""
         QMessageBox.information(self, "Information", message)
-
-    def import_swe_file(self):
-        """Import spherical mode coefficients and reconstruct pattern."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Import SWE Coefficients", "", "NPZ Files (*.npz);;All Files (*)"
-        )
-        
-        if file_path:
-            try:
-                self.statusBar().showMessage("Loading SWE coefficients...")
-                
-                # Try to load as SWE coefficients
-                from ..pattern import AntennaPattern
-                pattern = AntennaPattern.from_swe_coefficients(file_path)
-                
-                self.load_pattern(pattern, file_path)
-                self.statusBar().showMessage("SWE coefficients loaded and pattern reconstructed successfully")
-                
-            except Exception as e:
-                self.show_error(f"Error loading SWE coefficients: {str(e)}")
-                self.statusBar().showMessage("Ready")
-
-
-    def export_swe_file(self):
-        """Export spherical mode coefficients."""
-        if not self.current_pattern:
-            return
-        
-        # Check if pattern has SWE data
-        if not hasattr(self.current_pattern, 'swe') or len(self.current_pattern.swe) == 0:
-            reply = QMessageBox.question(
-                self,
-                "Calculate SWE Coefficients?",
-                "This pattern does not have spherical mode coefficients calculated.\n\n"
-                "Would you like to calculate them now?\n\n"
-                "Note: This may take several minutes for large patterns.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
-            )
-            
-            if reply == QMessageBox.StandardButton.Yes:
-                try:
-                    self.statusBar().showMessage("Calculating spherical mode coefficients...")
-                    QApplication.processEvents()  # Update UI
-                    
-                    # Calculate with default adaptive settings
-                    self.current_pattern.calculate_spherical_modes()
-                    
-                    self.statusBar().showMessage("SWE coefficients calculated successfully")
-                except Exception as e:
-                    self.show_error(f"Error calculating SWE coefficients: {str(e)}")
-                    self.statusBar().showMessage("Ready")
-                    return
-            else:
-                return
-        
-        # Now export the coefficients
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export SWE Coefficients", "", "NPZ Files (*.npz);;All Files (*)"
-        )
-        
-        if file_path:
-            try:
-                self.statusBar().showMessage("Saving SWE coefficients...")
-                metadata = {"exported_from": "Antenna Pattern GUI"}
-                self.current_pattern.save_swe_coefficients(file_path, metadata=metadata)
-                self.statusBar().showMessage("SWE coefficients saved successfully")
-            except Exception as e:
-                self.show_error(f"Error saving SWE coefficients: {str(e)}")
-                self.statusBar().showMessage("Ready")
 
     def import_sph_file(self):
         """Import a TICRA .sph file."""
