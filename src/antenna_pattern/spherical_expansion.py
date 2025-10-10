@@ -1290,13 +1290,13 @@ def evaluate_farfield_from_modes(
     
     # Constants
     zeta = 376.730313668
-    norm_amplitude = np.sqrt(zeta * k / (4 * np.pi))
+    # For far-field: E = k*sqrt(zeta) * sum(Q_smn * K_smn)
+    # K_smn are the far-field pattern functions (angular part only)
+    norm_amplitude = k * np.sqrt(zeta)
     
-    if normalize_to_radius is not None:
-        kr = k * normalize_to_radius
-        radial_factor = np.exp(-1j * kr) / kr
-    else:
-        radial_factor = 1.0
+    # NO radial factor for far-field pattern reconstruction!
+    # The far-field pattern K_smn already has the e^(jkr)/r extracted
+    radial_factor = 1.0
     
     # Pre-compute trig functions
     sin_theta = np.sin(theta_flat)
@@ -1405,23 +1405,29 @@ def evaluate_farfield_from_modes(
             Pnm = P_cache[abs_m]
             dPnm_dtheta = dP_cache[abs_m]
             
-            # Phase factors
+            # Far-field pattern functions K_smn (Hansen Eqs. 2.175-2.177)
+            # These are the ANGULAR components only (no radial dependence)
+            # Normalization: sqrt(2/[n(n+1)])
+            norm_n = np.sqrt(2.0 / (n * (n + 1)))
+            
+            # Phase factors from Hansen convention
             phase_n = (-1j) ** (n + 1) if s == 1 else (-1j) ** n
             phase_m = 1.0 if m == 0 else ((-1.0) ** m if m > 0 else 1.0)
             
             # Get pre-computed azimuthal phase
             exp_phase = exp_imphi_all[m_idx, :]
             
-            # Combined coefficient
-            coeff = norm_amplitude * radial_factor * Q_smn * phase_n * norm_n * phase_m
+            # Combined coefficient for this mode
+            # coeff = k*sqrt(zeta) * Q_smn * norm_n * phase_n * phase_m
+            coeff = norm_amplitude * Q_smn * norm_n * phase_n * phase_m
             
-            # Far-field angular functions (using asymptotic forms)
-            if s == 1:  # TE mode
-                # m'_mn in far field: angular part only with (-i)^(n+1) phase
-                F_theta = -(1j * m * Pnm / sin_theta_safe) * exp_phase
+            # Far-field angular functions (K_smn from Hansen)
+            if s == 1:  # TE mode (m'_mn)
+                # K_1mn: theta = (im/sin(theta))*P_n^m, phi = -dP_n^m/dtheta
+                F_theta = (1j * m * Pnm / sin_theta_safe) * exp_phase
                 F_phi = -dPnm_dtheta * exp_phase
-            else:  # TM mode
-                # n'_mn in far field: angular part only with (-i)^n phase
+            else:  # TM mode (n'_mn)  
+                # K_2mn: theta = dP_n^m/dtheta, phi = (im/sin(theta))*P_n^m
                 F_theta = dPnm_dtheta * exp_phase
                 F_phi = (1j * m * Pnm / sin_theta_safe) * exp_phase
             
