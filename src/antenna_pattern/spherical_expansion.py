@@ -1427,7 +1427,7 @@ def evaluate_farfield_from_modes(
             else:  # TM mode (n'_mn)  
                 # K_2mn: theta = dP_n^m/dtheta, phi = (im/sin(theta))*P_n^m
                 F_theta = dPnm_dtheta * exp_phase
-                F_phi = (1j * m * Pnm / sin_theta_safe) * exp_phase
+                F_phi = +(1j * m * Pnm / sin_theta_safe) * exp_phase
             
             # Accumulate
             E_theta_flat += coeff * F_theta
