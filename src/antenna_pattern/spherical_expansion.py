@@ -1290,12 +1290,10 @@ def evaluate_farfield_from_modes(
     
     # Constants
     zeta = 376.730313668
-    # For far-field: E = k*sqrt(zeta) * sum(Q_smn * K_smn)
-    # K_smn are the far-field pattern functions (angular part only)
-    norm_amplitude = k * np.sqrt(zeta)
+    # Far-field: E = (k*sqrt(zeta)/sqrt(4*pi)) * sum(Q_smn * K_smn)
+    norm_amplitude = k * np.sqrt(zeta / (4.0 * np.pi))
     
-    # NO radial factor for far-field pattern reconstruction!
-    # The far-field pattern K_smn already has the e^(jkr)/r extracted
+    # No radial factor for far-field pattern
     radial_factor = 1.0
     
     # Pre-compute trig functions
@@ -1424,7 +1422,7 @@ def evaluate_farfield_from_modes(
             # Far-field angular functions (K_smn from Hansen)
             if s == 1:  # TE mode (m'_mn)
                 # K_1mn: theta = (im/sin(theta))*P_n^m, phi = -dP_n^m/dtheta
-                F_theta = (1j * m * Pnm / sin_theta_safe) * exp_phase
+                F_theta = -(1j * m * Pnm / sin_theta_safe) * exp_phase
                 F_phi = -dPnm_dtheta * exp_phase
             else:  # TM mode (n'_mn)  
                 # K_2mn: theta = dP_n^m/dtheta, phi = (im/sin(theta))*P_n^m
