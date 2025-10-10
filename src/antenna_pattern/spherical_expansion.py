@@ -997,11 +997,11 @@ def find_truncation_index(power_per_n: np.ndarray, power_threshold: float = 0.99
 
 
 def check_convergence(power_per_n: np.ndarray, N: int, 
-                     convergence_threshold: float = 0.10) -> Tuple[bool, float]:
+                     convergence_threshold: float = 0.01) -> Tuple[bool, float]:
     """
     Check if power in highest modes is below threshold.
     
-    CRITICAL: power_per_n[0] is n=1 (low mode), power_per_n[-1] is n=N (high mode)
+    Returns True only if high-mode power fraction < convergence_threshold.
     """
     total_power = np.sum(power_per_n)
     
@@ -1011,24 +1011,15 @@ def check_convergence(power_per_n: np.ndarray, N: int,
     
     # Check power in highest 10% of modes
     n_check = max(5, int(0.1 * N))
-    
-    # FIXED: Check the LAST n_check modes (highest n)
     high_mode_power = np.sum(power_per_n[-n_check:])
     
-    # Also check FIRST modes (should have MOST power for directive antenna)
-    low_mode_power = np.sum(power_per_n[:10])
-    
     fraction_high = high_mode_power / total_power
+    converged = fraction_high < convergence_threshold
+    
+    # Log diagnostic info
+    low_mode_power = np.sum(power_per_n[:10])
     fraction_low = low_mode_power / total_power
-    
     logger.info(f"  Power check: first 10 modes={fraction_low*100:.1f}%, last {n_check} modes={fraction_high*100:.1f}%")
-    
-    # Sanity check: if most power is in first modes, that's GOOD
-    if fraction_low > 0.5:
-        logger.info(f"  Good power distribution (most power in low modes)")
-        converged = True
-    else:
-        converged = fraction_high < convergence_threshold
     
     return converged, fraction_high
 
