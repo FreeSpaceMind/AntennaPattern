@@ -667,7 +667,7 @@ def create_pattern_from_swe(swe_data: Dict[str, Any],
     
     Args:
         swe_data: Dictionary from calculate_spherical_modes or load_swe_coefficients
-        theta_angles: Theta angles in degrees (default: -180 to 180, 1° steps)
+        theta_angles: Theta angles in degrees (default: 0 to 180, 1° steps, sided convention)
         phi_angles: Phi angles in degrees (default: 0 to 360, 5° steps)
         
     Returns:
@@ -676,12 +676,14 @@ def create_pattern_from_swe(swe_data: Dict[str, Any],
     Notes:
         Uses optimized far-field evaluation (no radial distance normalization).
         The pattern represents the far-field angular distribution.
+        Theta angles must be in sided convention [0°, 180°] to match Hansen's
+        spherical harmonic definitions.
     """
     from .spherical_expansion import evaluate_farfield_from_modes
     
-    # Default angles
+    # Default angles - use SIDED convention (Hansen standard)
     if theta_angles is None:
-        theta_angles = np.arange(-180, 181, 1.0)
+        theta_angles = np.arange(0, 181, 1.0)  # 0° to 180° (sided)
     if phi_angles is None:
         phi_angles = np.arange(0, 361, 5.0)
     
