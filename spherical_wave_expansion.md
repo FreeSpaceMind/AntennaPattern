@@ -70,9 +70,8 @@ where the elementary functions are:
 **For s=1 (TE modes):**
 ```
 m'_mn(r,θ,φ) = h_n^(2)(kr) × [
-    0 in r-direction,
-    -(1/sinθ) dP̄_n^|m|(cosθ)/dθ × e^(imφ) in θ-direction,
-    -(im/sinθ) P̄_n^|m|(cosθ) × e^(imφ) in φ-direction
+    -(im/sinθ) P̄_n^|m|(cosθ) × e^(imφ) in θ-direction,
+    -(dP̄_n^|m|(cosθ)/dθ) × e^(imφ) in φ-direction
 ]
 ```
 
