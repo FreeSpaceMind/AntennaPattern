@@ -959,3 +959,190 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
                         f"{Q2_pos_file.real:14.6e}  {Q2_pos_file.imag:14.6e}\n")
     
     logger.info(f"SWE coefficients exported to TICRA format: {file_path}")
+
+def read_ticra_sph(file_path: Union[str, Path], frequency: float) -> Dict[str, Any]:
+    """
+    Read spherical mode coefficients from TICRA .sph format.
+    
+    The .sph file contains Q-coefficients in TICRA/GRASP convention which uses:
+    - e^(-iωt) physics phasor convention
+    - Normalization factor of 1/√(8π)
+    
+    This function converts to Hansen convention used internally by:
+    1. Multiplying by √(8π) to remove TICRA normalization
+    2. Conjugating coefficients (physics to engineering convention)
+    3. Sign of m is handled during field evaluation
+    
+    Args:
+        file_path: Path to .sph file
+        frequency: Frequency in Hz for the coefficients
+        
+    Returns:
+        Dictionary containing:
+            - 'Q_coefficients': Complex array [2, 2*M+1, N] in Hansen convention
+            - 'M': Maximum azimuthal index
+            - 'N': Maximum polar index  
+            - 'frequency': Frequency in Hz
+            - 'wavelength': Wavelength in m
+            - 'k': Wavenumber in rad/m
+            - 'NTHE': Number of theta samples over 360°
+            - 'NPHI': Number of phi samples over 360°
+            - 'n_theta_samples': Estimated theta samples
+            - 'n_phi_samples': Estimated phi samples
+            
+    Example:
+        ```python
+        swe_data = read_ticra_sph('antenna.sph', frequency=9.2e9)
+        pattern = create_pattern_from_swe(swe_data)
+        ```
+    """
+    from .utilities import frequency_to_wavelength
+    
+    file_path = Path(file_path)
+    
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+    
+    logger.info(f"Reading TICRA .sph file: {file_path}")
+    
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+    
+    # Parse header (8 lines)
+    prgtag = lines[0].strip()
+    idstrg = lines[1].strip()
+    
+    # Line 3: NTHE, NPHI, NMAX, MMAX
+    header_values = lines[2].split()
+    NTHE = int(header_values[0])
+    NPHI = int(header_values[1])
+    NMAX = int(header_values[2])
+    MMAX = int(header_values[3])
+    
+    N = NMAX
+    M = MMAX
+    
+    logger.info(f"  PRGTAG: {prgtag}")
+    logger.info(f"  IDSTRG: {idstrg}")
+    logger.info(f"  N={N}, M={M}, NTHE={NTHE}, NPHI={NPHI}")
+    
+    # Lines 4-8 are dummy data (skip)
+    
+    # Calculate wavelength and wavenumber
+    wavelength = frequency_to_wavelength(frequency)
+    k = 2 * np.pi / wavelength
+    
+    # Initialize coefficient array: [s, m, n] where s=1,2 (TE,TM), m=-M..M, n=1..N
+    Q_coefficients = np.zeros((2, 2*M + 1, N), dtype=complex)
+    
+    # Normalization factor: coefficients in file are Q' = (1/√8π) * Q*
+    # We need to undo this: Q = √(8π) * (Q')* 
+    norm_factor = np.sqrt(8.0 * np.pi)
+    
+    # Parse mode coefficients starting at line 9 (index 8)
+    line_idx = 8
+    
+    for m_abs in range(0, M + 1):
+        # Read mode header: m_abs, power
+        if line_idx >= len(lines):
+            raise ValueError(f"Unexpected end of file at line {line_idx}")
+        
+        mode_header = lines[line_idx].split()
+        m_file = int(mode_header[0])
+        # power_m = float(mode_header[1])  # Not used for reconstruction
+        
+        if m_file != m_abs:
+            raise ValueError(f"Expected m={m_abs}, got m={m_file} at line {line_idx}")
+        
+        line_idx += 1
+        
+        if m_abs == 0:
+            # For m=0: only positive m, read Q(s,0,n) for n=1..N
+            m_idx = M  # Index for m=0
+            
+            for n in range(1, N + 1):
+                if line_idx >= len(lines):
+                    raise ValueError(f"Unexpected end of file at line {line_idx}")
+                
+                values = lines[line_idx].split()
+                Q1_real, Q1_imag, Q2_real, Q2_imag = map(float, values[:4])
+                
+                # Read from file and convert to Hansen convention
+                Q1_file = complex(Q1_real, Q1_imag)
+                Q2_file = complex(Q2_real, Q2_imag)
+                
+                # Convert: multiply by √(8π) and conjugate
+                n_idx = n - 1
+                Q_coefficients[0, m_idx, n_idx] = (Q1_file * norm_factor).conjugate()
+                Q_coefficients[1, m_idx, n_idx] = (Q2_file * norm_factor).conjugate()
+                
+                line_idx += 1
+        else:
+            # For m≠0: read Q(s,-m,n) then Q(s,+m,n) for each n
+            m_neg_idx = -m_abs + M
+            m_pos_idx = m_abs + M
+            
+            for n in range(m_abs, N + 1):
+                # Read -m coefficients
+                if line_idx >= len(lines):
+                    raise ValueError(f"Unexpected end of file at line {line_idx}")
+                
+                values = lines[line_idx].split()
+                Q1_neg_real, Q1_neg_imag, Q2_neg_real, Q2_neg_imag = map(float, values[:4])
+                line_idx += 1
+                
+                # Read +m coefficients
+                if line_idx >= len(lines):
+                    raise ValueError(f"Unexpected end of file at line {line_idx}")
+                
+                values = lines[line_idx].split()
+                Q1_pos_real, Q1_pos_imag, Q2_pos_real, Q2_pos_imag = map(float, values[:4])
+                line_idx += 1
+                
+                # Convert to Hansen convention
+                Q1_neg_file = complex(Q1_neg_real, Q1_neg_imag)
+                Q2_neg_file = complex(Q2_neg_real, Q2_neg_imag)
+                Q1_pos_file = complex(Q1_pos_real, Q1_pos_imag)
+                Q2_pos_file = complex(Q2_pos_real, Q2_pos_imag)
+                
+                n_idx = n - 1
+                Q_coefficients[0, m_neg_idx, n_idx] = (Q1_neg_file * norm_factor).conjugate()
+                Q_coefficients[1, m_neg_idx, n_idx] = (Q2_neg_file * norm_factor).conjugate()
+                Q_coefficients[0, m_pos_idx, n_idx] = (Q1_pos_file * norm_factor).conjugate()
+                Q_coefficients[1, m_pos_idx, n_idx] = (Q2_pos_file * norm_factor).conjugate()
+    
+    # Estimate sampling from NTHE and NPHI
+    n_theta_samples = NTHE // 4  # NTHE is for 360°, pattern uses 180° or less
+    n_phi_samples = NPHI // 2     # NPHI is for 360°
+    
+    # Estimate a reasonable radius from mode index N
+    # Using the truncation formula: N ≈ kr0 + 3.6*(kr0)^(1/3)
+    # Solving for r0 approximately: r0 ≈ N / k
+    estimated_radius = N / k  # Simple estimate in meters
+    
+    # Calculate mode power distribution
+    from .spherical_expansion import calculate_mode_power_distribution
+    power_per_n = calculate_mode_power_distribution(Q_coefficients, M, N)
+    mode_power = np.sum(power_per_n)
+    
+    logger.info(f"Successfully read {2*(2*M+1)*N} mode coefficients")
+    logger.info(f"  Frequency: {frequency/1e9:.3f} GHz")
+    logger.info(f"  Wavelength: {wavelength*1000:.2f} mm")
+    logger.info(f"  Estimated radius: {estimated_radius:.4f} m ({estimated_radius/wavelength:.1f} lambda)")
+    logger.info(f"  Total power: {mode_power:.6e} W")
+    
+    return {
+        'Q_coefficients': Q_coefficients,
+        'M': M,
+        'N': N,
+        'frequency': frequency,
+        'wavelength': wavelength,
+        'k': k,
+        'radius': estimated_radius,  # ADD estimated radius
+        'NTHE': NTHE,
+        'NPHI': NPHI,
+        'n_theta_samples': n_theta_samples,
+        'n_phi_samples': n_phi_samples,
+        'mode_power': mode_power,  # Calculate from coefficients
+        'power_per_n': power_per_n  # Calculate from coefficients
+    }

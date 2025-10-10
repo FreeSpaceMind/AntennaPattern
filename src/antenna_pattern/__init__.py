@@ -21,7 +21,8 @@ from .ant_io import (
     write_ffd,
     save_swe_coefficients,
     load_swe_coefficients,
-    create_pattern_from_swe
+    create_pattern_from_swe,
+    write_ticra_sph
 )
 from .polarization import (
     polarization_tp2xy,
@@ -99,6 +100,7 @@ __all__ = [
     'save_swe_coefficients',
     'load_swe_coefficients', 
     'create_pattern_from_swe',
+    'read_ticra_sph',
     'polarization_tp2xy',
     'polarization_xy2tp',
     'polarization_tp2rl',

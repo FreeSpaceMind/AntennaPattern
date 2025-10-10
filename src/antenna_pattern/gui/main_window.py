@@ -15,7 +15,7 @@ from PyQt6.QtGui import QAction
 from .plot_widget import PlotWidget
 from .controls import ControlsWidget
 from ..ant_io import (read_cut, read_ffd, load_pattern_npz, save_pattern_npz,
-                      load_swe_coefficients, save_swe_coefficients)
+                      load_swe_coefficients, save_swe_coefficients, read_ticra_sph)
 from ..pattern import AntennaPattern
 
 
@@ -94,10 +94,14 @@ class MainWindow(QMainWindow):
         import_npz_action.triggered.connect(self.import_npz_file)
         file_menu.addAction(import_npz_action)
 
+        import_sph_action = QAction("Import TICRA SPH File...", self)
+        import_sph_action.triggered.connect(self.import_sph_file)
+        file_menu.addAction(import_sph_action)
+
         import_swe_action = QAction("Import SWE Coefficients...", self)
         import_swe_action.triggered.connect(self.import_swe_file)
         file_menu.addAction(import_swe_action)
-        
+
         file_menu.addSeparator()
         
         # Export actions
@@ -501,6 +505,35 @@ class MainWindow(QMainWindow):
                 self.show_error(f"Error saving SWE coefficients: {str(e)}")
                 self.statusBar().showMessage("Ready")
 
+    def import_sph_file(self):
+        """Import a TICRA .sph file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Import TICRA SPH File", "", "SPH Files (*.sph);;All Files (*)"
+        )
+        
+        if file_path:
+            # Get frequency from user
+            dialog = FrequencyDialog(self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                frequency = dialog.get_frequency()
+                
+                try:
+                    self.statusBar().showMessage("Loading TICRA .sph file...")
+                    QApplication.processEvents()
+                    
+                    # Read the .sph file
+                    swe_data = read_ticra_sph(file_path, frequency)
+                    
+                    # Create pattern from SWE coefficients
+                    from ..ant_io import create_pattern_from_swe
+                    pattern = create_pattern_from_swe(swe_data)
+                    
+                    self.load_pattern(pattern, file_path)
+                    self.statusBar().showMessage(f"TICRA .sph file loaded successfully (N={swe_data['N']}, M={swe_data['M']})")
+                except Exception as e:
+                    self.show_error(f"Error loading TICRA .sph file: {str(e)}")
+                    self.statusBar().showMessage("Ready")
+
     def export_swe_to_ticra(self):
         """Export spherical mode coefficients to TICRA .sph format."""
         if not self.current_pattern:
@@ -592,3 +625,44 @@ class FrequencyRangeDialog(QDialog):
         freq_end_hz = self.freq_end_spin.value() * 1e9
         return freq_start_hz, freq_end_hz
     
+class FrequencyDialog(QDialog):
+    """Dialog for entering frequency for SPH file import."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Setup the dialog UI."""
+        self.setWindowTitle("Enter Frequency")
+        
+        layout = QFormLayout()
+        
+        # Frequency input (in GHz for user convenience)
+        self.freq_spin = QDoubleSpinBox()
+        self.freq_spin.setDecimals(3)
+        self.freq_spin.setRange(0.001, 1000.0)
+        self.freq_spin.setValue(9.2)  # Default to 9.2 GHz
+        self.freq_spin.setSuffix(" GHz")
+        layout.addRow("Frequency:", self.freq_spin)
+        
+        # Add info label
+        info_label = QLabel("Note: The .sph file does not contain frequency information.\n"
+                           "Please enter the frequency for these coefficients.")
+        info_label.setWordWrap(True)
+        layout.addRow(info_label)
+        
+        # Dialog buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | 
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+        
+        self.setLayout(layout)
+    
+    def get_frequency(self):
+        """Get the frequency in Hz."""
+        return self.freq_spin.value() * 1e9  # Convert GHz to Hz
