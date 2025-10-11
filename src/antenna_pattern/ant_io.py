@@ -683,7 +683,10 @@ def create_pattern_from_swe(swe_data: Dict[str, Any],
     
     # Default angles - use SIDED convention (Hansen standard)
     if theta_angles is None:
-        theta_angles = np.arange(0, 181, 1.0)  # 0° to 180° (sided)
+        NTHE = swe_data.get('NTHE', 360)  # Default to 1° if not present
+        angular_spacing_deg = 360.0 / NTHE
+        n_theta_points = int(np.round(180.0 / angular_spacing_deg)) + 1
+        theta_angles = np.linspace(0, 180, n_theta_points)
     if phi_angles is None:
         phi_angles = np.arange(0, 361, 5.0)
     
@@ -750,7 +753,7 @@ def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
     # NTHE: number of theta samples over 360° (must be even)
     n_theta_samples = swe_data['n_theta_samples'] 
     # If theta goes 0-180° (half sphere), double it for 360°
-    NTHE = 4* n_theta_samples
+    NTHE = 2 * (n_theta_samples - 1)
     # Ensure even
     if NTHE % 2 != 0:
         NTHE += 1
@@ -962,6 +965,22 @@ def read_ticra_sph(file_path: Union[str, Path], frequency: float) -> Dict[str, A
                 Q_coefficients[0, m_pos_idx, n_idx] = norm_factor * complex(Q1_pos_re, Q1_pos_im)
                 Q_coefficients[1, m_pos_idx, n_idx] = norm_factor * complex(Q2_pos_re, Q2_pos_im)
 
+    # Apply Hansen normalization: TICRA coefficients lack the √[2/(n(n+1))] factor
+    # that is embedded in Hansen's spherical wave function definitions
+    logger.info("Applying Hansen normalization to coefficients...")
+    for n in range(1, N + 1):
+        n_idx = n - 1
+        hansen_norm = np.sqrt(2.0 / (n * (n + 1)))
+        
+        for s in [0, 1]:  # s=1,2 → index 0,1
+            m_min = max(-n, -M)
+            m_max = min(n, M)
+            for m in range(m_min, m_max + 1):
+                m_idx = m + M
+                Q_coefficients[s, m_idx, n_idx] *= hansen_norm
+    
+    logger.info(f"Successfully read coefficients: shape={Q_coefficients.shape}")
+
     # In read_ticra_sph, after parsing all coefficients:
     total_power = 0.5 * np.sum(np.abs(Q_coefficients)**2)
     logger.info(f"\n=== POWER CHECK ===")
@@ -982,7 +1001,7 @@ def read_ticra_sph(file_path: Union[str, Path], frequency: float) -> Dict[str, A
         'radius': radius,
         'NTHE': NTHE,
         'NPHI': NPHI,
-        'n_theta_samples': NTHE // 2,
+        'n_theta_samples': NTHE // 2 + 1,
         'n_phi_samples': NPHI,
         'mode_power': 0.5 * np.sum(np.abs(Q_coefficients)**2)
     }
