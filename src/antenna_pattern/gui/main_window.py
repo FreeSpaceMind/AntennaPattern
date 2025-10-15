@@ -444,15 +444,17 @@ class MainWindow(QMainWindow):
                     self.statusBar().showMessage("Loading TICRA .sph file...")
                     QApplication.processEvents()
                     
-                    # Read the .sph file
-                    swe_data = read_ticra_sph(file_path, frequency)
+                    # Read the .sph file - returns SphericalWaveExpansion object
+                    from ..ant_io import read_ticra_sph, create_pattern_from_swe
+                    swe = read_ticra_sph(file_path)
                     
-                    # Create pattern from SWE coefficients
-                    from ..ant_io import create_pattern_from_swe
-                    pattern = create_pattern_from_swe(swe_data)
+                    # Create pattern from SWE object
+                    pattern = create_pattern_from_swe(swe)
                     
                     self.load_pattern(pattern, file_path)
-                    self.statusBar().showMessage(f"TICRA .sph file loaded successfully (N={swe_data['N']}, M={swe_data['M']})")
+                    self.statusBar().showMessage(
+                        f"TICRA .sph file loaded successfully (NMAX={swe.NMAX}, MMAX={swe.MMAX})"
+                    )
                 except Exception as e:
                     self.show_error(f"Error loading TICRA .sph file: {str(e)}")
                     self.statusBar().showMessage("Ready")

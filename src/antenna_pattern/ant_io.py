@@ -10,6 +10,7 @@ from typing import Dict, Optional, Union, Any, Tuple
 
 from .pattern import AntennaPattern
 from .polarization import polarization_rl2tp, polarization_xy2tp
+from swe import SphericalWaveExpansion
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -71,41 +72,28 @@ def save_pattern_npz(pattern, file_path: Union[str, Path], metadata: Optional[Di
         save_dict['swe_frequencies'] = np.array(swe_frequencies)
         
         for i, freq in enumerate(swe_frequencies):
-            swe_data = pattern.swe[freq]
+            swe_obj = pattern.swe[freq]
             prefix = f'swe_{i}_'
             
-            # Save arrays
-            save_dict[f'{prefix}Q_coefficients'] = swe_data['Q_coefficients']
-            save_dict[f'{prefix}power_per_n'] = swe_data['power_per_n']
+            # Convert coefficient dicts to arrays for storage
+            modes = sorted(set(swe_obj.Q1_coeffs.keys()) | set(swe_obj.Q2_coeffs.keys()))
             
-            # Save scalar/simple values - convert numpy types to Python types
+            Q1_array = np.array([swe_obj.Q1_coeffs.get(mode, 0.0) for mode in modes])
+            Q2_array = np.array([swe_obj.Q2_coeffs.get(mode, 0.0) for mode in modes])
+            modes_array = np.array(modes)
+            
+            save_dict[f'{prefix}Q1_coeffs'] = Q1_array
+            save_dict[f'{prefix}Q2_coeffs'] = Q2_array
+            save_dict[f'{prefix}modes'] = modes_array
+            
+            # Save metadata
             swe_meta = {
-                'M': int(swe_data['M']),
-                'N': int(swe_data['N']),
-                'frequency': float(swe_data['frequency']),
-                'wavelength': float(swe_data['wavelength']),
-                'radius': float(swe_data['radius']),
-                'mode_power': float(swe_data['mode_power']),
-                'k': float(swe_data['k'])
+                'NMAX': int(swe_obj.NMAX),
+                'MMAX': int(swe_obj.MMAX),
+                'frequency': float(swe_obj.frequency) if swe_obj.frequency else None,
             }
             
-            # Add optional adaptive parameters if present
-            for key in ['N_full', 'M_full', 'converged', 'iterations', 'power_retained_fraction']:
-                if key in swe_data:
-                    value = swe_data[key]
-                    # Convert numpy types to native Python types
-                    if isinstance(value, (np.integer, np.int64, np.int32)):
-                        swe_meta[key] = int(value)
-                    elif isinstance(value, (np.floating, np.float64, np.float32)):
-                        swe_meta[key] = float(value)
-                    elif isinstance(value, np.bool_):
-                        swe_meta[key] = bool(value)
-                    else:
-                        swe_meta[key] = value
-            
             save_dict[f'{prefix}metadata'] = json.dumps(swe_meta)
-        
-        logger.info(f"Saving SWE data for {len(swe_frequencies)} frequency(ies)")
     
     # Save data to NPZ file
     np.savez_compressed(file_path, **save_dict)
@@ -156,43 +144,36 @@ def load_pattern_npz(file_path: Union[str, Path]) -> Tuple:
             polarization=polarization
         )
         
-        # Check if file contains SWE data
+        # Load SWE data if present
         if 'swe_frequencies' in data:
-            swe_frequencies = data['swe_frequencies']
             pattern.swe = {}
+            swe_frequencies = data['swe_frequencies']
             
             for i, freq in enumerate(swe_frequencies):
                 prefix = f'swe_{i}_'
                 
                 # Load arrays
-                Q_coefficients = data[f'{prefix}Q_coefficients']
-                power_per_n = data[f'{prefix}power_per_n']
+                Q1_array = data[f'{prefix}Q1_coeffs']
+                Q2_array = data[f'{prefix}Q2_coeffs']
+                modes_array = data[f'{prefix}modes']
+                
+                # Reconstruct coefficient dicts
+                Q1_coeffs = {tuple(mode): Q1_array[j] for j, mode in enumerate(modes_array)}
+                Q2_coeffs = {tuple(mode): Q2_array[j] for j, mode in enumerate(modes_array)}
                 
                 # Load metadata
-                swe_meta_json = str(data[f'{prefix}metadata'])
-                swe_meta = json.loads(swe_meta_json)
+                swe_meta = json.loads(str(data[f'{prefix}metadata']))
                 
-                # Reconstruct SWE dictionary
-                swe_dict = {
-                    'Q_coefficients': Q_coefficients,
-                    'power_per_n': power_per_n,
-                    'M': swe_meta['M'],
-                    'N': swe_meta['N'],
-                    'frequency': swe_meta['frequency'],
-                    'wavelength': swe_meta['wavelength'],
-                    'radius': swe_meta['radius'],
-                    'mode_power': swe_meta['mode_power'],
-                    'k': swe_meta['k']
-                }
+                # Create SWE object
+                swe_obj = SphericalWaveExpansion(
+                    Q1_coeffs=Q1_coeffs,
+                    Q2_coeffs=Q2_coeffs,
+                    frequency=swe_meta['frequency'],
+                    NMAX=swe_meta['NMAX'],
+                    MMAX=swe_meta['MMAX']
+                )
                 
-                # Add optional adaptive parameters if present
-                for key in ['N_full', 'M_full', 'converged', 'iterations', 'power_retained_fraction']:
-                    if key in swe_meta:
-                        swe_dict[key] = swe_meta[key]
-                
-                pattern.swe[freq] = swe_dict
-            
-            logger.info(f"Loaded SWE data for {len(swe_frequencies)} frequency(ies)")
+                pattern.swe[float(freq)] = swe_obj
         
         logger.info(f"Pattern loaded from {file_path}")
         return pattern, metadata
@@ -659,54 +640,75 @@ def write_ffd(pattern, file_path: Union[str, Path]) -> None:
                     
                     f.write(f"{eth.real:.6e} {eth.imag:.6e} {eph.real:.6e} {eph.imag:.6e}\n")
 
-def create_pattern_from_swe(swe_data: Dict[str, Any],
-                           theta_angles: Optional[np.ndarray] = None,
-                           phi_angles: Optional[np.ndarray] = None) -> 'AntennaPattern':
+def read_ticra_sph(file_path: Union[str, Path]) -> 'SphericalWaveExpansion':
     """
-    Create a far field AntennaPattern from spherical mode coefficients.
+    Read spherical mode coefficients from TICRA .sph format.
     
     Args:
-        swe_data: Dictionary from calculate_spherical_modes or load_swe_coefficients
-        theta_angles: Theta angles in degrees (default: 0 to 180, 1° steps, sided convention)
-        phi_angles: Phi angles in degrees (default: 0 to 360, 5° steps)
+        file_path: Path to .sph file
+        frequency: Frequency in Hz (for metadata, not read from file)
         
     Returns:
-        AntennaPattern object with reconstructed far field
-        
-    Notes:
-        Uses optimized far-field evaluation (no radial distance normalization).
-        The pattern represents the far-field angular distribution.
-        Theta angles must be in sided convention [0°, 180°] to match Hansen's
-        spherical harmonic definitions.
+        SphericalWaveExpansion object
     """
-    from .spherical_expansion import evaluate_farfield_from_modes
     
-    # Default angles - use SIDED convention (Hansen standard)
+    # Use the new module's reader
+    swe = SphericalWaveExpansion.from_sph_file(str(file_path))
+    
+    return swe
+
+
+def write_ticra_sph(swe: 'SphericalWaveExpansion', file_path: Union[str, Path],
+                    program_tag: str = "AntPy", id_string: str = "SWE Export") -> None:
+    """
+    Write spherical mode coefficients to TICRA .sph format.
+    
+    Args:
+        swe: SphericalWaveExpansion object
+        file_path: Output file path
+        program_tag: Program tag (ignored, for compatibility)
+        id_string: Description string
+    """
+    # Use the new module's writer
+    swe.to_sph_file(str(file_path), description=id_string)
+    
+    logger.info(f"SWE coefficients exported to: {file_path}")
+
+
+def create_pattern_from_swe(swe: 'SphericalWaveExpansion',
+                           theta_angles: Optional[np.ndarray] = None,
+                           phi_angles: Optional[np.ndarray] = None) -> AntennaPattern:
+    """
+    Create AntennaPattern from SphericalWaveExpansion object.
+    
+    Args:
+        swe: SphericalWaveExpansion object
+        theta_angles: Theta angles in degrees (default: 0 to 180, 1°)
+        phi_angles: Phi angles in degrees (default: 0 to 360, 5°)
+        
+    Returns:
+        AntennaPattern object
+    """
+    # Default angles - SIDED convention [0°, 180°]
     if theta_angles is None:
-        NTHE = swe_data.get('NTHE', 360)  # Default to 1° if not present
-        angular_spacing_deg = 360.0 / NTHE
-        n_theta_points = int(np.round(180.0 / angular_spacing_deg)) + 1
-        theta_angles = np.linspace(0, 180, n_theta_points)
+        theta_angles = np.linspace(0, 180, 181)
     if phi_angles is None:
         phi_angles = np.arange(0, 361, 5.0)
     
-    # Create meshgrid
+    # Convert to radians
     theta_rad = np.radians(theta_angles)
     phi_rad = np.radians(phi_angles)
+    
+    # Create meshgrid
     THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
     
-    # Evaluate far field using optimized function
-    E_theta, E_phi = evaluate_farfield_from_modes(
-        swe_data['Q_coefficients'],
-        swe_data['M'],
-        swe_data['N'],
-        swe_data['k'],
-        THETA,
-        PHI
-    )
+    # Calculate far field
+    E_theta, E_phi = swe.far_field(THETA.ravel(), PHI.ravel())
+    E_theta = E_theta.reshape(THETA.shape)
+    E_phi = E_phi.reshape(PHI.shape)
     
     # Create pattern (single frequency)
-    frequencies = np.array([swe_data['frequency']])
+    frequencies = np.array([swe.frequency])
     e_theta = E_theta[np.newaxis, :, :]  # Add frequency dimension
     e_phi = E_phi[np.newaxis, :, :]
     
@@ -719,289 +721,8 @@ def create_pattern_from_swe(swe_data: Dict[str, Any],
         polarization='theta'
     )
     
-    # Attach SWE data
-    pattern.swe = {swe_data['frequency']: swe_data}
+    # Attach SWE object
+    pattern.swe = {swe.frequency: swe}
     
-    logger.info(f"Pattern created from SWE coefficients at f={swe_data['frequency']/1e9:.3f} GHz")
+    logger.info(f"Pattern created from SWE at f={swe.frequency/1e9:.3f} GHz")
     return pattern
-
-def write_ticra_sph(swe_data: Dict[str, Any], file_path: Union[str, Path],
-                    program_tag: str = "AntPy", id_string: str = "SWE Export") -> None:
-    """
-    Write spherical mode coefficients to TICRA .sph format.
-    
-    Note: Phase convention conversion is now handled during extraction,
-    so Q_coefficients are already in Hansen convention.
-    """
-    import datetime
-    
-    file_path = Path(file_path)
-    
-    # Ensure .sph extension
-    if file_path.suffix.lower() != '.sph':
-        file_path = file_path.with_suffix('.sph')
-    
-    # Extract data
-    Q_coefficients = swe_data['Q_coefficients']  # Already in Hansen convention
-    M = swe_data['M']
-    N = swe_data['N']
-    
-    # Normalization factor for TICRA format: Q' = (1/√8π) * Q*
-    norm_factor = 1.0 / np.sqrt(8.0 * np.pi)
-    
-    # Calculate NTHE and NPHI based on actual sampling grid
-    # NTHE: number of theta samples over 360° (must be even)
-    n_theta_samples = swe_data['n_theta_samples'] 
-    # If theta goes 0-180° (half sphere), double it for 360°
-    NTHE = 2 * (n_theta_samples - 1)
-    # Ensure even
-    if NTHE % 2 != 0:
-        NTHE += 1
-
-    # NPHI: number of phi samples over 360° (must be >= 3)
-    n_phi_samples = swe_data['n_phi_samples']
-    NPHI = max(3, 2*n_phi_samples)
-    
-    # Write file
-    with open(file_path, 'w') as f:
-        # Record 1: PRGTAG
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        f.write(f"{program_tag} - {timestamp}\n")
-        
-        # Record 2: IDSTRG
-        f.write(f"{id_string}\n")
-        
-        # Record 3: NTHE, NPHI, NMAX, MMAX
-        NMAX = N
-        MMAX = M
-        f.write(f"{NTHE:6d}{NPHI:6d}{NMAX:6d}{MMAX:6d}\n")
-        
-        # Records 4-8: Dummy data
-        f.write("Dummy text 1\n")
-        f.write("     0.00000     0.00000     0.00000     0.00000     0.00000\n")
-        f.write("     0.00000     0.00000     0.00000     0.00000     0.00000\n")
-        f.write("Dummy text 2\n")
-        f.write("Dummy text 3\n")
-        
-        # Mode coefficients - organized by |m|
-        for m_abs in range(0, M + 1):
-            # Calculate power in this azimuthal mode
-            power_m = 0.0
-            
-            if m_abs == 0:
-                # For m=0, only include m=0 coefficients
-                for n in range(1, N + 1):
-                    n_idx = n - 1
-                    m_idx = M  # m=0 is at index M
-                    for s_idx in range(2):
-                        power_m += np.abs(Q_coefficients[s_idx, m_idx, n_idx])**2
-            else:
-                # For m≠0, include both +m and -m
-                m_pos_idx = m_abs + M
-                m_neg_idx = -m_abs + M
-                for n in range(m_abs, N + 1):
-                    n_idx = n - 1
-                    for s_idx in range(2):
-                        power_m += np.abs(Q_coefficients[s_idx, m_neg_idx, n_idx])**2
-                        power_m += np.abs(Q_coefficients[s_idx, m_pos_idx, n_idx])**2
-            
-            # Record m.1: M, POWERM
-            f.write(f"{m_abs:6d}  {power_m:14.6e}\n")
-            
-            # Record m.2: Coefficients
-            if m_abs == 0:
-                # For m=0: write Q1,0,n and Q2,0,n for n=1 to N
-                m_idx = M
-                for n in range(1, N + 1):
-                    n_idx = n - 1
-                    
-                    Q1_0n = Q_coefficients[0, m_idx, n_idx]  # s=1 (TE)
-                    Q2_0n = Q_coefficients[1, m_idx, n_idx]  # s=2 (TM)
-                    
-                    # Apply TICRA normalization and conjugation ONLY
-                    # No phase correction needed - already in Hansen convention
-                    Q1_file = Q1_0n.conjugate() * norm_factor
-                    Q2_file = Q2_0n.conjugate() * norm_factor
-                    
-                    f.write(f"  {Q1_file.real:14.6e}  {Q1_file.imag:14.6e}  "
-                        f"{Q2_file.real:14.6e}  {Q2_file.imag:14.6e}\n")
-            else:
-                # For m≠0: write Q(s,-m,n) then Q(s,+m,n) for each n
-                m_neg_idx = -m_abs + M
-                m_pos_idx = m_abs + M
-                
-                for n in range(m_abs, N + 1):
-                    n_idx = n - 1
-                    
-                    # Get coefficients (already in Hansen convention)
-                    Q1_neg = Q_coefficients[0, m_neg_idx, n_idx]  # s=1, -m, n (TE)
-                    Q2_neg = Q_coefficients[1, m_neg_idx, n_idx]  # s=2, -m, n (TM)
-                    Q1_pos = Q_coefficients[0, m_pos_idx, n_idx]  # s=1, +m, n (TE)
-                    Q2_pos = Q_coefficients[1, m_pos_idx, n_idx]  # s=2, +m, n (TM)
-                    
-                    # Apply TICRA normalization and conjugation ONLY
-                    Q1_neg_file = Q1_neg.conjugate() * norm_factor
-                    Q2_neg_file = Q2_neg.conjugate() * norm_factor
-                    Q1_pos_file = Q1_pos.conjugate() * norm_factor
-                    Q2_pos_file = Q2_pos.conjugate() * norm_factor
-                    
-                    # Write -m coefficients
-                    f.write(f"  {Q1_neg_file.real:14.6e}  {Q1_neg_file.imag:14.6e}  "
-                        f"{Q2_neg_file.real:14.6e}  {Q2_neg_file.imag:14.6e}\n")
-                    
-                    # Write +m coefficients
-                    f.write(f"  {Q1_pos_file.real:14.6e}  {Q1_pos_file.imag:14.6e}  "
-                        f"{Q2_pos_file.real:14.6e}  {Q2_pos_file.imag:14.6e}\n")
-    
-    logger.info(f"SWE coefficients exported to TICRA format: {file_path}")
-
-def read_ticra_sph(file_path: Union[str, Path], frequency: float) -> Dict[str, Any]:
-    """
-    Read spherical mode coefficients from TICRA .sph format.
-    """
-    from .utilities import frequency_to_wavelength
-    
-    file_path = Path(file_path)
-    if not file_path.exists():
-        raise FileNotFoundError(f"File not found: {file_path}")
-    
-    logger.info(f"Reading TICRA .sph file: {file_path}")
-    
-    with open(file_path, 'r') as f:
-        lines = f.readlines()
-    
-    # Parse header
-    prgtag = lines[0].strip()
-    idstrg = lines[1].strip()
-    header_values = lines[2].split()
-    NTHE = int(header_values[0])
-    NPHI = int(header_values[1])
-    N = int(header_values[2])  # NMAX
-    M = int(header_values[3])  # MMAX
-    
-    logger.info(f"  N={N}, M={M}, NTHE={NTHE}, NPHI={NPHI}")
-    
-    # Calculate wavelength
-    wavelength = frequency_to_wavelength(frequency)
-    k = 2 * np.pi / wavelength
-    radius = N / k  # Rough estimate
-    
-    # Initialize: [s, m_index, n_index]
-    # Note: n ranges from 1 to N, so we need N slots (indices 0 to N-1)
-    Q_coefficients = np.zeros((2, 2*M + 1, N), dtype=complex)
-    
-    # Normalization
-    norm_factor = np.sqrt(8.0 * np.pi)
-    
-    # Parse coefficients starting at line 9
-    line_idx = 8
-    
-    for m_abs in range(0, M + 1):
-        if line_idx >= len(lines):
-            raise ValueError(f"Unexpected end of file at line {line_idx + 1}")
-        
-        mode_header = lines[line_idx].split()
-        m_file = int(mode_header[0])
-        
-        if m_file != m_abs:
-            raise ValueError(f"Expected |m|={m_abs}, got {m_file}")
-        
-        line_idx += 1
-        
-        if m_abs == 0:
-            # m=0: read Q(s,0,n) for n=1..N
-            m_idx = M
-            
-            for n in range(1, N + 1):
-                if line_idx >= len(lines):
-                    raise ValueError(f"Unexpected end of file at line {line_idx + 1}")
-                
-                n_idx = n - 1  # Array index for n
-                
-                if n_idx >= N:
-                    raise ValueError(f"n_idx={n_idx} out of bounds (N={N})")
-                
-                values = lines[line_idx].split()
-                Q1_re, Q1_im, Q2_re, Q2_im = map(float, values[:4])
-                
-                Q_coefficients[0, m_idx, n_idx] = norm_factor * complex(Q1_re, Q1_im)
-                Q_coefficients[1, m_idx, n_idx] = norm_factor * complex(Q2_re, Q2_im)
-                
-                line_idx += 1
-        else:
-            # m≠0: read Q(s,-m,n) and Q(s,+m,n) for n=|m|..N
-            m_neg_idx = M - m_abs
-            m_pos_idx = M + m_abs
-            
-            # Check indices are valid
-            if m_neg_idx < 0 or m_pos_idx >= 2*M + 1:
-                raise ValueError(f"Invalid m indices: m_abs={m_abs}, M={M}")
-            
-            for n in range(m_abs, N + 1):
-                if line_idx >= len(lines):
-                    raise ValueError(f"Unexpected end of file at line {line_idx + 1}")
-                
-                n_idx = n - 1
-                
-                if n_idx >= N:
-                    raise ValueError(f"n_idx={n_idx} out of bounds (N={N})")
-                
-                # Read -m coefficients
-                values = lines[line_idx].split()
-                Q1_neg_re, Q1_neg_im, Q2_neg_re, Q2_neg_im = map(float, values[:4])
-                line_idx += 1
-                
-                # Read +m coefficients
-                if line_idx >= len(lines):
-                    raise ValueError(f"Unexpected end of file at line {line_idx + 1}")
-                
-                values = lines[line_idx].split()
-                Q1_pos_re, Q1_pos_im, Q2_pos_re, Q2_pos_im = map(float, values[:4])
-                line_idx += 1
-                
-                # Store with conversions
-                Q_coefficients[0, m_neg_idx, n_idx] = norm_factor * complex(Q1_neg_re, Q1_neg_im)
-                Q_coefficients[1, m_neg_idx, n_idx] = norm_factor * complex(Q2_neg_re, Q2_neg_im)
-                Q_coefficients[0, m_pos_idx, n_idx] = norm_factor * complex(Q1_pos_re, Q1_pos_im)
-                Q_coefficients[1, m_pos_idx, n_idx] = norm_factor * complex(Q2_pos_re, Q2_pos_im)
-
-    # Apply Hansen normalization: TICRA coefficients lack the √[2/(n(n+1))] factor
-    # that is embedded in Hansen's spherical wave function definitions
-    logger.info("Applying Hansen normalization to coefficients...")
-    for n in range(1, N + 1):
-        n_idx = n - 1
-        hansen_norm = np.sqrt(2.0 / (n * (n + 1)))
-        
-        for s in [0, 1]:  # s=1,2 → index 0,1
-            m_min = max(-n, -M)
-            m_max = min(n, M)
-            for m in range(m_min, m_max + 1):
-                m_idx = m + M
-                Q_coefficients[s, m_idx, n_idx] *= hansen_norm
-    
-    logger.info(f"Successfully read coefficients: shape={Q_coefficients.shape}")
-
-    # In read_ticra_sph, after parsing all coefficients:
-    total_power = 0.5 * np.sum(np.abs(Q_coefficients)**2)
-    logger.info(f"\n=== POWER CHECK ===")
-    logger.info(f"Total radiated power from Q coefficients: {total_power:.6e} W")
-    logger.info(f"This should equal 0.5 for normalized coefficients")
-    logger.info(f"  or the actual radiated power if in physical units")
-
-    
-    logger.info(f"Successfully read coefficients: shape={Q_coefficients.shape}")
-    
-    return {
-        'Q_coefficients': Q_coefficients,
-        'M': M,
-        'N': N,
-        'frequency': frequency,
-        'wavelength': wavelength,
-        'k': k,
-        'radius': radius,
-        'NTHE': NTHE,
-        'NPHI': NPHI,
-        'n_theta_samples': NTHE // 2 + 1,
-        'n_phi_samples': NPHI,
-        'mode_power': 0.5 * np.sum(np.abs(Q_coefficients)**2)
-    }

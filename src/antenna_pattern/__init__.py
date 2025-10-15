@@ -70,22 +70,6 @@ from .package_functions import (
     difference_patterns
 )
 
-from .spherical_expansion import (
-    calculate_q_coefficients,
-    calculate_q_coefficients_adaptive,
-    calculate_mode_index_N,
-    calculate_vector_expansion_functions,
-    normalized_associated_legendre,
-    spherical_hankel_second_kind,
-    calculate_mode_power_distribution,
-    find_truncation_index,
-    evaluate_field_from_modes,
-    evaluate_farfield_from_modes,
-    calculate_nearfield_spherical_surface,
-    calculate_nearfield_planar_surface,
-    extend_pattern_for_swe
-)
-
 # Define what gets imported with "from antenna_pattern import *"
 __all__ = [
     'AntennaPattern',
@@ -132,18 +116,5 @@ __all__ = [
     'plot_phase_slope_vs_frequency',
     'plot_pattern_2d_polar',
     'average_patterns',
-    'difference_patterns',
-    'calculate_q_coefficients',
-    'calculate_q_coefficients_adaptive',
-    'calculate_mode_index_N',  
-    'calculate_vector_expansion_functions',
-    'normalized_associated_legendre',
-    'spherical_hankel_second_kind',
-    'calculate_mode_power_distribution',
-    'find_truncation_index',
-    'evaluate_field_from_modes',
-    'evaluate_farfield_from_modes',
-    'calculate_nearfield_spherical_surface',
-    'calculate_nearfield_planar_surface',
-    'extend_pattern_for_swe'
+    'difference_patterns'
 ]
