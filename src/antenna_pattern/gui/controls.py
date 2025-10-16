@@ -48,6 +48,7 @@ class ControlsWidget(QWidget):
         self.view_tab.parameters_changed.connect(self.parameters_changed.emit)
         self.processing_tab.apply_phase_center_signal.connect(self.apply_phase_center_signal.emit)
         self.processing_tab.apply_mars_signal.connect(self.apply_mars_signal.emit)
+        self.processing_tab.coordinate_format_changed.connect(self.on_coordinate_format_changed)
         # Note: polarization_changed should be connected directly in main_window
         # to on_polarization_changed, not relayed through parameters_changed
         self.analysis_tab.calculate_swe_signal.connect(self.on_calculate_swe)
@@ -133,6 +134,20 @@ class ControlsWidget(QWidget):
         """Handle SWE calculation progress updates."""
         # Could update a progress bar or status message here
         pass
+
+    def on_coordinate_format_changed(self, format_type):
+        """Handle coordinate format change."""
+        if self.current_pattern:
+            try:
+                self.current_pattern.transform_coordinates(format_type)
+                # Update all tabs with the transformed pattern
+                self.view_tab.update_pattern(self.current_pattern)
+                self.processing_tab.update_pattern(self.current_pattern)
+                self.analysis_tab.update_pattern(self.current_pattern)
+                self.parameters_changed.emit()
+            except Exception as e:
+                import logging
+                logging.error(f"Error transforming coordinates: {e}", exc_info=True)
     
     def on_calculate_nearfield(self):
         """Handle near field calculation request."""

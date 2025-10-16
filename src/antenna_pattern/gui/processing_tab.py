@@ -17,6 +17,7 @@ class ProcessingTab(QWidget):
     apply_phase_center_signal = pyqtSignal(float, float, float, float)  # x, y, z, frequency
     apply_mars_signal = pyqtSignal(float)  # max_radial_extent
     polarization_changed = pyqtSignal()
+    coordinate_format_changed = pyqtSignal(str)  # 'central' or 'sided'
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -47,6 +48,24 @@ class ProcessingTab(QWidget):
         pol_group.addLayout(pol_layout)
         
         layout.addWidget(pol_group)
+
+        # Coordinate Format section
+        coord_group = CollapsibleGroupBox("Coordinate Format")
+
+        coord_layout = QHBoxLayout()
+        coord_layout.addWidget(QLabel("Format:"))
+        self.coord_format_combo = QComboBox()
+        self.coord_format_combo.addItems(["Central", "Sided"])
+        self.coord_format_combo.currentTextChanged.connect(self.on_coordinate_format_changed)
+        coord_layout.addWidget(self.coord_format_combo)
+        coord_group.addLayout(coord_layout)
+
+        # Add description label
+        desc_label = QLabel("Central: θ ±180°, φ 0-180°\nSided: θ 0-180°, φ 0-360°")
+        desc_label.setStyleSheet("font-size: 9pt; color: #666;")
+        coord_group.addWidget(desc_label)
+
+        layout.addWidget(coord_group)
         
         # Phase center section (collapsible)
         pc_group = CollapsibleGroupBox("Phase Center")
@@ -167,7 +186,6 @@ class ProcessingTab(QWidget):
         # Update polarization combo to match current pattern
         # Block signals to prevent triggering polarization_changed during initialization
         self.polarization_combo.blockSignals(True)
-        
         pol_map = {
             'theta': 0,
             'phi': 1,
@@ -184,9 +202,17 @@ class ProcessingTab(QWidget):
         }
         idx = pol_map.get(pattern.polarization.lower(), 0)
         self.polarization_combo.setCurrentIndex(idx)
-        
-        # Re-enable signals
         self.polarization_combo.blockSignals(False)
+
+        # coordinate format control
+        from ..plotting import detect_coordinate_format
+        current_format = detect_coordinate_format(pattern)
+        format_idx = 0 if current_format == 'central' else 1
+        self.coord_format_combo.blockSignals(True)
+        self.coord_format_combo.setCurrentIndex(format_idx)
+        self.coord_format_combo.blockSignals(False)
+                
+
         
         # Enable processing controls
         self.update_processing_controls_state()
@@ -222,6 +248,13 @@ class ProcessingTab(QWidget):
             
         except Exception as e:
             self.phase_center_result.setText(f"Error: {str(e)}")
+
+    def on_coordinate_format_changed(self):
+        """Handle coordinate format change."""
+        format_map = {"Central": "central", "Sided": "sided"}
+        format_type = format_map.get(self.coord_format_combo.currentText())
+        if format_type:
+            self.coordinate_format_changed.emit(format_type)
     
     def on_apply_phase_center_toggled(self, checked):
         """Handle apply phase center checkbox toggle."""

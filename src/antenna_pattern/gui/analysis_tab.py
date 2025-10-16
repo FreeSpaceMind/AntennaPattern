@@ -331,6 +331,12 @@ class AnalysisTab(QWidget):
             result_text += f"Grid: {len(nf_data['x'])} × {len(nf_data['y'])} points\n"
         
         self.nf_results.setText(result_text)
+
+    # Getter methods for processing parameters
+    def get_coordinate_format(self):
+        """Get coordinate format from processing tab."""
+        format_map = {"Central": "central", "Sided": "sided"}
+        return format_map.get(self.processing_tab.coord_format_combo.currentText(), "central")
     
     # Getter methods for SWE parameters
     def get_swe_adaptive(self):

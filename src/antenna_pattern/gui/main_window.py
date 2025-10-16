@@ -3,6 +3,7 @@ Main window for the Antenna Pattern GUI.
 """
 
 import os
+import numpy as np
 from pathlib import Path
 
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -435,10 +436,10 @@ class MainWindow(QMainWindow):
         )
         
         if file_path:
-            # Get frequency from user
-            dialog = FrequencyDialog(self)
+            # Get angular resolution from user
+            dialog = SphImportDialog(self)
             if dialog.exec() == QDialog.DialogCode.Accepted:
-                frequency = dialog.get_frequency()
+                theta_step, phi_step = dialog.get_angular_resolution()
                 
                 try:
                     self.statusBar().showMessage("Loading TICRA .sph file...")
@@ -448,12 +449,17 @@ class MainWindow(QMainWindow):
                     from ..ant_io import read_ticra_sph, create_pattern_from_swe
                     swe = read_ticra_sph(file_path)
                     
-                    # Create pattern from SWE object
-                    pattern = create_pattern_from_swe(swe)
+                    # Generate angle arrays based on step sizes
+                    theta_angles = np.arange(0, 180 + theta_step, theta_step)
+                    phi_angles = np.arange(0, 360 + phi_step, phi_step)
+                    
+                    # Create pattern from SWE object with specified resolution
+                    pattern = create_pattern_from_swe(swe, theta_angles, phi_angles)
                     
                     self.load_pattern(pattern, file_path)
                     self.statusBar().showMessage(
-                        f"TICRA .sph file loaded successfully (NMAX={swe.NMAX}, MMAX={swe.MMAX})"
+                        f"TICRA .sph file loaded successfully (NMAX={swe.NMAX}, MMAX={swe.MMAX}, "
+                        f"θ_step={theta_step}°, φ_step={phi_step}°)"
                     )
                 except Exception as e:
                     self.show_error(f"Error loading TICRA .sph file: {str(e)}")
@@ -550,8 +556,8 @@ class FrequencyRangeDialog(QDialog):
         freq_end_hz = self.freq_end_spin.value() * 1e9
         return freq_start_hz, freq_end_hz
     
-class FrequencyDialog(QDialog):
-    """Dialog for entering frequency for SPH file import."""
+class SphImportDialog(QDialog):
+    """Dialog for entering angular resolution for SPH file import."""
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -559,22 +565,33 @@ class FrequencyDialog(QDialog):
     
     def setup_ui(self):
         """Setup the dialog UI."""
-        self.setWindowTitle("Enter Frequency")
+        self.setWindowTitle("SPH Import Settings")
         
         layout = QFormLayout()
         
-        # Frequency input (in GHz for user convenience)
-        self.freq_spin = QDoubleSpinBox()
-        self.freq_spin.setDecimals(3)
-        self.freq_spin.setRange(0.001, 1000.0)
-        self.freq_spin.setValue(9.2)  # Default to 9.2 GHz
-        self.freq_spin.setSuffix(" GHz")
-        layout.addRow("Frequency:", self.freq_spin)
+        # Theta step size input
+        self.theta_step_spin = QDoubleSpinBox()
+        self.theta_step_spin.setDecimals(2)
+        self.theta_step_spin.setRange(0.001, 180.0)
+        self.theta_step_spin.setValue(1.0)
+        self.theta_step_spin.setSuffix("°")
+        layout.addRow("Theta Step:", self.theta_step_spin)
+        
+        # Phi step size input
+        self.phi_step_spin = QDoubleSpinBox()
+        self.phi_step_spin.setDecimals(2)
+        self.phi_step_spin.setRange(0.001, 180.0)
+        self.phi_step_spin.setValue(5.0)
+        self.phi_step_spin.setSuffix("°")
+        layout.addRow("Phi Step:", self.phi_step_spin)
         
         # Add info label
-        info_label = QLabel("Note: The .sph file does not contain frequency information.\n"
-                           "Please enter the frequency for these coefficients.")
+        info_label = QLabel("The pattern will be generated from the spherical mode coefficients\n"
+                           "using the specified angular resolution.\n\n"
+                           "Theta range: 0° to 180°\n"
+                           "Phi range: 0° to 360°")
         info_label.setWordWrap(True)
+        info_label.setStyleSheet("font-size: 9pt; color: #666; margin-top: 10px;")
         layout.addRow(info_label)
         
         # Dialog buttons
@@ -588,6 +605,6 @@ class FrequencyDialog(QDialog):
         
         self.setLayout(layout)
     
-    def get_frequency(self):
-        """Get the frequency in Hz."""
-        return self.freq_spin.value() * 1e9  # Convert GHz to Hz
+    def get_angular_resolution(self):
+        """Get theta and phi step sizes in degrees."""
+        return self.theta_step_spin.value(), self.phi_step_spin.value()
