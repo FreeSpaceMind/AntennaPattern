@@ -608,42 +608,25 @@ class AntennaPattern(PatternOperationsMixin):
         save_pattern_npz(self, file_path, metadata)
 
 
-    def calculate_spherical_modes(self, radius: Optional[float] = None, 
-                                frequency: Optional[float] = None,
-                                adaptive: bool = True,
-                                NMAX: Optional[int] = None,
-                                MMAX: Optional[int] = None) -> 'SphericalWaveExpansion':
+    def calculate_spherical_modes(self, frequency: Optional[float] = None,):
         """
-        Calculate spherical wave expansion from the far-field pattern.
+        Calculate spherical wave expansion coefficients from far-field pattern.
+        Uses the new from_far_field method.
         
         Args:
-            radius: Antenna radius for determining NMAX (optional if NMAX provided)
             frequency: Frequency in Hz (uses first frequency if None)
-            adaptive: Not used with new SWE module (kept for compatibility)
-            NMAX: Maximum degree (if None, calculated from radius)
-            MMAX: Maximum order (if None, set to NMAX)
             
         Returns:
             SphericalWaveExpansion object
         """
+        from .utilities import find_nearest
         
         # Get frequency
         if frequency is None:
             freq_idx = 0
             frequency = self.frequencies[0]
         else:
-            _, freq_idx = self.find_nearest_frequency(frequency)
-            frequency = self.frequencies[freq_idx]
-        
-        # Determine NMAX
-        if NMAX is None:
-            if radius is None:
-                raise ValueError("Must provide either radius or NMAX")
-            wavelength = 299792458.0 / frequency
-            NMAX = int(np.ceil(2 * np.pi * radius / wavelength)) + 10
-        
-        if MMAX is None:
-            MMAX = NMAX
+            frequency, freq_idx = find_nearest(self.frequencies, frequency)
         
         # Extract pattern data for this frequency
         theta_rad = np.radians(self.theta_angles)
@@ -654,15 +637,13 @@ class AntennaPattern(PatternOperationsMixin):
         E_theta = self.data.e_theta.values[freq_idx, :, :]
         E_phi = self.data.e_phi.values[freq_idx, :, :]
         
-        # Fit SWE
+        # Fit SWE using from_far_field
         swe = SphericalWaveExpansion.from_far_field(
             theta=THETA.ravel(),
             phi=PHI.ravel(),
             E_theta=E_theta.ravel(),
             E_phi=E_phi.ravel(),
-            frequency=frequency,
-            NMAX=NMAX,
-            MMAX=MMAX
+            frequency=frequency
         )
         
         # Store in pattern object
@@ -735,3 +716,149 @@ class AntennaPattern(PatternOperationsMixin):
             NPHI=361,
             description=id_string
         )
+
+    def evaluate_nearfield_sphere(self, radius: float, theta_points: np.ndarray, 
+                                phi_points: np.ndarray, frequency: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Evaluate near field on a spherical surface using SWE coefficients.
+        
+        Args:
+            radius: Radius of spherical surface in meters
+            theta_points: Theta angles in degrees
+            phi_points: Phi angles in degrees  
+            frequency: Frequency in Hz (if None, uses first frequency)
+            
+        Returns:
+            Dictionary containing E and H field data in spherical and Cartesian bases
+            
+        Raises:
+            RuntimeError: If no SWE coefficients exist
+        """
+        if not hasattr(self, 'swe') or len(self.swe) == 0:
+            raise RuntimeError("No SWE coefficients. Call calculate_spherical_modes() first.")
+        
+        # Get SWE for specified frequency
+        if frequency is None:
+            frequency = list(self.swe.keys())[0]
+        elif frequency not in self.swe:
+            raise ValueError(f"No SWE data for frequency {frequency} Hz")
+        
+        swe = self.swe[frequency]
+        
+        # Convert angles to radians
+        theta_rad = np.radians(theta_points)
+        phi_rad = np.radians(phi_points)
+        
+        # Create meshgrid
+        THETA, PHI = np.meshgrid(theta_rad, phi_rad, indexing='ij')
+        R = np.full_like(THETA, radius)
+        
+        # Compute near field
+        (E_r, E_theta, E_phi), (H_r, H_theta, H_phi) = swe.near_field(
+            R.ravel(), THETA.ravel(), PHI.ravel()
+        )
+        
+        # Reshape to grid
+        E_r = E_r.reshape(THETA.shape)
+        E_theta = E_theta.reshape(THETA.shape)
+        E_phi = E_phi.reshape(PHI.shape)
+        H_r = H_r.reshape(THETA.shape)
+        H_theta = H_theta.reshape(THETA.shape)
+        H_phi = H_phi.reshape(PHI.shape)
+        
+        # Convert to Cartesian components
+        from swe import spherical_to_cartesian_field
+        E_x, E_y, E_z = spherical_to_cartesian_field(E_r, E_theta, E_phi, THETA, PHI)
+        H_x, H_y, H_z = spherical_to_cartesian_field(H_r, H_theta, H_phi, THETA, PHI)
+        
+        return {
+            'radius': radius,
+            'theta': theta_points,
+            'phi': phi_points,
+            'E_r': E_r,
+            'E_theta': E_theta,
+            'E_phi': E_phi,
+            'E_x': E_x,
+            'E_y': E_y,
+            'E_z': E_z,
+            'H_r': H_r,
+            'H_theta': H_theta,
+            'H_phi': H_phi,
+            'H_x': H_x,
+            'H_y': H_y,
+            'H_z': H_z,
+            'frequency': frequency
+        }
+
+
+    def evaluate_nearfield_plane(self, x_points: np.ndarray, y_points: np.ndarray,
+                                z_plane: float, frequency: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Evaluate near field on a planar surface using SWE coefficients.
+        
+        Args:
+            x_points: X coordinates in meters
+            y_points: Y coordinates in meters
+            z_plane: Z coordinate of plane in meters
+            frequency: Frequency in Hz (if None, uses first frequency)
+            
+        Returns:
+            Dictionary containing E and H field data in spherical and Cartesian bases
+            
+        Raises:
+            RuntimeError: If no SWE coefficients exist
+        """
+        if not hasattr(self, 'swe') or len(self.swe) == 0:
+            raise RuntimeError("No SWE coefficients. Call calculate_spherical_modes() first.")
+        
+        # Get SWE for specified frequency
+        if frequency is None:
+            frequency = list(self.swe.keys())[0]
+        elif frequency not in self.swe:
+            raise ValueError(f"No SWE data for frequency {frequency} Hz")
+        
+        swe = self.swe[frequency]
+        
+        # Create meshgrid
+        X, Y = np.meshgrid(x_points, y_points, indexing='ij')
+        Z = np.full_like(X, z_plane)
+        
+        # Convert to spherical coordinates
+        from swe import cartesian_to_spherical, spherical_to_cartesian_field
+        R, THETA, PHI = cartesian_to_spherical(X.ravel(), Y.ravel(), Z.ravel())
+        
+        # Compute near field
+        (E_r, E_theta, E_phi), (H_r, H_theta, H_phi) = swe.near_field(R, THETA, PHI)
+        
+        # Reshape to grid
+        E_r = E_r.reshape(X.shape)
+        E_theta = E_theta.reshape(X.shape)
+        E_phi = E_phi.reshape(X.shape)
+        H_r = H_r.reshape(X.shape)
+        H_theta = H_theta.reshape(X.shape)
+        H_phi = H_phi.reshape(X.shape)
+        THETA_grid = THETA.reshape(X.shape)
+        PHI_grid = PHI.reshape(X.shape)
+        
+        # Convert to Cartesian components
+        E_x, E_y, E_z = spherical_to_cartesian_field(E_r, E_theta, E_phi, THETA_grid, PHI_grid)
+        H_x, H_y, H_z = spherical_to_cartesian_field(H_r, H_theta, H_phi, THETA_grid, PHI_grid)
+        
+        return {
+            'x': x_points,
+            'y': y_points,
+            'z_plane': z_plane,
+            'E_r': E_r,
+            'E_theta': E_theta,
+            'E_phi': E_phi,
+            'E_x': E_x,
+            'E_y': E_y,
+            'E_z': E_z,
+            'H_r': H_r,
+            'H_theta': H_theta,
+            'H_phi': H_phi,
+            'H_x': H_x,
+            'H_y': H_y,
+            'H_z': H_z,
+            'frequency': frequency
+        }

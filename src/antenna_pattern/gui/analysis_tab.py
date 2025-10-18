@@ -37,26 +37,7 @@ class AnalysisTab(QWidget):
         
         # Spherical Wave Expansion section
         swe_group = CollapsibleGroupBox("Spherical Wave Expansion")
-        
         swe_group.addWidget(QLabel("Calculate spherical mode coefficients:"))
-        
-        # Adaptive calculation checkbox
-        self.swe_adaptive_check = QCheckBox("Adaptive (auto-determine radius)")
-        self.swe_adaptive_check.setChecked(True)
-        self.swe_adaptive_check.toggled.connect(self.on_swe_adaptive_toggled)
-        swe_group.addWidget(self.swe_adaptive_check)
-        
-        # Initial radius
-        radius_layout = QHBoxLayout()
-        radius_layout.addWidget(QLabel("Initial Radius:"))
-        self.swe_radius_spin = QDoubleSpinBox()
-        self.swe_radius_spin.setRange(0.001, 10.0)
-        self.swe_radius_spin.setValue(0.1)
-        self.swe_radius_spin.setSuffix(" m")
-        self.swe_radius_spin.setDecimals(4)
-        self.swe_radius_spin.setEnabled(False)  # Disabled for adaptive
-        radius_layout.addWidget(self.swe_radius_spin)
-        swe_group.addLayout(radius_layout)
         
         # Frequency selection for SWE
         swe_freq_layout = QHBoxLayout()
@@ -254,11 +235,6 @@ class AnalysisTab(QWidget):
         # Clear near field results
         self.nf_results.clear()
     
-    def on_swe_adaptive_toggled(self, checked):
-        """Handle adaptive SWE checkbox toggle."""
-        # Enable/disable radius input based on adaptive mode
-        self.swe_radius_spin.setEnabled(not checked)
-    
     def on_calculate_swe(self):
         """Handle calculate SWE button click."""
         if not self.current_pattern:
@@ -292,14 +268,8 @@ class AnalysisTab(QWidget):
         self.swe_calculated = True
         self.calculate_nf_btn.setEnabled(True)
         
-        wavelength = 299792458.0 / swe.frequency if swe.frequency else 0
-        
         result_text = "SWE Coefficients calculated:\n"
         result_text += f"Frequency: {swe.frequency/1e9:.3f} GHz\n"
-        
-        if hasattr(swe, 'radius'):
-            result_text += f"Radius: {swe.radius:.4f} m ({swe.radius/wavelength:.2f} λ)\n"
-        
         result_text += f"Mode indices: MMAX={swe.MMAX}, NMAX={swe.NMAX}\n"
         
         # Calculate total modes
@@ -337,15 +307,6 @@ class AnalysisTab(QWidget):
         """Get coordinate format from processing tab."""
         format_map = {"Central": "central", "Sided": "sided"}
         return format_map.get(self.processing_tab.coord_format_combo.currentText(), "central")
-    
-    # Getter methods for SWE parameters
-    def get_swe_adaptive(self):
-        """Get adaptive mode state."""
-        return self.swe_adaptive_check.isChecked()
-    
-    def get_swe_radius(self):
-        """Get SWE radius."""
-        return self.swe_radius_spin.value()
     
     def get_swe_frequency(self):
         """Get selected frequency for SWE."""

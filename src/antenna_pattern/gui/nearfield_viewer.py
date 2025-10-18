@@ -42,7 +42,7 @@ class NearFieldViewer(QDialog):
         # Value type selection
         controls_layout.addWidget(QLabel("Value:"))
         self.value_combo = QComboBox()
-        self.value_combo.addItems(["Magnitude (dB)", "Phase (deg)", "Magnitude (V/m)"])
+        self.value_combo.addItems(["Magnitude (dBW)", "Phase (deg)", "Magnitude (V/m)"])
         self.value_combo.currentTextChanged.connect(self.plot_nearfield)
         controls_layout.addWidget(self.value_combo)
         
@@ -138,11 +138,14 @@ class NearFieldViewer(QDialog):
         
         if field_key is None or field_key not in self.nf_data:
             ax.text(0.5, 0.5, f'Field component not available',
-                   ha='center', va='center', transform=ax.transAxes)
+                ha='center', va='center', transform=ax.transAxes)
             self.canvas.draw()
             return
         
         field_data = self.nf_data[field_key]
+        
+        # Determine if this is an H field for proper labeling
+        is_h_field = component_display.startswith('H-')
         
         # Calculate values based on type
         if "dB" in value_type:
@@ -153,7 +156,7 @@ class NearFieldViewer(QDialog):
             label = 'Phase (degrees)'
         else:
             values = np.abs(field_data)
-            label = 'Magnitude (V/m)'
+            label = 'Magnitude (A/m)' if is_h_field else 'Magnitude (V/m)'
         
         # Plot based on surface type
         if self.nf_data.get('is_spherical', True):
@@ -161,11 +164,11 @@ class NearFieldViewer(QDialog):
             theta = self.nf_data['theta']
             phi = self.nf_data['phi']
             
-            # Create meshgrid
-            PHI, THETA = np.meshgrid(phi, theta)
+            # Create meshgrid - match the indexing used in evaluate method
+            THETA, PHI = np.meshgrid(theta, phi, indexing='ij')
             
             # 2D color plot
-            im = ax.pcolormesh(PHI, THETA, values, shading='auto', cmap='viridis')
+            im = ax.pcolormesh(PHI, THETA, values, shading='auto', cmap='jet')
             ax.set_xlabel('Phi (degrees)', fontsize=11)
             ax.set_ylabel('Theta (degrees)', fontsize=11)
             ax.set_title(f'Near Field on Sphere - {component_display} - {label}', fontsize=12)
@@ -176,11 +179,11 @@ class NearFieldViewer(QDialog):
             x = self.nf_data['x']
             y = self.nf_data['y']
             
-            # Create meshgrid
-            X, Y = np.meshgrid(x, y)
+            # Create meshgrid - match the indexing used in evaluate method
+            X, Y = np.meshgrid(x, y, indexing='ij')
             
-            # 2D color plot
-            im = ax.pcolormesh(X, Y, values.T, shading='auto', cmap='viridis')
+            # 2D color plot - no transpose needed with 'ij' indexing
+            im = ax.pcolormesh(X, Y, values, shading='auto', cmap='jet')
             ax.set_xlabel('X (m)', fontsize=11)
             ax.set_ylabel('Y (m)', fontsize=11)
             ax.set_title(f'Near Field on Plane - {component_display} - {label}', fontsize=12)
@@ -205,3 +208,81 @@ class NearFieldViewer(QDialog):
         
         if filename:
             self.figure.savefig(filename, dpi=300, bbox_inches='tight')
+
+    def get_available_components(self):
+        """Get list of available field components from data."""
+        components = []
+        
+        # Check for different possible field component names in order of preference
+        possible_fields = [
+            ('E_theta', 'E-theta'),
+            ('E_phi', 'E-phi'),
+            ('E_r', 'E-r'),
+            ('E_x', 'E-x'),
+            ('E_y', 'E-y'),
+            ('E_z', 'E-z'),
+            ('H_theta', 'H-theta'),
+            ('H_phi', 'H-phi'),
+            ('H_r', 'H-r'),
+            ('H_x', 'H-x'),
+            ('H_y', 'H-y'),
+            ('H_z', 'H-z'),
+            ('e_theta', 'E-theta'),
+            ('e_phi', 'E-phi'),
+            ('E_co', 'Co-pol'),
+            ('E_cx', 'Cross-pol'),
+            ('e_co', 'Co-pol'),
+            ('e_cx', 'Cross-pol')
+        ]
+        
+        for field_key, display_name in possible_fields:
+            if field_key in self.nf_data:
+                # Only add if not already in list (avoid duplicates)
+                if display_name not in components:
+                    components.append(display_name)
+        
+        # If no components found, just list what's in the data
+        if not components:
+            for key in self.nf_data.keys():
+                if key not in ['x', 'y', 'theta', 'phi', 'radius', 'is_spherical',
+                            'x_extent', 'y_extent', 'z_distance', 'frequency']:
+                    components.append(key)
+        
+        return components if components else ['E_theta']
+    
+    def get_field_data_key(self, display_name):
+        """Map display name to actual data key."""
+        name_map = {
+            'E-theta': ['E_theta', 'e_theta'],
+            'E-phi': ['E_phi', 'e_phi'],
+            'E-r': ['E_r', 'e_r'],
+            'E-x': ['E_x', 'e_x'],
+            'E-y': ['E_y', 'e_y'],
+            'E-z': ['E_z', 'e_z'],
+            'H-theta': ['H_theta', 'h_theta'],
+            'H-phi': ['H_phi', 'h_phi'],
+            'H-r': ['H_r', 'h_r'],
+            'H-x': ['H_x', 'h_x'],
+            'H-y': ['H_y', 'h_y'],
+            'H-z': ['H_z', 'h_z'],
+            'Co-pol': ['E_co', 'e_co'],
+            'Cross-pol': ['E_cx', 'e_cx']
+        }
+        
+        # Try mapped names first
+        if display_name in name_map:
+            for key in name_map[display_name]:
+                if key in self.nf_data:
+                    return key
+        
+        # Try direct match
+        if display_name in self.nf_data:
+            return display_name
+        
+        # Return first available field
+        for key in self.nf_data.keys():
+            if key not in ['x', 'y', 'theta', 'phi', 'radius', 'is_spherical',
+                        'x_extent', 'y_extent', 'z_distance', 'frequency']:
+                return key
+        
+        return None

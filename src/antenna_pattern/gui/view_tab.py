@@ -81,7 +81,7 @@ class ViewTab(QWidget):
         format_layout = QHBoxLayout()
         format_layout.addWidget(QLabel("Format:"))
         self.plot_format_combo = QComboBox()
-        self.plot_format_combo.addItems(["1D Cut", "2D Polar", "Near Field"])
+        self.plot_format_combo.addItems(["1D Cut", "2D Polar"])
         self.plot_format_combo.currentTextChanged.connect(self.on_plot_format_changed)
         format_layout.addWidget(self.plot_format_combo)
         plot_group.addLayout(format_layout)
@@ -251,8 +251,6 @@ class ViewTab(QWidget):
         format_text = self.plot_format_combo.currentText()
         if "2D Polar" in format_text:
             return "2d_polar"
-        elif "Near Field" in format_text:
-            return "near_field"
         else:
             return "1d_cut"
     

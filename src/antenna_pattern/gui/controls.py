@@ -78,12 +78,7 @@ class ControlsWidget(QWidget):
             return
         
         try:
-            # Import the worker
-            from .swe_worker import SWEWorker
-            
             # Get parameters
-            adaptive = self.analysis_tab.get_swe_adaptive()
-            radius = None if adaptive else self.analysis_tab.get_swe_radius()
             frequency = self.analysis_tab.get_swe_frequency()
             
             # Update button state
@@ -93,9 +88,7 @@ class ControlsWidget(QWidget):
             # Create and configure worker thread
             self.swe_worker = SWEWorker(
                 self.current_pattern,
-                radius,
-                frequency,
-                adaptive
+                frequency
             )
             
             # Connect signals
@@ -112,16 +105,16 @@ class ControlsWidget(QWidget):
             self.analysis_tab.swe_results.setText(f"Error: {str(e)}")
             self.analysis_tab.calculate_swe_btn.setEnabled(True)
             self.analysis_tab.calculate_swe_btn.setText("Calculate SWE Coefficients")
-    
-    def on_swe_finished(self, swe_data):
+
+    def on_swe_finished(self, swe):
         """Handle successful SWE calculation."""
         # Display results
-        self.analysis_tab.display_swe_results(swe_data)
+        self.analysis_tab.display_swe_results(swe)
         
         # Re-enable button
         self.analysis_tab.calculate_swe_btn.setEnabled(True)
         self.analysis_tab.calculate_swe_btn.setText("Calculate SWE Coefficients")
-    
+
     def on_swe_error(self, error_msg):
         """Handle SWE calculation error."""
         self.analysis_tab.swe_results.setText(f"Error: {error_msg}")
@@ -129,7 +122,7 @@ class ControlsWidget(QWidget):
         # Re-enable button
         self.analysis_tab.calculate_swe_btn.setEnabled(True)
         self.analysis_tab.calculate_swe_btn.setText("Calculate SWE Coefficients")
-    
+
     def on_swe_progress(self, message):
         """Handle SWE calculation progress updates."""
         # Could update a progress bar or status message here
